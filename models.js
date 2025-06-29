@@ -1,6 +1,8 @@
-"use server"
-import mongoose from "mongoose";
+"use server";
+import mongoose, { mongo, Mongoose } from "mongoose";
 import dotenv from "dotenv";
+import { type } from "os";
+import { buffer } from "stream/consumers";
 
 dotenv.config();
 
@@ -35,18 +37,84 @@ const examSchema = new mongoose.Schema({
   examDegree: String, // degree at which exam is pursuing
   examUsers: [{ type: String }], // Foreign Key
   examquestions: [{ type: String }],
-  studentsResponse:[{question:String,marks:Number,allottedMarks:Number,feedback:String}],
+  studentsResponse: [
+    {
+      question: String,
+      marks: Number,
+      allottedMarks: Number,
+      feedback: String,
+    },
+  ],
 });
 
-const userSchema=new mongoose.Schema({
-  useremail:String,
-  userRole:{
-    type:String,
-    default:"user"
-  },    
-})
+const subjectSchema = new mongoose.Schema({
+  subjectName: String,
+  subjectDescription: String,
+  subjectDegree: String,
+  subjectMarks: String,
+  subjectUsers: [{ type: String }],
+  subjectOngoingExams: [{ type: String, default: "" }],
+  subjectReview: {
+    type: [
+      {
+        studentRating: Number,
+        studentFeedback: String,
+      },
+    ],
+    default: [],
+  },
+  numberOfReviews: { type: Number, default: 0 },
+  totalRating: { type: Number, default: 0 },
+  subjectPyq: [{ type: Object, default: [] }],
+  subjectSyllabus: { type: String, default: "" },
+  subjectImage: {
+    data: buffer,
+    contentType: String,
+  },
+});
+const userHistorySchema = new mongoose.Schema(
+  {
+    examId: { type: String, required: true },
+    total: { type: Number, default: 0 },
+    allocated: { type: Number, default: 0 },
+    score: { type: Number, default: 0 },
+  },
+  { _id: false }
+);
+const userSchema = new mongoose.Schema({
+  useremail: String,
+  userRole: {
+    type: String,
+    default: "user",
+  },
+  totalAllocatedExams: {
+    type: String,
+    default: 0,
+  },
+  totalCompletedExams: {
+    type: String,
+    default: 0,
+  },
+  userHistory: {
+    type: [userHistorySchema],
+    default: [],
+  },
+});
 
-const QuestionModel = mongoose.models["examSets"] || mongoose.model("examSets", examSchema);
-const userModel= mongoose.models["user"]||mongoose.model("user",userSchema);
+async function getuserModel() {
+  const userModel =
+    mongoose.models["user"] || mongoose.model("user", userSchema);
+  return userModel;
+}
+async function getQuestionModel() {
+  const QuestionModel =
+    mongoose.models["examSets"] || mongoose.model("examSets", examSchema);
+  return QuestionModel;
+}
+async function getsubjectModel() {
+  const subjectModel =
+    mongoose.models["Subject"] || mongoose.model("subjects", subjectSchema);
+  return subjectModel;
+}
 
-export { connect, QuestionModel,userModel};
+export { connect, getsubjectModel, getQuestionModel, getuserModel };

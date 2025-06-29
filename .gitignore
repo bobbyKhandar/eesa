@@ -42,3 +42,15 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+questionPapers
+bloomsAnatomy
+bloomsAnatomyFinal
+preprocess
+previousYearPapersUnoptimized
+tempFileStorer
+uploads
+test
+debug_output.jpg
+page1.png
+page2.png
