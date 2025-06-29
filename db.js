@@ -26,7 +26,7 @@ export async function createExam(
   }
   console.log("skibidi");
   console.log(examquestions);
-  // const examSets=await getQuestionModel;
+  // const examSets=a wait getQuestionModel;
   // console.log(examSets)
   //   const questions = new examSets({
   //       "examName": examName,
@@ -234,8 +234,6 @@ export async function getSubjects(userEmail) {
     return error;
   }
 }
-
-
 
 // createSubject(
 //   "oose",
