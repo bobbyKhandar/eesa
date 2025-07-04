@@ -1,0 +1,42 @@
+{
+  "jobTitle": "Software Developer",
+  "companyName": "nVent",
+  "jobLocation": "Mumbai, India",
+  "jobDescription": "Develop and maintain software applications using leading-edge cloud technologies, contributing to a growing SaaS and IoT portfolio within a collaborative Agile team.  Requires full-stack development expertise and strong communication skills.",
+  "requiredSkills": [
+    "OOPs concepts",
+    "design patterns",
+    "SOLID principles",
+    "Data structures",
+    "algorithms",
+    "C++",
+    "C#",
+    "Java",
+    "cloud-based web technologies",
+    "Angular",
+    "React",
+    "IoT technologies",
+    "core cloud technologies",
+    "micro-services",
+    "RESTful APIs",
+    "JSON",
+    "Agile software development",
+    "distributed version control system",
+    "CI/CD"
+  ],
+  "preferredQualifications": [
+    "AWS",
+    "Azure",
+    "GCP"
+  ],
+  "salaryRange": null,
+  "jobType": null,
+  "gpaCriteria": null,
+  "experienceLevel": null,
+  "applicationDeadline": null,
+  "benefitsOffered": [
+    "Health insurance",
+    "401k"
+  ],
+  "workModel": null
+}

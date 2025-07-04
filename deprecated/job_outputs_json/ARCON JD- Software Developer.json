@@ -1,0 +1,29 @@
+{
+  "jobTitle": "Software Developer",
+  "companyName": "ARCON Techsolutions Pvt. Ltd.",
+  "jobLocation": null,
+  "jobDescription": "Design & Development of .Net applications, modifications to existing applications, team management and task assignment, understanding application algorithms and business logic, database creation and updates, API generation, client interaction for requirement gathering and project demos.",
+  "requiredSkills": [
+    ".Net",
+    "C#",
+    "ASP.Net",
+    "Win Forms",
+    "SQL Server",
+    "Web services",
+    "Web API",
+    "JQuery",
+    "Java Script"
+  ],
+  "preferredQualifications": [
+    "Data structure",
+    "Algorithm",
+    "Multithreading"
+  ],
+  "salaryRange": null,
+  "jobType": null,
+  "gpaCriteria": null,
+  "experienceLevel": null,
+  "applicationDeadline": null,
+  "benefitsOffered": [],
+  "workModel": null
+}

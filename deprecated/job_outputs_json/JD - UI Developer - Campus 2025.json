@@ -1,0 +1,33 @@
+{
+  "jobTitle": "UI Frontend Engineer – Vue JS",
+  "companyName": "Mehery",
+  "jobLocation": "India",
+  "jobDescription": "Develop and maintain high-quality UI components using Vue.js, interacting with project teams to understand business and user requirements.  Solve problems in web development, build REST/JSON API clients, and work with cross-functional teams in a continuous integration/deployment environment.",
+  "requiredSkills": [
+    "VueJS",
+    "ReactJS",
+    "HTML5",
+    "CSS3",
+    "npm",
+    "Webpack",
+    "Responsive Web Design",
+    "Semantic HTML Markup",
+    "REST/JSON API client development",
+    "API debugging",
+    "cross-browser/cross-platform issue diagnosis",
+    "cross-functional team collaboration",
+    "Continuous Integration/Deployment",
+    "GIT",
+    "Package manager and automation tool experience (npm, gulp, grunt, webpack)"
+  ],
+  "preferredQualifications": [
+    "Java"
+  ],
+  "salaryRange": null,
+  "jobType": null,
+  "gpaCriteria": null,
+  "experienceLevel": null,
+  "applicationDeadline": null,
+  "benefitsOffered": [],
+  "workModel": null
+}

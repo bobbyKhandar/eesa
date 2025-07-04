@@ -1,0 +1,31 @@
+{
+  "jobTitle": "Trainee Full Stack Engineer",
+  "companyName": "Atrina Technologies Pvt Ltd",
+  "jobLocation": "Vikhroli, Mumbai",
+  "jobDescription": "Develop, maintain, and design web applications using modern front-end and back-end technologies. Collaborate with cross-functional teams, ensuring code reliability and efficient data management.  Contribute to innovative product development in a dynamic environment.",
+  "requiredSkills": [
+    "Angular",
+    "React",
+    "Node.js",
+    "GoLang",
+    "PostgreSQL",
+    "Git",
+    "Data Structures & Algorithms"
+  ],
+  "preferredQualifications": [
+    "Azure",
+    "Whimsical or Draw.io"
+  ],
+  "salaryRange": "As per industry standards",
+  "jobType": "Full- Time",
+  "gpaCriteria": null,
+  "experienceLevel": "Entry-level",
+  "applicationDeadline": null,
+  "benefitsOffered": [
+    "Paid Leaves",
+    "Flexible work schedules",
+    "Development and career growth opportunities",
+    "Open Time Off"
+  ],
+  "workModel": "Work From Office"
+}

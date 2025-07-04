@@ -1,0 +1,29 @@
+{
+  "jobTitle": "Software Engineer",
+  "companyName": "IDfy",
+  "jobLocation": null,
+  "jobDescription": "Develop and maintain scalable, robust, cloud-native applications; build UI components, APIs, and microservices; ensure zero-defect software; predict and prevent future fraud techniques; contribute to a strong collaborative culture.",
+  "requiredSkills": [
+    "Algorithms",
+    "Data Structures",
+    "Databases",
+    "Software Development",
+    "Product Design",
+    "Testing",
+    "Cloud Technologies",
+    "API Development",
+    "Microservices",
+    "UI Development"
+  ],
+  "preferredQualifications": [
+    "Open Source Contributions",
+    "Elixir Experience"
+  ],
+  "salaryRange": null,
+  "jobType": null,
+  "gpaCriteria": null,
+  "experienceLevel": null,
+  "applicationDeadline": null,
+  "benefitsOffered": [],
+  "workModel": null
+}

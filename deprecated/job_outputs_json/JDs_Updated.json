@@ -1,0 +1,61 @@
+{
+  "jobTitle": [
+    "Graduate Engineer Trainee",
+    "Power Electronics Hardware Designing",
+    "Embedded Software Development for Power Electronic Converters and Drives",
+    "Mechanical Design",
+    "Control Electronics Engineer"
+  ],
+  "companyName": "Hind Rectifiers Ltd.",
+  "jobLocation": "Mumbai",
+  "jobDescription": [
+    "Design and development of power electronics hardware and embedded software for various applications, including inverters, converters, and motor drives.  Involves design simulations, testing, and validation.",
+    "Mechanical design of components using Solidworks and Ansys, including cooling systems and sheet metal parts.",
+    "Design and development of electronic systems for railways, testing, validation, and documentation."
+  ],
+  "requiredSkills": [
+    "Power Electronics",
+    "IGBTs",
+    "MOSFETs",
+    "SIC devices",
+    "POWER BJTs",
+    "Gate drivers",
+    "Losses calculations",
+    "Heatsink selection",
+    "Inverter design",
+    "Converter design",
+    "Capacitor selection",
+    "Inductor selection",
+    "Busbar design",
+    "Embedded C",
+    "TI DSP (C2000)",
+    "TMS320F28335",
+    "TMS320F28379D",
+    "PID controllers",
+    "Vector control",
+    "Sensorless control",
+    "MATLAB Simulations",
+    "Solidworks",
+    "Ansys",
+    "Circuit design",
+    "Electronic components",
+    "CAD software",
+    "Simulation tools",
+    "Low-power analog circuits",
+    "Digital circuits",
+    "Test equipment"
+  ],
+  "preferredQualifications": [
+    "Experience in writing embedded SW in C language for TI DSP (C2000) TMS320F28335,TMS320F28379D and its families",
+    "PIC32, STM32 controllers",
+    "ARM (Cortex M4, M7) architectures",
+    "CAN, SPI, I2C, UART, USB protocols"
+  ],
+  "salaryRange": null,
+  "jobType": null,
+  "gpaCriteria": null,
+  "experienceLevel": "Entry-level",
+  "applicationDeadline": null,
+  "benefitsOffered": null,
+  "workModel": null
+}

@@ -1,0 +1,35 @@
+{
+  "jobTitle": "Trainee QA Engineer",
+  "companyName": "Atrina Technologies Pvt Ltd",
+  "jobLocation": "Goregaon, Mumbai",
+  "jobDescription": "Identify, document, and report software defects using various testing methodologies. Collaborate with the development team to ensure software applications meet client requirements and adhere to quality standards.",
+  "requiredSkills": [
+    "Software testing",
+    "QA methods",
+    "Test case execution",
+    "Bug reporting",
+    "Regression testing",
+    "Test data preparation",
+    "Test environment setup",
+    "Communication",
+    "Problem-solving",
+    "JavaScript or any other oops/functional programming language",
+    "OOPS Concepts"
+  ],
+  "preferredQualifications": [
+    "Bachelor's degree in computer science or information technology",
+    "BCA, B.Sc CS, B.Tech, MCA, MSc. CS, MSc. IT"
+  ],
+  "salaryRange": "As per industry standards",
+  "jobType": "Full-Time",
+  "gpaCriteria": null,
+  "experienceLevel": "Entry-level",
+  "applicationDeadline": null,
+  "benefitsOffered": [
+    "Paid Leaves",
+    "Flexible work schedules",
+    "Development and career growth opportunities",
+    "Open Time Off"
+  ],
+  "workModel": "Work From Office"
+}

@@ -1,0 +1,42 @@
+{
+  "jobTitle": "Software Engineer - Java Developer",
+  "companyName": "Gupshup",
+  "jobLocation": null,
+  "jobDescription": "Design and development of the product, ensuring code quality, security and extensibility. Following agile development cycles. Conducting performance tests and optimization. Debugging and troubleshooting. Collaborating with the product team and supporting external users.",
+  "requiredSkills": [
+    "OOPS",
+    "Java/J2EE",
+    "JAX-RS",
+    "JDBC",
+    "SQL",
+    "NoSQL",
+    "RESTful Web Services",
+    "Data Structures",
+    "Queues",
+    "Multi-Threading",
+    "MySQL",
+    "Mongo database",
+    "AWS Cloud",
+    "Highly scalable and available systems",
+    "Git",
+    "Jenkins",
+    "Agile development"
+  ],
+  "preferredQualifications": [
+    "Scala",
+    "Spark",
+    "Elastic Search",
+    "Kafka",
+    "Design patterns",
+    "Data visualization",
+    "Interactive excel dashboards and reports",
+    "Strong analytical and problem-solving skills"
+  ],
+  "salaryRange": null,
+  "jobType": null,
+  "gpaCriteria": null,
+  "experienceLevel": "Entry-level",
+  "applicationDeadline": null,
+  "benefitsOffered": [],
+  "workModel": null
+}

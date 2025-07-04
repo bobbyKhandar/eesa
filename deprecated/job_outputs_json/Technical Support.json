@@ -1,0 +1,38 @@
+{
+  "jobTitle": "Technical Support Engineers",
+  "companyName": null,
+  "jobLocation": null,
+  "jobDescription": "Install, manage, and provide technical support (OS and application level in Linux and Windows) to customers. Requires 1-2 years' experience and occasional on-site travel.",
+  "requiredSkills": [
+    "Linux",
+    "RedHat",
+    "CentOS",
+    "Debian",
+    "Ubuntu",
+    "Windows",
+    "Docker containers",
+    "Networking",
+    "Troubleshooting",
+    "Nginx web server",
+    "DNS",
+    "HTTP",
+    "LDAP",
+    "SMTP",
+    "Bash scripting",
+    "TeamViewer",
+    "AnyDesk"
+  ],
+  "preferredQualifications": [
+    "RHCT",
+    "RHCE",
+    "RHCA certifications",
+    "Hindi (communication skills)"
+  ],
+  "salaryRange": "30 K to 50K per month",
+  "jobType": null,
+  "gpaCriteria": null,
+  "experienceLevel": "Entry-level",
+  "applicationDeadline": null,
+  "benefitsOffered": [],
+  "workModel": "Hybrid"
+}

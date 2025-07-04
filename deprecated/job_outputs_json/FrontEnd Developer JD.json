@@ -1,0 +1,26 @@
+{
+  "jobTitle": "FrontEnd Developer",
+  "companyName": null,
+  "jobLocation": null,
+  "jobDescription": "Develop and maintain interactive websites using Angular.  Responsibilities include feature development, bug fixing, staying current with new technologies, project support, and delivering high-quality code.",
+  "requiredSkills": [
+    "Angular",
+    "React",
+    "TypeScript",
+    "JavaScript",
+    "HTML",
+    "CSS",
+    "RESTful APIs",
+    "Git"
+  ],
+  "preferredQualifications": [
+    "Experience with latest versions of Angular/React"
+  ],
+  "salaryRange": null,
+  "jobType": null,
+  "gpaCriteria": null,
+  "experienceLevel": "Entry-level",
+  "applicationDeadline": null,
+  "benefitsOffered": [],
+  "workModel": null
+}

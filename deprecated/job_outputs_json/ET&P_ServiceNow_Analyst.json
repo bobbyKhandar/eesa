@@ -1,0 +1,37 @@
+{
+  "jobTitle": "Technology & Transformation – ET&P: ServiceNow Analyst",
+  "companyName": "Deloitte",
+  "jobLocation": "Pan India",
+  "jobDescription": "Build and nurture positive working relationships with teams and clients. Build high-quality, clean, scalable, and reusable code. Work with product owners to understand requirements and own code from design to delivery. Design user-friendly software. Help design and implement new products and features.",
+  "requiredSkills": [
+    "Java",
+    "JavaScript",
+    "Angular",
+    "React",
+    "Vue",
+    "data structures",
+    "algorithms",
+    "object-oriented design",
+    "design patterns",
+    "performance/scale considerations",
+    "ServiceNow",
+    "Unit testing",
+    "Code Reviews",
+    "communication",
+    "analytical skills",
+    "design skills",
+    "problem-solving",
+    "strategic thinking"
+  ],
+  "preferredQualifications": [
+    "Experience with modern UI frameworks",
+    "Working knowledge of tools (IDE, debugger, build tools, source control, ServiceNow instances, profilers, system administration/Unix tools)"
+  ],
+  "salaryRange": null,
+  "jobType": "Full-time",
+  "gpaCriteria": null,
+  "experienceLevel": "Entry-level",
+  "applicationDeadline": null,
+  "benefitsOffered": [],
+  "workModel": "Hybrid"
+}

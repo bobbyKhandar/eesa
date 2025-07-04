@@ -1,0 +1,31 @@
+{
+  "jobTitle": "Software Engineer",
+  "companyName": "GreyLabs AI",
+  "jobLocation": "Mumbai",
+  "jobDescription": "Develop and maintain high-quality software applications using Django and ReactJS.  Work on impactful projects in the BFSI and Fintech sectors. Develop skills and learn from experienced professionals in a collaborative environment.",
+  "requiredSkills": [
+    "Django",
+    "ReactJS",
+    "Python",
+    "JavaScript",
+    "AWS",
+    "Problem-solving",
+    "Git"
+  ],
+  "preferredQualifications": [
+    "DevOps practices",
+    "CI/CD pipelines",
+    "Docker",
+    "Kubernetes",
+    "PostgreSQL",
+    "MySQL",
+    "ORM frameworks"
+  ],
+  "salaryRange": null,
+  "jobType": null,
+  "gpaCriteria": null,
+  "experienceLevel": "Entry-level",
+  "applicationDeadline": null,
+  "benefitsOffered": [],
+  "workModel": null
+}

@@ -1,0 +1,38 @@
+{
+  "jobTitle": "Software Engineer – Test",
+  "companyName": "ZS",
+  "jobLocation": null,
+  "jobDescription": "Design, implement, test, and support high-quality products; understand complex web applications and apply that knowledge towards testing; contribute to test strategy and plan; create and execute test scenarios; identify test data requirements; evaluate application behavior; report and prioritize issues; create test deliverables; collaborate with testers, developers, and stakeholders; identify and lead process improvements; contribute during design reviews.",
+  "requiredSkills": [
+    "Manual testing",
+    "Object-oriented programming",
+    "C#",
+    ".NET",
+    "Java",
+    "Python",
+    "Defect tracking",
+    "Test management software",
+    "SDLC/STLC",
+    "Agile/Scrum methodologies",
+    "Web application testing",
+    "Critical thinking",
+    "Communication",
+    "Interpersonal skills"
+  ],
+  "preferredQualifications": [
+    "Knowledge of cloud technologies (AWS)",
+    "Knowledge of Big data platforms (Spark & Hadoop)",
+    "Automated testing",
+    "Fluency in European or Asian language"
+  ],
+  "salaryRange": "Competitive",
+  "jobType": null,
+  "gpaCriteria": "7.0 or higher",
+  "experienceLevel": null,
+  "applicationDeadline": null,
+  "benefitsOffered": [
+    "Competitive compensation package with salary and bonus incentives",
+    "Attractive benefits package"
+  ],
+  "workModel": null
+}

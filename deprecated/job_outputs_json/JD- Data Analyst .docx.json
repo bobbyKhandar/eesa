@@ -1,0 +1,44 @@
+{
+  "jobTitle": "Data Analyst",
+  "companyName": "Atrina Technologies Pvt Ltd",
+  "jobLocation": "Goregoan, Mumbai",
+  "jobDescription": "Analyze large datasets, uncover key insights, and develop data-driven solutions to support business decisions. Work closely with cross-functional teams, translate business needs into analytical requirements, and communicate findings effectively to stakeholders.",
+  "requiredSkills": [
+    "SQL",
+    "Python",
+    "Pandas",
+    "NumPy",
+    "Scikit-learn",
+    "Power BI",
+    "Tableau",
+    "Looker Studio",
+    "BigQuery",
+    "Google Analytics",
+    "Zoho",
+    "Data Visualization",
+    "Data Modeling",
+    "Data Warehousing",
+    "A/B Testing",
+    "Predictive Modeling",
+    "Data Pipelines",
+    "Prompt Engineering",
+    "Gen AI"
+  ],
+  "preferredQualifications": [
+    "Experience with machine learning and predictive modeling",
+    "Experience with data governance and data quality best practices",
+    "Experience with Agile methodologies"
+  ],
+  "salaryRange": "As per industry standards",
+  "jobType": null,
+  "gpaCriteria": null,
+  "experienceLevel": "Mid-level",
+  "applicationDeadline": null,
+  "benefitsOffered": [
+    "Paid Leaves",
+    "Flexible work schedules",
+    "Development and career growth opportunities",
+    "Open Time Off"
+  ],
+  "workModel": null
+}

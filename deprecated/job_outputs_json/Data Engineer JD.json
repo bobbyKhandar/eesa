@@ -1,0 +1,34 @@
+{
+  "jobTitle": "Data Engineer",
+  "companyName": null,
+  "jobLocation": null,
+  "jobDescription": "Design, develop, and maintain scalable data pipelines and cloud-based data infrastructure.  Work with data scientists and analysts to ensure seamless data integration and accessibility.  Focus on ETL/ELT processes, workflow orchestration (Airflow), and GCP services (Cloud Storage, DataProc, Cloud Run, Pub/Sub, BigQuery). Develop dashboards using Looker, Metabase, and Superset.",
+  "requiredSkills": [
+    "Python",
+    "ETL/ELT",
+    "Apache Airflow",
+    "Google Cloud Platform (GCP)",
+    "Cloud Storage",
+    "DataProc",
+    "Cloud Run",
+    "Pub/Sub",
+    "BigQuery",
+    "CI/CD",
+    "Data Modeling",
+    "Database Design",
+    "SQL",
+    "NoSQL"
+  ],
+  "preferredQualifications": [
+    "GCP Certifications",
+    "Airflow Certifications",
+    "Data Engineering Certifications"
+  ],
+  "salaryRange": null,
+  "jobType": null,
+  "gpaCriteria": null,
+  "experienceLevel": "Entry-level",
+  "applicationDeadline": null,
+  "benefitsOffered": [],
+  "workModel": null
+}

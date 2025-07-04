@@ -1,0 +1,21 @@
+{
+  "jobTitle": "NodeJS Developer",
+  "companyName": null,
+  "jobLocation": "Navi Mumbai",
+  "jobDescription": "Develop and maintain NodeJS applications, ensuring clean, efficient, and secure code.  Collaborate with other developers, integrate and test applications, and provide L3 support as needed. Work with DevOps engineers on automated build/deployment pipelines. Requires understanding of business domains, programming languages, and APIs.",
+  "requiredSkills": [
+    "NodeJS",
+    "REST API",
+    "JAVA"
+  ],
+  "preferredQualifications": [
+    "Engineering Graduate"
+  ],
+  "salaryRange": null,
+  "jobType": null,
+  "gpaCriteria": null,
+  "experienceLevel": "Mid-level",
+  "applicationDeadline": null,
+  "benefitsOffered": [],
+  "workModel": null
+}

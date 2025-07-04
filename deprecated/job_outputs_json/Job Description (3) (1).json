@@ -1,0 +1,42 @@
+{
+  "jobTitle": null,
+  "companyName": "Avalara",
+  "jobLocation": null,
+  "jobDescription": "Build and grow a secure platform supporting Avalara's expanding business.  Develop high-quality software programs, review designs, write efficient code, perform code reviews and unit tests, collaborate with cross-functional teams, optimize programs for distributed systems, and participate in agile development.",
+  "requiredSkills": [
+    "Software Programming",
+    "Object-oriented programming",
+    "Debugging",
+    "Data structures and algorithms",
+    "Code optimization",
+    "High-performance code",
+    "Git",
+    "Agile software development"
+  ],
+  "preferredQualifications": [
+    "NoSQL Databases",
+    "Cloud (AWS, Google Cloud, Azure)",
+    "CI/CD (Jenkins)",
+    "Docker",
+    "Kubernetes",
+    "Docker Swarm",
+    "GitLab",
+    "GitHub",
+    "Scrum",
+    "Functional programming",
+    "Event-driven & asynchronous I/O frameworks",
+    "MySQL",
+    "Hadoop",
+    "Hbase",
+    "MongoDB",
+    "Machine Learning",
+    "Participation in coding contests (CodeForces, SPOJ, CodeChef, Topcoder, Code Gladiator, Hackathons)"
+  ],
+  "salaryRange": null,
+  "jobType": null,
+  "gpaCriteria": null,
+  "experienceLevel": null,
+  "applicationDeadline": null,
+  "benefitsOffered": [],
+  "workModel": null
+}

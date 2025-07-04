@@ -1,0 +1,27 @@
+{
+  "jobTitle": "Associate",
+  "companyName": "Sharekhan Ltd",
+  "jobLocation": "Airoli",
+  "jobDescription": "Researching, designing, implementing, and managing software programs. Testing and evaluating new programs. Identifying areas for modification in existing programs and subsequently developing these modifications. Writing and implementing efficient code. Determining operational practicality. Developing quality assurance procedures. Deploying software tools, processes, and metrics. Maintaining and upgrading existing systems. Training users. Working closely with other developers, UX designers, business and systems analysts.",
+  "requiredSkills": [
+    "Software Development",
+    "Software Design",
+    "Software Implementation",
+    "Testing",
+    "Code Writing",
+    "Quality Assurance",
+    "System Maintenance",
+    "User Training",
+    "Collaboration"
+  ],
+  "preferredQualifications": [
+    "B.Tech or M.Tech"
+  ],
+  "salaryRange": null,
+  "jobType": null,
+  "gpaCriteria": null,
+  "experienceLevel": "Beginner",
+  "applicationDeadline": null,
+  "benefitsOffered": [],
+  "workModel": null
+}

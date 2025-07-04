@@ -1,0 +1,31 @@
+{
+  "jobTitle": "Data Engineer",
+  "companyName": null,
+  "jobLocation": null,
+  "jobDescription": "Facilitate the operations of data scientists by employing machine learning techniques to create and sustain data analysis structures. Collaborate with coworkers, meet project needs, liaise with clients, conceptualize and generate infrastructure for big data access and analysis, reformulate existing frameworks, test structures, prepare data for scientists, detect and correct errors, ensure data backup and accessibility, and remain updated on industry standards.",
+  "requiredSkills": [
+    "Machine Learning",
+    "Data Structures",
+    "Programming",
+    "Deployment Strategies",
+    "Python",
+    "C++",
+    "Java",
+    "SQL",
+    "Data Modelling",
+    "Analytical Skills",
+    "Problem-solving Skills",
+    "Data Analysis",
+    "Big Data"
+  ],
+  "preferredQualifications": [
+    "Master's degree in a relevant field"
+  ],
+  "salaryRange": null,
+  "jobType": null,
+  "gpaCriteria": null,
+  "experienceLevel": null,
+  "applicationDeadline": null,
+  "benefitsOffered": [],
+  "workModel": null
+}

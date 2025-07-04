@@ -1,0 +1,31 @@
+{
+  "jobTitle": "Frontend Developer",
+  "companyName": null,
+  "jobLocation": null,
+  "jobDescription": "Translate company and customer needs into functional and appealing interactive applications. Responsibilities include using markup languages, maintaining and improving websites, optimizing applications, designing mobile features, collaborating with other developers, gathering user feedback, writing documentation, creating mockups, assisting back-end developers, ensuring graphic standards, and staying updated on technologies.",
+  "requiredSkills": [
+    "HTML",
+    "CSS",
+    "JavaScript",
+    "AngularJS",
+    "BackboneJS",
+    "ReactJS",
+    "Git",
+    "Mercurial",
+    "SVN",
+    "Adobe Suite",
+    "Photoshop",
+    "SEO"
+  ],
+  "preferredQualifications": [
+    "LESS",
+    "SASS"
+  ],
+  "salaryRange": null,
+  "jobType": null,
+  "gpaCriteria": null,
+  "experienceLevel": null,
+  "applicationDeadline": null,
+  "benefitsOffered": [],
+  "workModel": null
+}

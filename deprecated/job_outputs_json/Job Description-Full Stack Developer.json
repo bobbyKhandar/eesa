@@ -1,0 +1,32 @@
+{
+  "jobTitle": "Full Stack Developer",
+  "companyName": null,
+  "jobLocation": "Mumbai",
+  "jobDescription": "Develop, test, maintain, and improve web applications; optimize applications for speed and scale; integrate APIs/Machine Learning Models; develop internal utilities; continuously learn and implement new technologies.",
+  "requiredSkills": [
+    "Javascript",
+    "Nodejs",
+    "Reactjs",
+    "Python",
+    "Numpy",
+    "Pandas",
+    "Functional Paradigm",
+    "OOPS",
+    "Data Structures"
+  ],
+  "preferredQualifications": [
+    "Microsoft Azure",
+    "AWS",
+    "Git",
+    "Github",
+    "Command Line",
+    "Good Design skills"
+  ],
+  "salaryRange": null,
+  "jobType": null,
+  "gpaCriteria": null,
+  "experienceLevel": null,
+  "applicationDeadline": null,
+  "benefitsOffered": [],
+  "workModel": null
+}

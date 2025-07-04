@@ -1,0 +1,39 @@
+{
+  "jobTitle": "Scientific Software Developer",
+  "companyName": "CCTech",
+  "jobLocation": null,
+  "jobDescription": "Develop and maintain scientific/engineering software applications (desktop and cloud) using object-oriented/functional programming. Collaborate with team members and clients.  Ensure strong functionality and quality through testing and maintenance.",
+  "requiredSkills": [
+    "C#",
+    "C++",
+    "Python",
+    "JavaScript",
+    "OOPS",
+    "Problem solving",
+    "Analytical skills",
+    "Attention to detail"
+  ],
+  "preferredQualifications": [
+    "Full-stack technologies",
+    "Computational geometry algorithm",
+    "OpenGL/WebGL",
+    "CAD/CAM/CAE software development",
+    "Machine learning",
+    "Artificial intelligence",
+    "Augmented reality",
+    "Cloud computing",
+    "AWS"
+  ],
+  "salaryRange": null,
+  "jobType": null,
+  "gpaCriteria": null,
+  "experienceLevel": null,
+  "applicationDeadline": null,
+  "benefitsOffered": [
+    "Flexible work hours",
+    "Hybrid work module",
+    "Medical Policy",
+    "Growth opportunities"
+  ],
+  "workModel": "Hybrid"
+}

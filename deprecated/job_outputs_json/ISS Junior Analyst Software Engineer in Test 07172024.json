@@ -1,0 +1,26 @@
+{
+  "jobTitle": "Junior Analyst-Software Engineer in Test",
+  "companyName": "ISS",
+  "jobLocation": "Mumbai",
+  "jobDescription": "Software Engineer in Test responsible for designing, planning, executing, and supporting testing efforts for multiple projects.  This involves automation testing (70% of the role), collaborating with cross-functional teams, managing QA environments, and developing automation tools.  The role also includes non-automation/functional testing (30%).",
+  "requiredSkills": [
+    "Java",
+    "Automation Testing Frameworks",
+    "Defect Tracking System (e.g., Jira)",
+    "RDBMS interaction",
+    "SQL/SPs",
+    "Problem-solving",
+    "Communication",
+    "Collaboration"
+  ],
+  "preferredQualifications": [
+    "Advanced knowledge on MS SQL Server or Oracle database systems"
+  ],
+  "salaryRange": null,
+  "jobType": null,
+  "gpaCriteria": null,
+  "experienceLevel": "Entry-level",
+  "applicationDeadline": null,
+  "benefitsOffered": [],
+  "workModel": null
+}

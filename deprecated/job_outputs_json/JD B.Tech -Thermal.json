@@ -1,0 +1,30 @@
+{
+  "jobTitle": null,
+  "companyName": null,
+  "jobLocation": null,
+  "jobDescription": "Execute and deliver system simulation projects using 1D simulation tools.  Master the physics of simulations in thermal and flow analysis, proposing design changes and contributing to value engineering. Review product evolution, coordinate with product managers, and participate in new product development. Ensure customer focus and on-time delivery.  Lead technical mentorship, document best practices, and drive knowledge sharing. Stay current on technology advancements and promote innovation through virtual PoC projects.",
+  "requiredSkills": [
+    "Numerical methods",
+    "Heat transfer",
+    "Fluid dynamics",
+    "Industrial applications of design, testing and validation (HVAC/Refrigeration, compressors, heat exchangers)",
+    "Experimental methods",
+    "1D simulation tools",
+    "Thermal Analysis",
+    "Flow Analysis (Room Air conditioner and HVAC equipment)"
+  ],
+  "preferredQualifications": [
+    "Knowledge about noise and vibration",
+    "Testing standards related to HVAC/Refrigeration",
+    "Virtual simulation",
+    "VapCyc",
+    "CoilDesigner"
+  ],
+  "salaryRange": null,
+  "jobType": null,
+  "gpaCriteria": null,
+  "experienceLevel": null,
+  "applicationDeadline": null,
+  "benefitsOffered": [],
+  "workModel": null
+}

@@ -1,0 +1,32 @@
+{
+  "jobTitle": "Fresher/Junior MERN Stack Developer",
+  "companyName": null,
+  "jobLocation": "Mumbai",
+  "jobDescription": "Develop and maintain user-facing features using React.js, build reusable components, translate designs into code, optimize components for performance, work on backend development with Node.js and Express.js, and implement security and data protection measures.",
+  "requiredSkills": [
+    "React.js",
+    "Node.js",
+    "Express.js",
+    "HTML5",
+    "CSS3",
+    "JavaScript",
+    "DOM manipulation",
+    "EcmaScript (ES6 and above)",
+    "RESTful APIs",
+    "JSON Web Token",
+    "Git"
+  ],
+  "preferredQualifications": [
+    "Experience with data structure libraries (e.g., Immutable.js)",
+    "Knowledge of isomorphic React",
+    "Familiarity with modern front-end build pipelines and tools",
+    "Experience with common front-end development tools such as Babel, Webpack, NPM, etc."
+  ],
+  "salaryRange": null,
+  "jobType": null,
+  "gpaCriteria": null,
+  "experienceLevel": "Entry-level",
+  "applicationDeadline": null,
+  "benefitsOffered": [],
+  "workModel": "On-site"
+}

@@ -1,0 +1,45 @@
+{
+  "jobTitle": "Full Stack Developer (Associate)",
+  "companyName": "LogisticsNow",
+  "jobLocation": null,
+  "jobDescription": "Back-end web development for India's deep data driven digital logistics platform.  Involves all aspects of the SDLC, working across teams to deliver a world-class product.  Design, code, test, and support software applications and services using Python, SQL/NoSQL databases, REST APIs, and other technologies.",
+  "requiredSkills": [
+    "Python",
+    "SQL",
+    "NoSQL",
+    "Cosmos MongoDB",
+    "Redis Caching",
+    "REST APIs",
+    "JSON",
+    "XML",
+    "NPM Package Manager",
+    "Web sockets",
+    "SignalR",
+    "OS Knowledge (Process, Memory, I/O Management)",
+    "Git",
+    "API Deployment",
+    "Caching",
+    "API Security",
+    "Azure DevOps",
+    "Cloud",
+    "Agile Development",
+    "HTML",
+    "JavaScript"
+  ],
+  "preferredQualifications": [
+    "2 years of full-time experience as a developer",
+    "Experience with multiple hands-on product development cycles",
+    "Ability to think big, work smart, and support the team"
+  ],
+  "salaryRange": "Competitive",
+  "jobType": "Full Time & Internship",
+  "gpaCriteria": "70%+ in 10th and 12th grade. First class throughout academic career.",
+  "experienceLevel": "Entry-level",
+  "applicationDeadline": null,
+  "benefitsOffered": [
+    "Competitive compensation",
+    "Performance-based rewards",
+    "ESOPs"
+  ],
+  "workModel": null
+}

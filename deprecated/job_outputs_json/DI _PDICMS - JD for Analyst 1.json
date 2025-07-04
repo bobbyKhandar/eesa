@@ -1,0 +1,35 @@
+{
+  "jobTitle": "Analyst",
+  "companyName": "Deloitte",
+  "jobLocation": null,
+  "jobDescription": "Build and nurture positive working relationships with teams and clients. Develop solutions using full-stack engineering, low-code/no-code, and platform configuration/customization on leading Marketing & Commerce products. Proactively identify and resolve workstream risks and issues. Improve efficiency and effectiveness of key processes. Build sector knowledge and apply awareness of global trends to address client needs.",
+  "requiredSkills": [
+    "Full-stack engineering",
+    "Low-code/no-code development",
+    "Platform configuration/customization",
+    "Project management",
+    "Client communication",
+    "Problem-solving",
+    "Technical solution design",
+    "Documentation (requirements, design, use cases, test plans, training manuals)",
+    "SQL"
+  ],
+  "preferredQualifications": [
+    "Integration with external systems",
+    "Cloud-based platform experience",
+    "Experience with hyperscalers (AWS, Azure, GCP, OCI)",
+    "Java",
+    ".Net",
+    "Object-oriented programming",
+    "Core Java concepts and experience with Struts, Spring, or MVC frameworks",
+    "JavaScript",
+    "DBMS concepts"
+  ],
+  "salaryRange": null,
+  "jobType": "Full-time",
+  "gpaCriteria": null,
+  "experienceLevel": null,
+  "applicationDeadline": null,
+  "benefitsOffered": [],
+  "workModel": null
+}

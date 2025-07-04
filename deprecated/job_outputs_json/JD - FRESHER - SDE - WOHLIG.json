@@ -1,0 +1,26 @@
+{
+  "jobTitle": "Fresher - SDE",
+  "companyName": "Wohlig",
+  "jobLocation": null,
+  "jobDescription": "Develop and maintain high-quality, innovative, and robust software.  Involves designing interactive applications, developing software solutions using various programming languages and frameworks, working with relational databases, and following the software development lifecycle.",
+  "requiredSkills": [
+    "Java",
+    "Ruby on Rails",
+    "C++",
+    "Relational Databases",
+    "SQL",
+    "ORM technologies (JPA2, Hibernate)",
+    "Web application development (JSF, Wicket, GWT, Spring MVC)",
+    "Test-driven development",
+    "Software engineering tools",
+    "Requirements and specifications documentation"
+  ],
+  "preferredQualifications": [],
+  "salaryRange": null,
+  "jobType": null,
+  "gpaCriteria": null,
+  "experienceLevel": "Entry-level",
+  "applicationDeadline": null,
+  "benefitsOffered": [],
+  "workModel": null
+}
