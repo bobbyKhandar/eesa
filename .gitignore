@@ -54,3 +54,11 @@ test
 debug_output.jpg
 page1.png
 page2.png
+
+
+deprecated/eng.traineddata
+
+node_modules
+job_outputs_json
+skills_report.json
+frontend/.next
