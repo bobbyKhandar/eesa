@@ -1,0 +1,20 @@
+{
+  "dependencies": {
+    "@google/generative-ai": "^0.24.1",
+    "dotenv": "^17.0.1",
+    "fast-glob": "^3.3.3",
+    "tesseract.js": "^6.0.1",
+    "textract": "^2.5.0"
+  },
+  "name": "deprecated",
+  "version": "1.0.0",
+  "description": "This folder contains legacy code that was once part of the active codebase but has since been replaced by newer tools, architectures, or implementations.",
+  "main": "filesCounter.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "module"
+}
