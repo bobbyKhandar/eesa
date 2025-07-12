@@ -1,0 +1,61 @@
+# This file helps enforce consistent line endings across environments.
+# Generated with assistance from an LLM — please review before using in production.
+
+# ===================================================================================
+# .gitattributes
+#
+# This file ensures consistency in your repository across different operating
+# systems and text editors. It's a "set it and forget it" best practice.
+# ===================================================================================
+
+# Set the default behavior to be "auto".
+# Git will try to guess whether a file is text or binary.
+* text=auto
+
+
+# -----------------------------------------------------------------------------------
+# Text Files: Enforce Unix-style line endings (LF) for all common text files.
+#
+# This is the most important section. It solves the "LF will be replaced by CRLF"
+# warnings and prevents cross-platform issues.
+# -----------------------------------------------------------------------------------
+
+# Source Code
+*.{js,jsx,ts,tsx}    text eol=lf
+*.{html,css,scss,less} text eol=lf
+*.py                  text eol=lf
+*.sh                  text eol=lf
+
+# Configuration & Data Files
+*.{json,yml,yaml,xml} text eol=lf
+*.{md,mdx}             text eol=lf
+.env*                 text eol=lf
+.git*                 text eol=lf
+*ignore               text eol=lf
+*rc                   text eol=lf
+*config               text eol=lf
+LICENSE               text eol=lf
+*.sql                 text eol=lf
+*.svg                 text eol=lf
+
+
+# -----------------------------------------------------------------------------------
+# Binary Files: Tell Git to treat these files as binary.
+#
+# Git will not try to change line endings, diff, or merge these files,
+# which prevents them from being corrupted.
+# -----------------------------------------------------------------------------------
+
+# Images
+*.{png,jpg,jpeg,gif,ico} binary
+
+# Fonts
+*.{eot,ttf,woff,woff2}   binary
+
+# Archives & Documents
+*.{zip,rar,7z}         binary
+*.{pdf,doc,docx,xls,xlsx} binary
+
+# Other
+*.{lockb,pnpm-lock.yaml} binary
+*.{dll,exe,so,pdb}      binary
