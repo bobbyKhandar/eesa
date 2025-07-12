@@ -1,49 +1,25 @@
-"use client";
-import Link from "next/link";
-import { Button } from "@/components/ui/button";
-import { useEffect, useState } from "react";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardFooter,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import { BookOpen, FileText, BarChart3, Plus } from "lucide-react";
-
+import Link from "next/link"
+import { Button } from "@/components/ui/button"
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
+import { BookOpen, FileText, BarChart3, Plus } from "lucide-react"
+import { SignedOut,SignedIn } from "@clerk/nextjs"
+import { SignInButton } from "@clerk/nextjs"
+import { ArrowRight } from "lucide-react"
 export default function DashboardPage() {
-  const [userInfo, getuserInfo] = useState(null);
-  const [averageScore, setAverageScore] = useState(null);
-  useEffect(() => {
-    async function getuserrole() {
-      const res = await fetch("/api/user?email=bobby.k@somaiya.edu");
-      const data = await res.json();
-      console.log(data);
-      getuserInfo(data);
-    }
-    getuserrole();
-  }, []);
-  useEffect(() => {
-    async function computeAverageScore() {
-      if (userInfo?.userHistory?.length) {
-        let total = 0;
-        let allocated = 0;
-
-        userInfo.userHistory.forEach((exam) => {
-          total += exam.total;
-          allocated += exam.allocated;
-        });
-
-        const avg = allocated ? ((allocated / total) * 100).toFixed(2) : 0;
-        setAverageScore(avg);
-      }
-    }
-
-    computeAverageScore();
-  }, [userInfo]);
   return (
     <div className="space-y-6">
+      <SignedOut>
+        <div className="flex flex-col items-center justify-center h-screen">
+          <h1 className="text-2xl font-bold mb-4">Please sign in to access the dashboard</h1>
+                  <SignInButton>
+                  <Button size="lg" className="gap-1" >
+                    Sign in <ArrowRight className="h-4 w-4" />
+                  </Button>
+                </SignInButton>
+        </div>
+      </SignedOut>
+
+      <SignedIn>
       <div className="flex items-center justify-between">
         <h1 className="text-3xl font-bold">Dashboard</h1>
         <Link href="/dashboard/exams/create">
@@ -60,21 +36,18 @@ export default function DashboardPage() {
             <BookOpen className="h-4 w-4 text-gray-500 dark:text-gray-400" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">
-              {userInfo ? userInfo.totalAllocatedExams : "loading..."}
-            </div>
-            <p className="text-xs text-gray-500 dark:text-gray-400"></p>
+            <div className="text-2xl font-bold">12</div>
+            <p className="text-xs text-gray-500 dark:text-gray-400">+2 from last month</p>
           </CardContent>
         </Card>
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium">
-              <div className="text-2xl font-bold">Completed Exams</div>
-            </CardTitle>
+            <CardTitle className="text-sm font-medium">Completed Exams</CardTitle>
             <FileText className="h-4 w-4 text-gray-500 dark:text-gray-400" />
           </CardHeader>
           <CardContent>
-            {userInfo ? userInfo.totalCompletedExams : "loading..."}
+            <div className="text-2xl font-bold">156</div>
+            <p className="text-xs text-gray-500 dark:text-gray-400">+23 from last month</p>
           </CardContent>
         </Card>
         <Card>
@@ -83,12 +56,8 @@ export default function DashboardPage() {
             <BarChart3 className="h-4 w-4 text-gray-500 dark:text-gray-400" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">
-              {averageScore ? averageScore : "loading..."}
-            </div>
-            <p className="text-xs text-gray-500 dark:text-gray-400">
-              +2% from last month
-            </p>
+            <div className="text-2xl font-bold">78%</div>
+            <p className="text-xs text-gray-500 dark:text-gray-400">+2% from last month</p>
           </CardContent>
         </Card>
       </div>
@@ -128,15 +97,7 @@ export default function DashboardPage() {
                 <p>Submissions: {exam.submissions}</p>
                 <p>
                   Status:{" "}
-                  <span
-                    className={
-                      exam.status === "Active"
-                        ? "text-green-500"
-                        : "text-blue-500"
-                    }
-                  >
-                    {exam.status}
-                  </span>
+                  <span className={exam.status === "Active" ? "text-green-500" : "text-blue-500"}>{exam.status}</span>
                 </p>
               </div>
             </CardContent>
@@ -150,6 +111,7 @@ export default function DashboardPage() {
           </Card>
         ))}
       </div>
+    </SignedIn>
     </div>
-  );
+  )
 }

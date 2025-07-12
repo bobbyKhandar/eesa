@@ -1,69 +1,30 @@
-"use client";
+"use client"
 
-import { useState } from "react";
-import Link from "next/link";
-import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardFooter,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
-import {
-  ArrowLeft,
-  Plus,
-  Trash2,
-  Upload,
-  BookOpen,
-  Users,
-  FileText,
-} from "lucide-react";
+import { useState } from "react"
+import Link from "next/link"
+import { Button } from "@/components/ui/button"
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import { Textarea } from "@/components/ui/textarea"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
+import { ArrowLeft, Plus, Trash2, Upload, BookOpen, Users, FileText } from "lucide-react"
 
 export default function CreateExamPage() {
-  const [examType, setExamType] = useState<string | null>(null);
-  const [syllabusType, setSyllabusType] = useState<string | null>(null);
-  const [selectedBranch, setSelectedBranch] = useState("");
-  const [selectedSemester, setSelectedSemester] = useState("");
-  const [selectedSubject, setSelectedSubject] = useState("");
-  const [showLLMInput, setShowLLMInput] = useState(false);
-  const [llmPrompt, setLlmPrompt] = useState("");
-  const [llmquestionsweightage, setllmquestionsweightage] = useState(
-    "50% 5 marks , 50% 10 marks"
-  );
-  const [llmQuestionQuantity, setllmQuestionQuantity] = useState(10);
+  const [examType, setExamType] = useState<string | null>(null)
+  const [syllabusType, setSyllabusType] = useState<string | null>(null)
+  const [selectedBranch, setSelectedBranch] = useState("")
+  const [selectedSemester, setSelectedSemester] = useState("")
+  const [selectedSubject, setSelectedSubject] = useState("")
   const [questions, setQuestions] = useState([
     { id: 1, type: "essay", text: "", marks: 10 },
-    {
-      id: 2,
-      type: "mcq",
-      text: "",
-      options: ["", "", "", ""],
-      correctOption: 0,
-      marks: 5,
-    },
-  ]);
+    { id: 2, type: "mcq", text: "", options: ["", "", "", ""], correctOption: 0, marks: 5 },
+  ])
 
   // Mock data for branches, semesters, and subjects
-  const branches = [
-    "Computer Science",
-    "Electrical Engineering",
-    "Mechanical Engineering",
-    "Civil Engineering",
-  ];
+  const branches = ["Computer Science", "Electrical Engineering", "Mechanical Engineering", "Civil Engineering"]
   const semesters = [
     "Semester 1",
     "Semester 2",
@@ -73,66 +34,43 @@ export default function CreateExamPage() {
     "Semester 6",
     "Semester 7",
     "Semester 8",
-  ];
+  ]
   const subjects = {
     "Computer Science": {
-      "Semester 1": [
-        "Introduction to Programming",
-        "Digital Logic",
-        "Mathematics I",
-      ],
-      "Semester 2": [
-        "Data Structures",
-        "Computer Organization",
-        "Mathematics II",
-      ],
+      "Semester 1": ["Introduction to Programming", "Digital Logic", "Mathematics I"],
+      "Semester 2": ["Data Structures", "Computer Organization", "Mathematics II"],
       // Add more semesters and subjects as needed
     },
     "Electrical Engineering": {
-      "Semester 1": [
-        "Basic Electrical Engineering",
-        "Physics",
-        "Mathematics I",
-      ],
+      "Semester 1": ["Basic Electrical Engineering", "Physics", "Mathematics I"],
       "Semester 2": ["Circuit Theory", "Electronics", "Mathematics II"],
       // Add more branches as needed
     },
     // Add more branches as needed
-  };
+  }
 
   const addQuestion = (type: string) => {
-    const newId =
-      questions.length > 0 ? Math.max(...questions.map((q) => q.id)) + 1 : 1;
+    const newId = questions.length > 0 ? Math.max(...questions.map((q) => q.id)) + 1 : 1
 
     if (type === "essay") {
-      setQuestions([...questions, { id: newId, type, text: "", marks: 10 }]);
+      setQuestions([...questions, { id: newId, type, text: "", marks: 10 }])
     } else if (type === "mcq") {
-      setQuestions([
-        ...questions,
-        {
-          id: newId,
-          type,
-          text: "",
-          options: ["", "", "", ""],
-          correctOption: 0,
-          marks: 5,
-        },
-      ]);
+      setQuestions([...questions, { id: newId, type, text: "", options: ["", "", "", ""], correctOption: 0, marks: 5 }])
     }
-  };
+  }
 
   const removeQuestion = (id: number) => {
-    setQuestions(questions.filter((q) => q.id !== id));
-  };
+    setQuestions(questions.filter((q) => q.id !== id))
+  }
 
   const updateQuestion = (id: number, data: any) => {
-    setQuestions(questions.map((q) => (q.id === id ? { ...q, ...data } : q)));
-  };
+    setQuestions(questions.map((q) => (q.id === id ? { ...q, ...data } : q)))
+  }
 
   // Step 1: Select exam type (Personal Use or Teacher Assignment)
   if (!examType) {
     return (
-      <div>
+      <div className="space-y-6">
         <div className="flex items-center gap-4">
           <Link href="/dashboard/exams">
             <Button variant="outline" size="icon">
@@ -145,9 +83,7 @@ export default function CreateExamPage() {
         <Card>
           <CardHeader>
             <CardTitle>Select Exam Type</CardTitle>
-            <CardDescription>
-              Choose how you want to use this exam
-            </CardDescription>
+            <CardDescription>Choose how you want to use this exam</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -163,8 +99,7 @@ export default function CreateExamPage() {
                 </CardHeader>
                 <CardContent>
                   <p className="text-sm text-gray-500 dark:text-gray-400">
-                    Create an exam for your personal study or practice. You'll
-                    be the only one taking this exam.
+                    Create an exam for your personal study or practice. You'll be the only one taking this exam.
                   </p>
                 </CardContent>
               </Card>
@@ -181,8 +116,7 @@ export default function CreateExamPage() {
                 </CardHeader>
                 <CardContent>
                   <p className="text-sm text-gray-500 dark:text-gray-400">
-                    Create an exam to assign to students. You'll be able to
-                    share this exam and collect responses.
+                    Create an exam to assign to students. You'll be able to share this exam and collect responses.
                   </p>
                 </CardContent>
               </Card>
@@ -190,7 +124,7 @@ export default function CreateExamPage() {
           </CardContent>
         </Card>
       </div>
-    );
+    )
   }
 
   // Step 2: Select syllabus type (Pre-uploaded or Personal)
@@ -198,11 +132,7 @@ export default function CreateExamPage() {
     return (
       <div className="space-y-6">
         <div className="flex items-center gap-4">
-          <Button
-            variant="outline"
-            size="icon"
-            onClick={() => setExamType(null)}
-          >
+          <Button variant="outline" size="icon" onClick={() => setExamType(null)}>
             <ArrowLeft className="h-4 w-4" />
           </Button>
           <h1 className="text-3xl font-bold">Create New Exam</h1>
@@ -231,8 +161,7 @@ export default function CreateExamPage() {
                 </CardHeader>
                 <CardContent>
                   <p className="text-sm text-gray-500 dark:text-gray-400">
-                    Use an existing syllabus from our database for a specific
-                    subject.
+                    Use an existing syllabus from our database for a specific subject.
                   </p>
                 </CardContent>
               </Card>
@@ -257,22 +186,15 @@ export default function CreateExamPage() {
           </CardContent>
         </Card>
       </div>
-    );
+    )
   }
 
   // Step 3: If pre-uploaded syllabus, select branch, semester, and subject
-  if (
-    syllabusType === "pre-uploaded" &&
-    (!selectedBranch || !selectedSemester || !selectedSubject)
-  ) {
+  if (syllabusType === "pre-uploaded" && (!selectedBranch || !selectedSemester || !selectedSubject)) {
     return (
       <div className="space-y-6">
         <div className="flex items-center gap-4">
-          <Button
-            variant="outline"
-            size="icon"
-            onClick={() => setSyllabusType(null)}
-          >
+          <Button variant="outline" size="icon" onClick={() => setSyllabusType(null)}>
             <ArrowLeft className="h-4 w-4" />
           </Button>
           <h1 className="text-3xl font-bold">Select Subject</h1>
@@ -281,18 +203,13 @@ export default function CreateExamPage() {
         <Card>
           <CardHeader>
             <CardTitle>Choose Subject from Syllabus</CardTitle>
-            <CardDescription>
-              Select the branch, semester, and subject for your exam
-            </CardDescription>
+            <CardDescription>Select the branch, semester, and subject for your exam</CardDescription>
           </CardHeader>
           <CardContent className="space-y-6">
             <div className="grid gap-4">
               <div className="grid gap-2">
                 <Label htmlFor="branch">Branch</Label>
-                <Select
-                  value={selectedBranch}
-                  onValueChange={setSelectedBranch}
-                >
+                <Select value={selectedBranch} onValueChange={setSelectedBranch}>
                   <SelectTrigger id="branch">
                     <SelectValue placeholder="Select branch" />
                   </SelectTrigger>
@@ -308,11 +225,7 @@ export default function CreateExamPage() {
 
               <div className="grid gap-2">
                 <Label htmlFor="semester">Semester</Label>
-                <Select
-                  value={selectedSemester}
-                  onValueChange={setSelectedSemester}
-                  disabled={!selectedBranch}
-                >
+                <Select value={selectedSemester} onValueChange={setSelectedSemester} disabled={!selectedBranch}>
                   <SelectTrigger id="semester">
                     <SelectValue placeholder="Select semester" />
                   </SelectTrigger>
@@ -339,13 +252,11 @@ export default function CreateExamPage() {
                   <SelectContent>
                     {selectedBranch &&
                       selectedSemester &&
-                      subjects[selectedBranch]?.[selectedSemester]?.map(
-                        (subject) => (
-                          <SelectItem key={subject} value={subject}>
-                            {subject}
-                          </SelectItem>
-                        )
-                      )}
+                      subjects[selectedBranch]?.[selectedSemester]?.map((subject) => (
+                        <SelectItem key={subject} value={subject}>
+                          {subject}
+                        </SelectItem>
+                      ))}
                   </SelectContent>
                 </Select>
               </div>
@@ -353,9 +264,7 @@ export default function CreateExamPage() {
           </CardContent>
           <CardFooter>
             <Button
-              disabled={
-                !selectedBranch || !selectedSemester || !selectedSubject
-              }
+              disabled={!selectedBranch || !selectedSemester || !selectedSubject}
               onClick={() => {
                 // Continue to the main exam creation form
                 // The selected branch, semester, and subject are stored in state
@@ -366,7 +275,7 @@ export default function CreateExamPage() {
           </CardFooter>
         </Card>
       </div>
-    );
+    )
   }
 
   // Main exam creation form (Step 3 for personal syllabus or Step 4 for pre-uploaded syllabus)
@@ -377,15 +286,12 @@ export default function CreateExamPage() {
           variant="outline"
           size="icon"
           onClick={() => {
-            if (
-              syllabusType === "pre-uploaded" &&
-              (selectedBranch || selectedSemester || selectedSubject)
-            ) {
-              setSelectedBranch("");
-              setSelectedSemester("");
-              setSelectedSubject("");
+            if (syllabusType === "pre-uploaded" && (selectedBranch || selectedSemester || selectedSubject)) {
+              setSelectedBranch("")
+              setSelectedSemester("")
+              setSelectedSubject("")
             } else {
-              setSyllabusType(null);
+              setSyllabusType(null)
             }
           }}
         >
@@ -405,9 +311,7 @@ export default function CreateExamPage() {
       <Card>
         <CardHeader>
           <CardTitle>Exam Details</CardTitle>
-          <CardDescription>
-            Enter the basic information about your exam
-          </CardDescription>
+          <CardDescription>Enter the basic information about your exam</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid gap-2">
@@ -456,9 +360,7 @@ export default function CreateExamPage() {
       <Card>
         <CardHeader>
           <CardTitle>AI Evaluation Settings</CardTitle>
-          <CardDescription>
-            Configure how the AI will evaluate responses
-          </CardDescription>
+          <CardDescription>Configure how the AI will evaluate responses</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid gap-2">
@@ -488,11 +390,7 @@ export default function CreateExamPage() {
               <Label>Bloom's Taxonomy Focus</Label>
               <div className="grid grid-cols-2 gap-4">
                 <div className="flex items-center space-x-2">
-                  <input
-                    type="checkbox"
-                    id="remember"
-                    className="h-4 w-4 rounded border-gray-300"
-                  />
+                  <input type="checkbox" id="remember" className="h-4 w-4 rounded border-gray-300" />
                   <label
                     htmlFor="remember"
                     className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
@@ -501,11 +399,7 @@ export default function CreateExamPage() {
                   </label>
                 </div>
                 <div className="flex items-center space-x-2">
-                  <input
-                    type="checkbox"
-                    id="understand"
-                    className="h-4 w-4 rounded border-gray-300"
-                  />
+                  <input type="checkbox" id="understand" className="h-4 w-4 rounded border-gray-300" />
                   <label
                     htmlFor="understand"
                     className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
@@ -514,11 +408,7 @@ export default function CreateExamPage() {
                   </label>
                 </div>
                 <div className="flex items-center space-x-2">
-                  <input
-                    type="checkbox"
-                    id="apply"
-                    className="h-4 w-4 rounded border-gray-300"
-                  />
+                  <input type="checkbox" id="apply" className="h-4 w-4 rounded border-gray-300" />
                   <label
                     htmlFor="apply"
                     className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
@@ -527,11 +417,7 @@ export default function CreateExamPage() {
                   </label>
                 </div>
                 <div className="flex items-center space-x-2">
-                  <input
-                    type="checkbox"
-                    id="analyze"
-                    className="h-4 w-4 rounded border-gray-300"
-                  />
+                  <input type="checkbox" id="analyze" className="h-4 w-4 rounded border-gray-300" />
                   <label
                     htmlFor="analyze"
                     className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
@@ -540,11 +426,7 @@ export default function CreateExamPage() {
                   </label>
                 </div>
                 <div className="flex items-center space-x-2">
-                  <input
-                    type="checkbox"
-                    id="evaluate"
-                    className="h-4 w-4 rounded border-gray-300"
-                  />
+                  <input type="checkbox" id="evaluate" className="h-4 w-4 rounded border-gray-300" />
                   <label
                     htmlFor="evaluate"
                     className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
@@ -553,11 +435,7 @@ export default function CreateExamPage() {
                   </label>
                 </div>
                 <div className="flex items-center space-x-2">
-                  <input
-                    type="checkbox"
-                    id="create"
-                    className="h-4 w-4 rounded border-gray-300"
-                  />
+                  <input type="checkbox" id="create" className="h-4 w-4 rounded border-gray-300" />
                   <label
                     htmlFor="create"
                     className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
@@ -572,130 +450,45 @@ export default function CreateExamPage() {
       </Card>
 
       <Card>
-        <CardHeader className="flex flex-col gap-4 my-10">
-          <div className="flex flex-row items-center justify-between w-full">
-            <div>
-              <CardTitle>Questions</CardTitle>
-              <CardDescription>
-                Add and configure exam questions
-              </CardDescription>
-            </div>
-            <div className="flex flex-row justify-between items-center gap-4">
-              <Button
-                onClick={() => setShowLLMInput(!showLLMInput)}
-                size="sm"
-                className="gap-4 mx-20"
-              >
-                <Plus className="h-4 w-4" /> Add Questions Using LLM
-              </Button>
-
-              <Tabs defaultValue="essay">
-                <TabsList>
-                  <TabsTrigger value="essay">Essay</TabsTrigger>
-                  <TabsTrigger value="mcq">Multiple Choice</TabsTrigger>
-                </TabsList>
-                <TabsContent value="essay">
-                  <Button
-                    onClick={() => addQuestion("essay")}
-                    size="sm"
-                    className="gap-1"
-                  >
-                    <Plus className="h-4 w-4" /> Add Essay Question
-                  </Button>
-                </TabsContent>
-                <TabsContent value="mcq">
-                  <Button
-                    onClick={() => addQuestion("mcq")}
-                    size="sm"
-                    className="gap-1"
-                  >
-                    <Plus className="h-4 w-4" /> Add MCQ
-                  </Button>
-                </TabsContent>
-              </Tabs>
-            </div>
+        <CardHeader className="flex flex-row items-center justify-between">
+          <div>
+            <CardTitle>Questions</CardTitle>
+            <CardDescription>Add and configure exam questions</CardDescription>
           </div>
-
-          {showLLMInput && (
-            <div className="flex items-center gap-2 w-full">
-              <div>
-                <Label>
-                  Describe the type of question you want alongside the number of
-                  questions along side the weightage percentage
-                </Label>
-                <Input
-                  placeholder="Describe the type of question you want alongside the number of questions along side the weightage percentage"
-                  value={llmPrompt}
-                  onChange={(e) => setLlmPrompt(e.target.value)}
-                  className="flex-1"
-                />
-              </div>
-              <div>
-                <Label>
-                  enter the weightage of the questions for eg: 50%:5 marks
-                  ,30%:10 marks,20%:15 marks
-                </Label>
-                <Input
-                  placeholder="Describe the type of question you want alongside the number of questions along side the weightage percentage"
-                  value={llmquestionsweightage}
-                  onChange={(e) => setllmquestionsweightage(e.target.value)}
-                  className="flex-1"
-                />
-              </div>
-              <div>
-                <Label>Number of total questions</Label>
-                <Input
-                  placeholder="Describe the type of question you want alongside the number of questions "
-                  value={llmQuestionQuantity}
-                  type="number"
-                  onChange={(e) => setllmQuestionQuantity(e.target.value)}
-                  className="flex-1"
-                />
-              </div>
-              <Button
-                size="sm"
-                onClick={async () => {
-                  // await addQuestion("llm", llmPrompt);
-                  setShowLLMInput(false);
-                  setLlmPrompt("");
-                }}
-              >
-                Generate
+          <Tabs defaultValue="essay">
+            <TabsList>
+              <TabsTrigger value="essay">Essay</TabsTrigger>
+              <TabsTrigger value="mcq">Multiple Choice</TabsTrigger>
+            </TabsList>
+            <TabsContent value="essay">
+              <Button onClick={() => addQuestion("essay")} size="sm" className="gap-1">
+                <Plus className="h-4 w-4" /> Add Essay Question
               </Button>
-            </div>
-          )}
+            </TabsContent>
+            <TabsContent value="mcq">
+              <Button onClick={() => addQuestion("mcq")} size="sm" className="gap-1">
+                <Plus className="h-4 w-4" /> Add MCQ
+              </Button>
+            </TabsContent>
+          </Tabs>
         </CardHeader>
-
         <CardContent className="space-y-6">
           {questions.map((question, index) => (
-            <Card
-              key={question.id}
-              className="border border-gray-200 dark:border-gray-800"
-            >
+            <Card key={question.id} className="border border-gray-200 dark:border-gray-800">
               <CardHeader className="flex flex-row items-center justify-between">
-                <CardTitle className="text-base">
-                  Question {index + 1}
-                </CardTitle>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={() => removeQuestion(question.id)}
-                >
+                <CardTitle className="text-base">Question {index + 1}</CardTitle>
+                <Button variant="ghost" size="icon" onClick={() => removeQuestion(question.id)}>
                   <Trash2 className="h-4 w-4" />
                 </Button>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="grid gap-2">
-                  <Label htmlFor={`question-${question.id}`}>
-                    Question Text
-                  </Label>
+                  <Label htmlFor={`question-${question.id}`}>Question Text</Label>
                   <Textarea
                     id={`question-${question.id}`}
                     placeholder="Enter question text"
                     value={question.text}
-                    onChange={(e) =>
-                      updateQuestion(question.id, { text: e.target.value })
-                    }
+                    onChange={(e) => updateQuestion(question.id, { text: e.target.value })}
                   />
                 </div>
 
@@ -708,24 +501,16 @@ export default function CreateExamPage() {
                           placeholder={`Option ${optIndex + 1}`}
                           value={option}
                           onChange={(e) => {
-                            const newOptions = [...question.options];
-                            newOptions[optIndex] = e.target.value;
-                            updateQuestion(question.id, {
-                              options: newOptions,
-                            });
+                            const newOptions = [...question.options]
+                            newOptions[optIndex] = e.target.value
+                            updateQuestion(question.id, { options: newOptions })
                           }}
                         />
                         <Select
-                          value={
-                            question.correctOption === optIndex
-                              ? "correct"
-                              : "incorrect"
-                          }
+                          value={question.correctOption === optIndex ? "correct" : "incorrect"}
                           onValueChange={(value) => {
                             if (value === "correct") {
-                              updateQuestion(question.id, {
-                                correctOption: optIndex,
-                              });
+                              updateQuestion(question.id, { correctOption: optIndex })
                             }
                           }}
                         >
@@ -748,11 +533,7 @@ export default function CreateExamPage() {
                     id={`marks-${question.id}`}
                     type="number"
                     value={question.marks}
-                    onChange={(e) =>
-                      updateQuestion(question.id, {
-                        marks: Number.parseInt(e.target.value) || 0,
-                      })
-                    }
+                    onChange={(e) => updateQuestion(question.id, { marks: Number.parseInt(e.target.value) || 0 })}
                   />
                 </div>
 
@@ -795,12 +576,8 @@ export default function CreateExamPage() {
 
           {questions.length === 0 && (
             <div className="flex flex-col items-center justify-center py-8 text-center">
-              <p className="text-gray-500 dark:text-gray-400">
-                No questions added yet
-              </p>
-              <p className="text-sm text-gray-500 dark:text-gray-400">
-                Use the buttons above to add questions
-              </p>
+              <p className="text-gray-500 dark:text-gray-400">No questions added yet</p>
+              <p className="text-sm text-gray-500 dark:text-gray-400">Use the buttons above to add questions</p>
             </div>
           )}
         </CardContent>
@@ -810,5 +587,5 @@ export default function CreateExamPage() {
         </CardFooter>
       </Card>
     </div>
-  );
+  )
 }

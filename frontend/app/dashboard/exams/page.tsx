@@ -1,26 +1,10 @@
-import Link from "next/link";
-import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardFooter,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import {
-  Search,
-  Plus,
-  Clock,
-  BookOpen,
-  ArrowRight,
-  Eye,
-  Edit,
-  Trash2,
-} from "lucide-react";
+import Link from "next/link"
+import { Button } from "@/components/ui/button"
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
+import { Input } from "@/components/ui/input"
+import { Badge } from "@/components/ui/badge"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Search, Plus, Clock, BookOpen, ArrowRight, Eye, Edit, Trash2 } from "lucide-react"
 
 export default function DashboardExamsPage() {
   // Mock exam data
@@ -28,8 +12,7 @@ export default function DashboardExamsPage() {
     {
       id: "1",
       title: "Introduction to AI",
-      description:
-        "Learn the fundamentals of artificial intelligence and machine learning.",
+      description: "Learn the fundamentals of artificial intelligence and machine learning.",
       duration: 60,
       questions: 10,
       status: "active",
@@ -68,7 +51,7 @@ export default function DashboardExamsPage() {
       createdAt: "June 12, 2025",
       submissions: 0,
     },
-  ];
+  ]
 
   return (
     <div className="space-y-6">
@@ -131,22 +114,22 @@ export default function DashboardExamsPage() {
         </TabsContent>
       </Tabs>
     </div>
-  );
+  )
 }
 
 function ExamCard({ exam }) {
   const getStatusBadge = (status) => {
     switch (status) {
       case "active":
-        return <Badge className="bg-green-500">Active</Badge>;
+        return <Badge className="bg-green-500">Active</Badge>
       case "completed":
-        return <Badge variant="secondary">Completed</Badge>;
+        return <Badge variant="secondary">Completed</Badge>
       case "draft":
-        return <Badge variant="outline">Draft</Badge>;
+        return <Badge variant="outline">Draft</Badge>
       default:
-        return null;
+        return null
     }
-  };
+  }
 
   return (
     <Card>
@@ -160,9 +143,7 @@ function ExamCard({ exam }) {
         </div>
       </CardHeader>
       <CardContent>
-        <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
-          {exam.description}
-        </p>
+        <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">{exam.description}</p>
         <div className="flex flex-wrap gap-4 text-sm">
           <div className="flex items-center gap-1">
             <Clock className="h-4 w-4 text-gray-500 dark:text-gray-400" />
@@ -191,11 +172,7 @@ function ExamCard({ exam }) {
             <Edit className="h-4 w-4" /> Edit
           </Button>
         </Link>
-        <Button
-          variant="outline"
-          size="sm"
-          className="gap-1 text-red-500 hover:text-red-500"
-        >
+        <Button variant="outline" size="sm" className="gap-1 text-red-500 hover:text-red-500">
           <Trash2 className="h-4 w-4" /> Delete
         </Button>
         {exam.status !== "draft" && (
@@ -207,5 +184,5 @@ function ExamCard({ exam }) {
         )}
       </CardFooter>
     </Card>
-  );
+  )
 }
