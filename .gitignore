@@ -2,6 +2,7 @@
 
 # dependencies
 node_modules/
+job_outputs_json/
 /.pnp
 .pnp.*
 .yarn/*
@@ -34,7 +35,7 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
-
+**/.env*
 
 # vercel
 .vercel
@@ -42,6 +43,8 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+**/debugging-temp/
 
 questionPapers
 bloomsAnatomy
@@ -64,10 +67,13 @@ job_outputs_json
 skills_report.json
 frontend/.next
 
-.next/
+
+**/.next/
 deprecated/eng.traineddata
 
-node_modules
-job_outputs_json
+**/dist/
+
 skills_report.json
 frontend/.next
+
+*.xlsx
