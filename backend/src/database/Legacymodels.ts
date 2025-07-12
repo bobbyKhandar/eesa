@@ -3,7 +3,7 @@ to do:
 expand the question schema to include more fields like question options, correct answer, etc. and also add a field for question image , add dificulty level, and semantics search (using faiss)?  
 */
 import mongoose from "mongoose";
-
+import z from "zod";
 import path from "path"
 import dotenv from "dotenv"
 dotenv.config({path: path.resolve(__dirname,"../../.env")  });
@@ -29,6 +29,31 @@ async function connect() {
 
 // Debug existing models
 console.log("Existing Mongoose models:", mongoose.modelNames());
+
+const examSchema = z.object({
+  examid: z.number(),
+  examName: z.string(),
+  examType: z.string(), // mcq/theory
+  examFollowup: z.string(), // main or kt or golden kt
+  examMaxMarks: z.number(),
+  examPassingPercentage: z.number(),
+  examDegree: z.string(), // degree at which exam is pursuing
+  examUsers: z.array(z.string()), // Foreign Key
+  examquestions: z.array(
+    z.object({
+      questionId: z.string(), // ObjectId as string
+      marks: z.number(),
+    }) 
+  ),
+  studentsResponse: z.array(
+    z.object({
+      question: z.string(),
+      marks: z.number(),
+      allottedMarks: z.number(),
+      feedback: z.string(),
+    })
+  ),
+})
 
 // Define schema once
 const examSchema = new mongoose.Schema({
