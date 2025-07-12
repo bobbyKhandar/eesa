@@ -52,8 +52,9 @@ export async function createExam(
   examUsers:string[],
   examquestions:QuestionInput[] //array of question objects
 ) {
+
   try {
-  connectToDb();//temp for testing, remove later
+  
   const questionModel = await getQuestionsModel();
   const insertedQuestions=await questionModel.insertMany(examquestions)//inserts the questions in the database and returns an array of inserted documents
   const questionsId= insertedQuestions.map((question) => question._id);//extracts the ids of the inserted questions

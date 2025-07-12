@@ -16,6 +16,8 @@
     "typescript": "^5.8.3"
   },
   "dependencies": {
-    "lodash": "^4.17.21"
+    "@zodyac/zod-mongoose": "^4.1.0",
+    "lodash": "^4.17.21",
+    "zod": "^3.22.4"
   }
 }
