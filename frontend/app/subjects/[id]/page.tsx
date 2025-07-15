@@ -1,8 +1,8 @@
 import Link from "next/link"
-import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Badge } from "@/components/ui/badge"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Button } from "@/frontend/components/ui/button"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/frontend/components/ui/card"
+import { Badge } from "@/frontend/components/ui/badge"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/frontend/components/ui/tabs"
 import { ArrowLeft, BookOpen, Clock, Users, GraduationCap, FileText, Brain } from "lucide-react"
 
 export default function SubjectDetailPage({ params }: { params: { id: string } }) {

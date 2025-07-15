@@ -3,14 +3,14 @@
 import type React from "react"
 
 import { useState, useRef, useEffect } from "react"
-import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Input } from "@/components/ui/input"
-import { Badge } from "@/components/ui/badge"
-import { Avatar, AvatarFallback } from "@/components/ui/avatar"
-import { ScrollArea } from "@/components/ui/scroll-area"
-import { Separator } from "@/components/ui/separator"
-import { Progress } from "@/components/ui/progress"
+import { Button } from "@/frontend/components/ui/button"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/frontend/components/ui/card"
+import { Input } from "@/frontend/components/ui/input"
+import { Badge } from "@/frontend/components/ui/badge"
+import { Avatar, AvatarFallback } from "@/frontend/components/ui/avatar"
+import { ScrollArea } from "@/frontend/components/ui/scroll-area"
+import { Separator } from "@/frontend/components/ui/separator"
+import { Progress } from "@/frontend/components/ui/progress"
 import {
   Brain,
   Send,

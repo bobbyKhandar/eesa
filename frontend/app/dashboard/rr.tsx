@@ -4,18 +4,18 @@ import type * as React from "react"
 import { useState, useEffect, Suspense } from "react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
+import { Button } from "@/frontend/components/ui/button"
+import { Input } from "@/frontend/components/ui/input"
+import { Avatar, AvatarFallback, AvatarImage } from "@/frontend/components/ui/avatar"
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
   DropdownMenuSeparator,
-} from "@/components/ui/dropdown-menu"
-import { Badge } from "@/components/ui/badge"
-import { Alert, AlertDescription } from "@/components/ui/alert"
+} from "@/frontend/components/ui/dropdown-menu"
+import { Badge } from "@/frontend/components/ui/badge"
+import { Alert, AlertDescription } from "@/frontend/components/ui/alert"
 import {
   Home,
   FileText,
