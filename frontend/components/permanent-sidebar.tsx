@@ -16,9 +16,9 @@ import {
   TrendingUp,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
-import { Button } from "@/components/ui/button"
-import { ScrollArea } from "@/components/ui/scroll-area"
-import { Separator } from "@/components/ui/separator"
+import { Button } from "@/frontend/components/ui/button"
+import { ScrollArea } from "@/frontend/components/ui/scroll-area"
+import { Separator } from "@/frontend/components/ui/separator"
 
 const navigationItems = [
   {

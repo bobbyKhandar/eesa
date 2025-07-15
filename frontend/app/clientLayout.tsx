@@ -4,8 +4,8 @@ import type React from "react"
 import { useState } from "react"
 import { Inter } from "next/font/google"
 import "./globals.css"
-import { PermanentSidebar } from "@/components/permanent-sidebar"
-import { TopNavigation } from "@/components/top-navigation"
+import { PermanentSidebar } from "@/frontend/components/permanent-sidebar"
+import { TopNavigation } from "@/frontend/components/top-navigation"
 
 const inter = Inter({ subsets: ["latin"] })
 

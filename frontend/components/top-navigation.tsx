@@ -3,8 +3,8 @@
 import type React from "react"
 import { useState } from "react"
 import { Search, Bell, Settings, LogOut, User, Menu, X } from "lucide-react"
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
+import { Button } from "@/frontend/components/ui/button"
+import { Input } from "@/frontend/components/ui/input"
 import {
 
   SignInButton,
@@ -20,9 +20,9 @@ import {
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu"
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
-import { Badge } from "@/components/ui/badge"
+} from "@/frontend/components/ui/dropdown-menu"
+import { Avatar, AvatarFallback, AvatarImage } from "@/frontend/components/ui/avatar"
+import { Badge } from "@/frontend/components/ui/badge"
 import { Brain } from "lucide-react"
 interface TopNavigationProps {
   onMobileMenuToggle?: () => void

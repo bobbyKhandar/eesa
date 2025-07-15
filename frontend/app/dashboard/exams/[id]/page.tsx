@@ -1,8 +1,8 @@
-import { Input } from "@/components/ui/input"
+import { Input } from "@/frontend/components/ui/input"
 import Link from "next/link"
-import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
-import { Badge } from "@/components/ui/badge"
+import { Button } from "@/frontend/components/ui/button"
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/frontend/components/ui/card"
+import { Badge } from "@/frontend/components/ui/badge"
 import { ArrowLeft, Clock, Users, FileText, BarChart3, Link2 } from "lucide-react"
 
 export default function ExamDetailPage({ params }: { params: { id: string } }) {

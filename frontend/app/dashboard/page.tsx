@@ -1,6 +1,6 @@
 import Link from "next/link"
-import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
+import { Button } from "@/frontend/components/ui/button"
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/frontend/components/ui/card"
 import { BookOpen, FileText, BarChart3, Plus } from "lucide-react"
 import { SignedOut,SignedIn } from "@clerk/nextjs"
 import { SignInButton } from "@clerk/nextjs"

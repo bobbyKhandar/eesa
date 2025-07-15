@@ -1,12 +1,12 @@
 "use client"
 
 import { useState } from "react"
-import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
-import { Textarea } from "@/components/ui/textarea"
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
-import { Label } from "@/components/ui/label"
-import { Progress } from "@/components/ui/progress"
+import { Button } from "@/frontend/components/ui/button"
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/frontend/components/ui/card"
+import { Textarea } from "@/frontend/components/ui/textarea"
+import { RadioGroup, RadioGroupItem } from "@/frontend/components/ui/radio-group"
+import { Label } from "@/frontend/components/ui/label"
+import { Progress } from "@/frontend/components/ui/progress"
 import { ArrowLeft, ArrowRight, Clock, AlertCircle } from "lucide-react"
 
 export default function TakeExamPage({ params }: { params: { id: string } }) {
