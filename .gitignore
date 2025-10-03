@@ -76,4 +76,11 @@ deprecated/eng.traineddata
 skills_report.json
 frontend/.next
 
+*.txt
+*.pdf
+*.docx
+*.json
+*.db
+*.sqlite
 *.xlsx
+__pycache__/

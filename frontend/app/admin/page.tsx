@@ -6,7 +6,7 @@ import { Button } from "@/frontend/components/ui/button"
 import { Badge } from "@/frontend/components/ui/badge"
 import { Progress } from "@/frontend/components/ui/progress"
 import { Users, FileText, Calendar, Activity, Database, Server, Zap } from "lucide-react"
-
+import Link from "next/link" 
 export default function AdminDashboard() {
   const [systemStatus] = useState({
     server: "online",
@@ -251,22 +251,13 @@ export default function AdminDashboard() {
         </CardHeader>
         <CardContent>
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-            <Button className="h-20 flex-col gap-2">
-              <Users className="h-6 w-6" />
-              Manage Users
-            </Button>
-            <Button variant="outline" className="h-20 flex-col gap-2 bg-transparent">
-              <Calendar className="h-6 w-6" />
-              Create Exam
-            </Button>
-            <Button variant="outline" className="h-20 flex-col gap-2 bg-transparent">
-              <FileText className="h-6 w-6" />
-              Review Resources
-            </Button>
+  
+            <Link href="/admin/upload/question-papers">
             <Button variant="outline" className="h-20 flex-col gap-2 bg-transparent">
               <Database className="h-6 w-6" />
-              Backup System
+              mass upload question papers
             </Button>
+            </Link>
           </div>
         </CardContent>
       </Card>
