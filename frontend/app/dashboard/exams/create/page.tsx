@@ -79,7 +79,16 @@ export default function CreateExamPage() {
 }
 
 async function uploadExamSet(): Promise<MyApiResponse> {
-  const args = {"examTitle":examTitle,"examDescription":examDescription,"examType":examType,"passingPercentage":passingPercentage,"examDegree":examDegree,"examMaxMarks":20,"examUsers":["bobby.k@somaiya.edu"],"clientQuestions":questions}
+  const args = {
+    examTitle: examTitle,
+    examDescription: examDescription,
+    examType: examType,
+    passingPercentage: passingPercentage,
+    examDegree: examDegree,
+    examMaxMarks: 20,
+    examUsers: [""],
+    clientQuestions: questions,
+  }
   const response = await fetch(`http://localhost:3000/api/exams/create`, {
      method: 'POST', // Specify the HTTP method
       headers: {

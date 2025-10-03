@@ -12,7 +12,7 @@ import { ArrowLeft, ArrowRight, Clock, AlertCircle } from "lucide-react"
 
 
 export default function TakeExamPage({ params }: { params: { id: string } }) {
-  const unwrapped=React.use(params)
+  const unwrapped = params
   const [currentQuestion, setCurrentQuestion] = useState(0)
   const [answers, setAnswers] = useState<Record<number, string>>({})
   const [timeLeft, setTimeLeft] = useState(3600) // 60 minutes in seconds

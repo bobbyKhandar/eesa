@@ -79,7 +79,6 @@ export async function getExamSets(email) {
   }
   
 }
-getExamSets("bobby.k@somaiya.edu")
 export async function getQuestions(userId,examId) {
   await connect();
   try {
