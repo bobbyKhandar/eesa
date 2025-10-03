@@ -84,3 +84,6 @@ frontend/.next
 *.sqlite
 *.xlsx
 __pycache__/
+*.png
+*.jpg
+*.jpeg

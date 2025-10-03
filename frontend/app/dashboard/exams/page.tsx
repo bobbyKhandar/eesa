@@ -20,7 +20,6 @@ export default function DashboardExamsPage() {
   })
   return response
   }
-  const exams = useUser().emailAddresses[0]
   const exams = [
     {
       id: "1",

@@ -41,7 +41,7 @@ export async function POST(req: Request) {
     for (const q of questions) {
       if (typeof q.text !== "string" || typeof q.marks !== "number") {
         return NextResponse.json(
-          { success: false, error: "Invalid question format" + JSON.stringify(q) },
+          { success: false, error: "Invalid question format detected in one or more questions." },
           { status: 400 }
         );
       }

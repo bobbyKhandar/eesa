@@ -89,7 +89,7 @@ class jobHandler:
                     redis_client.hash_set(redis_client.RedisKeys.TASK_METADATA, task_id, taskMeta)
 
         def mergeJobs(self):
-            while job := redis_client.queue_pop(redis_client.RedisKeys.QUEUE_MERGE) != "STOP":
+            while (job := redis_client.queue_pop(redis_client.RedisKeys.QUEUE_MERGE)) != "STOP":
                 try:
                     taskMeta = redis_client.hash_get_json(redis_client.RedisKeys.TASK_METADATA, job) or {}
                     taskId = taskMeta.get("taskId")
