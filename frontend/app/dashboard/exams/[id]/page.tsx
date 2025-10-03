@@ -7,11 +7,12 @@ import { ArrowLeft, Clock, Users, FileText, BarChart3, Link2 } from "lucide-reac
 
 export default function ExamDetailPage({ params }: { params: { id: string } }) {
   // This would normally fetch the exam data based on the ID
+
   const exam = {
     id: params.id,
     title: "Introduction to AI",
     description:
-      "This exam tests fundamental concepts in artificial intelligence including search algorithms, knowledge representation, and machine learning basics.",
+    "This exam tests fundamental concepts in artificial intelligence including search algorithms, knowledge representation, and machine learning basics.",
     duration: 60,
     questions: 10,
     totalMarks: 100,
@@ -21,7 +22,8 @@ export default function ExamDetailPage({ params }: { params: { id: string } }) {
     submissions: 24,
     averageScore: 76,
   }
-
+  
+ 
   return (
     <div className="space-y-6">
       <div className="flex items-center gap-4">

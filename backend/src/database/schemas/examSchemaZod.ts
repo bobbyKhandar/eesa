@@ -8,13 +8,12 @@ import { z } from "../zodGlobal.js";
 
 export const examZodSchema = z.object({
   examTitle: z.string(),               // Name of the exam
-  examType: z.enum(["mcq","theory"]),  //Type of exam format
-  examFollowup: z.string(),            //Exam status displayed in the UI alongside the title of exam
-  examMaxMarks: z.number(),            // Total marks for which the exam is evaluated out of
-  examPassingPercentage: z.number(),   // Minimum percentage required to pass the exam
+  examDescription:z.string(),
+  passingPercentage: z.number(),   // Minimum percentage required to pass the exam
   examDegree: z.string(),              // Degree programme for which the exam is conducted
-  examUsers: z.array(z.string()),      // arrays objectIds as string reffering to user model (userSchamaZod.ts)
-  examQuestions: z.array(              // Array of question objects questions are uniquely stored in questionSchemaZod.ts and referenced here  
+  examMaxMarks: z.number(),            // Total marks for which the exam is evaluated out of
+  examType: z.string(),                //Exam status displayed in the UI alongside the title of exam
+  questions: z.array(              // Array of question objects questions are uniquely stored in questionSchemaZod.ts and referenced here  
     z.object({
       questionId: z.string(),          // ObjectId as string
       marks: z.number(),               // Marks assigned to the question 
@@ -30,5 +29,7 @@ export const examZodSchema = z.object({
     })
   ).optional(),
 })
+
+
 
 export type Exam= z.infer<typeof examZodSchema>

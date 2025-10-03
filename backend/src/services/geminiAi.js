@@ -1,14 +1,8 @@
-"use server";
 import nodemailer from "nodemailer";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import dotenv from "dotenv";
 import fs from "fs";
-import { error } from "console";
-import { select } from "@heroui/theme";
-import path from "path";
-import { json } from "stream/consumers";
 dotenv.config();
-import xlsx from "xlsx";
 import JSON5 from "json5";
 import json5 from "json5";
 // console.log(process.env.gemini_api_key);
@@ -382,6 +376,17 @@ export async function refineQuestions(data, subjectName) {
     }
   }
 }
+
+export async function aiExamHelper(data) {
+  const prompt =
+    "You are an exam teacher talking to a student, the student may have some doubts about the subject/paper or else you have to understand the students query and help him.Be breif and to the point but in an friendly manner The students query is:-" +
+    data;
+
+  const result = await model.generateContent(prompt);
+  const jsonresponse=JSON.stringify(result)
+  return jsonresponse;
+}
+
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));

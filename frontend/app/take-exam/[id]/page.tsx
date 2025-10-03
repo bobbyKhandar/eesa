@@ -1,6 +1,7 @@
 "use client"
 
 import { useState } from "react"
+import React from "react"
 import { Button } from "@/frontend/components/ui/button"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/frontend/components/ui/card"
 import { Textarea } from "@/frontend/components/ui/textarea"
@@ -9,14 +10,16 @@ import { Label } from "@/frontend/components/ui/label"
 import { Progress } from "@/frontend/components/ui/progress"
 import { ArrowLeft, ArrowRight, Clock, AlertCircle } from "lucide-react"
 
+
 export default function TakeExamPage({ params }: { params: { id: string } }) {
+  const unwrapped=React.use(params)
   const [currentQuestion, setCurrentQuestion] = useState(0)
   const [answers, setAnswers] = useState<Record<number, string>>({})
   const [timeLeft, setTimeLeft] = useState(3600) // 60 minutes in seconds
 
   // Mock exam data
   const exam = {
-    id: params.id,
+    id: unwrapped.id,
     title: "Introduction to AI",
     description: "This exam tests fundamental concepts in artificial intelligence.",
     duration: 60, // minutes
@@ -62,7 +65,7 @@ export default function TakeExamPage({ params }: { params: { id: string } }) {
       },
     ],
   }
-
+  
   const handleAnswerChange = (value: string) => {
     setAnswers({
       ...answers,

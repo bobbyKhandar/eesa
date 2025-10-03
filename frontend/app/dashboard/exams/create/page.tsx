@@ -19,10 +19,8 @@ export default function CreateExamPage() {
   const [selectedSemester, setSelectedSemester] = useState("")
   const [selectedSubject, setSelectedSubject] = useState("")
   const [questions, setQuestions] = useState([
-    { id: 1, type: "essay", text: "", marks: 10 },
-    { id: 2, type: "mcq", text: "", options: ["", "", "", ""], correctOption: 0, marks: 5 },
+    { id: 1, type: "theory", text: "", marks: 10 },
   ])
-
   // Mock data for branches, semesters, and subjects
   const branches = ["Computer Science", "Electrical Engineering", "Mechanical Engineering", "Civil Engineering"]
   const semesters = [
@@ -50,14 +48,21 @@ export default function CreateExamPage() {
   }
 
   const addQuestion = (type: string) => {
+    
     const newId = questions.length > 0 ? Math.max(...questions.map((q) => q.id)) + 1 : 1
-
-    if (type === "essay") {
-      setQuestions([...questions, { id: newId, type, text: "", marks: 10 }])
+    if (type === "theory") {
+      setQuestions([...questions, { id: newId, type:"theory", text: "", marks: 10 }])
     } else if (type === "mcq") {
-      setQuestions([...questions, { id: newId, type, text: "", options: ["", "", "", ""], correctOption: 0, marks: 5 }])
+      setQuestions([...questions, { id: newId, type:"theory", text: "", options: ["", "", "", ""], correctOption: "", marks: 5 }])
     }
   }
+  const [examTitle,setExamTitle]=useState<string>("")
+  const [examDescription,setExamDescription]=useState<string>("")
+  const [examDuration,setExamDuration]=useState<number>(60)
+  const [passingPercentage,setPassingPercentage]=useState<number>(35)
+  const [examDegree,setExamDegree]=useState<string>("")
+  // const [examScope,setExamScope]=useState<string>("")
+  const [processingRequest,setProcessingRequest]=useState<boolean>(false)
 
   const removeQuestion = (id: number) => {
     setQuestions(questions.filter((q) => q.id !== id))
@@ -67,6 +72,30 @@ export default function CreateExamPage() {
     setQuestions(questions.map((q) => (q.id === id ? { ...q, ...data } : q)))
   }
 
+  interface MyApiResponse {
+  message: string;
+  timestamp: string;
+  items: Array<{ id: number; name: string }>;
+}
+
+async function uploadExamSet(): Promise<MyApiResponse> {
+  const args = {"examTitle":examTitle,"examDescription":examDescription,"examType":examType,"passingPercentage":passingPercentage,"examDegree":examDegree,"examMaxMarks":20,"examUsers":["bobby.k@somaiya.edu"],"clientQuestions":questions}
+  const response = await fetch(`http://localhost:3000/api/exams/create`, {
+     method: 'POST', // Specify the HTTP method
+      headers: {
+        'Content-Type': 'application/json', // Tell the server we're sending JSON
+      },
+      body: JSON.stringify(args), // Convert your arguments object to a JSON string
+  })
+  console.log(response)
+
+
+  
+
+  if(response){
+
+  }
+}
   // Step 1: Select exam type (Personal Use or Teacher Assignment)
   if (!examType) {
     return (
@@ -316,21 +345,29 @@ export default function CreateExamPage() {
         <CardContent className="space-y-4">
           <div className="grid gap-2">
             <Label htmlFor="title">Exam Title</Label>
-            <Input id="title" placeholder="Enter exam title" />
+            <Input id="title" required readOnly={processingRequest} value={examTitle} onChange={e=>{setExamTitle(e.target.value)}} placeholder="Enter exam title" />
           </div>
           <div className="grid gap-2">
             <Label htmlFor="description">Description</Label>
-            <Textarea id="description" placeholder="Enter exam description" />
+            <Textarea id="description" required readOnly={processingRequest} value={examDescription} onChange={e=>{setExamDescription(e.target.value)}} placeholder="Enter exam description" />
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="grid gap-2">
               <Label htmlFor="duration">Duration (minutes)</Label>
-              <Input id="duration" type="number" placeholder="60" />
+              <Input id="duration" type="number" required value={examDuration} readOnly={processingRequest} onChange={e=>{setExamDuration(Number(e.target.value))}} placeholder="60" />
             </div>
             <div className="grid gap-2">
               <Label htmlFor="passing-score">Passing Score (%)</Label>
-              <Input id="passing-score" type="number" placeholder="60" />
+              <Input id="passing-score" type="number" required value={passingPercentage} readOnly={processingRequest} onChange={e=>{setPassingPercentage(Number(e.target.value))}} placeholder="60" />
             </div>
+            <div className="grid gap-2">
+              <Label htmlFor="exam-degree">degree at which exam is conducted at</Label>
+              <Input id="exam-degree" value={examDegree} required readOnly={processingRequest} onChange={e=>{setExamDegree(e.target.value)}} placeholder="exam degree" />
+            </div>
+            {/* <div className="grid gap-2">
+              <Label htmlFor="exam name">enter the scope of exam (ese,ise,etc.)</Label>
+              <Input id="passing-score" value={examScope} required readOnly={processingRequest} onChange={e=>{setExamScope(e.target.value)}} type="number" placeholder="60" />
+            </div> */}
           </div>
 
           {syllabusType === "personal" && (
@@ -357,7 +394,7 @@ export default function CreateExamPage() {
         </CardContent>
       </Card>
 
-      <Card>
+      {/* <Card>
         <CardHeader>
           <CardTitle>AI Evaluation Settings</CardTitle>
           <CardDescription>Configure how the AI will evaluate responses</CardDescription>
@@ -447,7 +484,7 @@ export default function CreateExamPage() {
             </div>
           )}
         </CardContent>
-      </Card>
+      </Card> */}
 
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">
@@ -455,21 +492,21 @@ export default function CreateExamPage() {
             <CardTitle>Questions</CardTitle>
             <CardDescription>Add and configure exam questions</CardDescription>
           </div>
-          <Tabs defaultValue="essay">
+          <Tabs defaultValue="theory">
             <TabsList>
-              <TabsTrigger value="essay">Essay</TabsTrigger>
-              <TabsTrigger value="mcq">Multiple Choice</TabsTrigger>
+              <TabsTrigger value="theory">theory</TabsTrigger>
+              {/* <TabsTrigger value="mcq">Multiple Choice</TabsTrigger> */}
             </TabsList>
-            <TabsContent value="essay">
-              <Button onClick={() => addQuestion("essay")} size="sm" className="gap-1">
-                <Plus className="h-4 w-4" /> Add Essay Question
+            <TabsContent value="theory">
+              <Button onClick={() => addQuestion("theory")} size="sm" className="gap-1">
+                <Plus className="h-4 w-4" /> Add theory Question
               </Button>
             </TabsContent>
-            <TabsContent value="mcq">
+            {/* <TabsContent value="mcq">
               <Button onClick={() => addQuestion("mcq")} size="sm" className="gap-1">
                 <Plus className="h-4 w-4" /> Add MCQ
               </Button>
-            </TabsContent>
+            </TabsContent> */}
           </Tabs>
         </CardHeader>
         <CardContent className="space-y-6">
@@ -488,11 +525,12 @@ export default function CreateExamPage() {
                     id={`question-${question.id}`}
                     placeholder="Enter question text"
                     value={question.text}
+                    readOnly={processingRequest}
                     onChange={(e) => updateQuestion(question.id, { text: e.target.value })}
                   />
                 </div>
 
-                {question.type === "mcq" && (
+                {/* {question.type === "mcq" && (
                   <div className="space-y-4">
                     <Label>Options</Label>
                     {question.options.map((option, optIndex) => (
@@ -500,6 +538,7 @@ export default function CreateExamPage() {
                         <Input
                           placeholder={`Option ${optIndex + 1}`}
                           value={option}
+                          readOnly={processingRequest}
                           onChange={(e) => {
                             const newOptions = [...question.options]
                             newOptions[optIndex] = e.target.value
@@ -507,13 +546,14 @@ export default function CreateExamPage() {
                           }}
                         />
                         <Select
-                          value={question.correctOption === optIndex ? "correct" : "incorrect"}
+                          value={question.correctOption === optIndex.toString() ? "correct" : "incorrect"}
                           onValueChange={(value) => {
                             if (value === "correct") {
-                              updateQuestion(question.id, { correctOption: optIndex })
+                              updateQuestion(question.id, { correctOption: optIndex.toString() })
                             }
                           }}
                         >
+
                           <SelectTrigger className="w-[120px]">
                             <SelectValue />
                           </SelectTrigger>
@@ -525,7 +565,7 @@ export default function CreateExamPage() {
                       </div>
                     ))}
                   </div>
-                )}
+                )} */}
 
                 <div className="grid gap-2">
                   <Label htmlFor={`marks-${question.id}`}>Marks</Label>
@@ -537,7 +577,7 @@ export default function CreateExamPage() {
                   />
                 </div>
 
-                {examType === "teacher" && (
+                {/* {examType === "teacher" && (
                   <div className="grid gap-2">
                     <Label>Bloom's Taxonomy Level</Label>
                     <RadioGroup defaultValue="understand">
@@ -569,7 +609,7 @@ export default function CreateExamPage() {
                       </div>
                     </RadioGroup>
                   </div>
-                )}
+                )} */}
               </CardContent>
             </Card>
           ))}
@@ -583,7 +623,23 @@ export default function CreateExamPage() {
         </CardContent>
         <CardFooter className="flex justify-between">
           <Button variant="outline">Save as Draft</Button>
-          <Button>Create Exam</Button>
+          <Button onClick={async (e)=>{
+                try {
+      const response = await uploadExamSet();
+    
+      
+      if (response.success) {
+        alert("")
+      } else {
+        setError(data.error || 'Failed to load exams');
+      }
+    } catch (err) {
+      setError('Network error occurred');
+      console.error('Error loading exams:', err);
+    } 
+            
+            
+            }}>Create Exam</Button>
         </CardFooter>
       </Card>
     </div>

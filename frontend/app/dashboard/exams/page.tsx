@@ -5,19 +5,28 @@ import { Input } from "@/frontend/components/ui/input"
 import { Badge } from "@/frontend/components/ui/badge"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/frontend/components/ui/tabs"
 import { Search, Plus, Clock, BookOpen, ArrowRight, Eye, Edit, Trash2 } from "lucide-react"
+import { useUser } from "@clerk/nextjs"
+
 
 export default function DashboardExamsPage() {
   // Mock exam data
+  async function getExamSets(email) {
+    const response=await fetch(`http://localhost:3000/api/exams/create`, {
+     method: 'POST', // Specify the HTTP method
+      headers: {
+        'Content-Type': 'application/json', // Tell the server we're sending JSON
+      },
+      body: JSON.stringify({"email":email}), // Convert your arguments object to a JSON string
+  })
+  return response
+  }
+  const exams = useUser().emailAddresses[0]
   const exams = [
     {
       id: "1",
       title: "Introduction to AI",
       description: "Learn the fundamentals of artificial intelligence and machine learning.",
-      duration: 60,
       questions: 10,
-      status: "active",
-      createdAt: "June 10, 2025",
-      submissions: 24,
     },
     {
       id: "2",
@@ -26,30 +35,21 @@ export default function DashboardExamsPage() {
         "Comprehensive exam covering arrays, linked lists, trees, graphs, and algorithm complexity analysis.",
       duration: 90,
       questions: 15,
-      status: "active",
-      createdAt: "June 8, 2025",
-      submissions: 42,
     },
     {
       id: "3",
       title: "Machine Learning Midterm",
       description:
         "Covers supervised and unsupervised learning techniques, model evaluation, and basic neural networks.",
-      duration: 75,
       questions: 12,
-      status: "completed",
-      createdAt: "June 5, 2025",
-      submissions: 36,
+ 
     },
     {
       id: "4",
       title: "Web Development Basics",
       description: "Introduction to HTML, CSS, and JavaScript fundamentals.",
-      duration: 45,
       questions: 8,
-      status: "draft",
-      createdAt: "June 12, 2025",
-      submissions: 0,
+ 
     },
   ]
 
@@ -162,11 +162,11 @@ function ExamCard({ exam }) {
         </div>
       </CardContent>
       <CardFooter className="flex flex-wrap gap-2">
-        <Link href={`/dashboard/exams/${exam.id}`}>
+        {/* <Link href={`/dashboard/exams/${exam.id}`}>
           <Button variant="outline" size="sm" className="gap-1">
             <Eye className="h-4 w-4" /> View
           </Button>
-        </Link>
+        </Link> */}
         <Link href={`/dashboard/exams/${exam.id}/edit`}>
           <Button variant="outline" size="sm" className="gap-1">
             <Edit className="h-4 w-4" /> Edit
@@ -178,7 +178,7 @@ function ExamCard({ exam }) {
         {exam.status !== "draft" && (
           <Link href={`/take-exam/${exam.id}`} className="ml-auto">
             <Button size="sm" className="gap-1">
-              Preview <ArrowRight className="h-4 w-4" />
+              Take this test <ArrowRight className="h-4 w-4" />
             </Button>
           </Link>
         )}

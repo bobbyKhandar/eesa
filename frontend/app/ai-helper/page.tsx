@@ -145,103 +145,16 @@ export default function AIHelperPage() {
     setMessages((prev) => [...prev, userMessage])
     setInputMessage("")
     setIsLoading(true)
-
+    const resp= await fetch("/api/llm",{
+      method:"POST",
+      headers:{"content-type":"application/json"},
+      body:JSON.stringify(inputMessage)
+    })
     // Simulate AI response
     setTimeout(() => {
       let aiResponse = ""
 
-      // Check if user is asking about exam results
-      if (
-        inputMessage.toLowerCase().includes("exam") ||
-        inputMessage.toLowerCase().includes("result") ||
-        inputMessage.toLowerCase().includes("performance")
-      ) {
-        aiResponse = `Based on your recent exam performance, here's what I found:
-
-📊 **Overall Performance Summary:**
-- Average Score: ${Math.round(examResults.reduce((acc, exam) => acc + exam.percentage, 0) / examResults.length)}%
-- Total Exams: ${examResults.length}
-- Pass Rate: 100%
-
-🎯 **Your Strengths:**
-• Strong in data structures and algorithms
-• Good SQL and database design skills
-• Excellent code documentation
-• Clear understanding of core concepts
-
-⚠️ **Areas for Improvement:**
-• Graph algorithms need more practice
-• Transaction management concepts
-• Dynamic programming patterns
-• Query optimization techniques
-
-💡 **Personalized Recommendations:**
-1. Spend 2-3 hours weekly on graph problems
-2. Review database transaction properties
-3. Practice dynamic programming on LeetCode
-4. Study query execution plans
-
-Would you like me to create a detailed study plan for any specific subject?`
-      } else if (inputMessage.toLowerCase().includes("study plan") || inputMessage.toLowerCase().includes("schedule")) {
-        aiResponse = `I'll create a personalized study plan based on your exam performance:
-
-📅 **Weekly Study Schedule:**
-
-**Monday & Wednesday (2 hours):**
-- Graph Algorithms Practice
-- Focus on DFS, BFS, and shortest path algorithms
-- Solve 3-4 problems on LeetCode/HackerRank
-
-**Tuesday & Thursday (1.5 hours):**
-- Database Concepts Review
-- ACID properties, transaction isolation levels
-- Practice complex SQL queries
-
-**Friday (2 hours):**
-- Dynamic Programming
-- Study common patterns (knapsack, LIS, etc.)
-- Implement solutions from scratch
-
-**Weekend (3 hours):**
-- Review and consolidate
-- Mock tests and practice exams
-- Weak area reinforcement
-
-This plan addresses your specific weak areas while building on your strengths!`
-      } else if (inputMessage.toLowerCase().includes("help") || inputMessage.toLowerCase().includes("explain")) {
-        aiResponse = `I'm here to help! Here's what I can do for you:
-
-🤖 **AI Study Assistant Features:**
-• Analyze your exam performance and provide detailed feedback
-• Create personalized study plans based on your strengths/weaknesses
-• Explain complex concepts in simple terms
-• Provide practice problems and solutions
-• Track your progress over time
-• Give motivational support and study tips
-
-📚 **Available Commands:**
-- "Show my exam results" - View detailed performance analysis
-- "Create study plan" - Get personalized study schedule
-- "Explain [topic]" - Get detailed explanations
-- "Practice problems" - Get relevant practice questions
-- "Study tips" - Get effective study strategies
-
-Just ask me anything about your studies, and I'll provide personalized assistance!`
-      } else {
-        aiResponse = `I understand you're asking about "${inputMessage}". Let me help you with that!
-
-Based on your learning profile and recent performance, here's my response:
-
-This is a great question! I can see from your exam history that you have a strong foundation in core concepts. Let me break this down for you in a way that builds on your existing knowledge.
-
-Would you like me to:
-1. Provide a detailed explanation with examples?
-2. Show you practice problems related to this topic?
-3. Create a mini study plan for mastering this concept?
-4. Connect this to your recent exam performance?
-
-Feel free to ask for any specific aspect you'd like me to focus on!`
-      }
+     
 
       const aiMessage: Message = {
         id: messages.length + 2,

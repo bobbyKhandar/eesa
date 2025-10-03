@@ -6,7 +6,7 @@ import { z } from "../zodGlobal.js";
 
 export const questionsZodSchema = z.object({
   // The question itself, required field
-  name: z.string(),
+  text: z.string(),
 
   /*
     The correct answer to the question 
@@ -23,14 +23,14 @@ export const questionsZodSchema = z.object({
   type: z.enum(["mcq", "theory"]),
 
   // Bloom's taxonomy level only accepted values are remember, understand, apply, analyze, evaluate, create
-  bloomsTaxonomyLevel: z.enum([
-    "remember",
-    "understand",
-    "apply",
-    "analyze",
-    "evaluate",
-    "create",
-  ]),
+  // bloomsTaxonomyLevel: z.enum([
+  //   "remember",
+  //   "understand",
+  //   "apply",
+  //   "analyze",
+  //   "evaluate",
+  //   "create",
+  // ]),
 });
 
 export type Question= z.infer<typeof questionsZodSchema>
