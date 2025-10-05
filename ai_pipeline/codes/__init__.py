@@ -1,1 +1,0 @@
-from .mail_code import statusCode  as mailCode

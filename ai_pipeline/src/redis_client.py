@@ -51,6 +51,31 @@ class OCRResult(TypedDict, total=False):
     pageNo: int                # Page number in original document
     processedAt: str           # Timestamp of processing
 
+class BatchMetadata(TypedDict, total=False):
+    """Data model for batch processing metadata"""
+    batch_id: str              # Unique identifier for the batch
+    total_jobs: int            # Total number of jobs in batch
+    completed_jobs: int        # Number of completed jobs
+    failed_jobs: int           # Number of failed jobs
+    status: str                # Batch status: 'processing', 'completed', 'failed', 'partial_success'
+    start_time: str            # Batch processing start timestamp
+    end_time: str              # Batch processing end timestamp
+    job_ids: List[str]         # List of job IDs in this batch
+    failed_job_ids: List[str]  # List of failed job IDs
+    results: Dict[str, Any]    # Results for each job
+
+class BatchResult(TypedDict, total=False):
+    """Data model for final batch processing results"""
+    batch_id: str              # Unique identifier for the batch
+    success: bool              # Overall batch success status
+    total_jobs: int            # Total number of jobs processed
+    successful_jobs: int       # Number of successfully processed jobs
+    failed_jobs: int           # Number of failed jobs
+    processing_time: float     # Total processing time in seconds
+    status: str                # Final status
+    results: Dict[str, Any]    # Detailed results for each job
+    errors: List[Dict[str, Any]] # Error details for failed jobs
+
 # Status constants
 class JobStatus:
     QUEUED = "queued"          # Job is in the queue
@@ -70,7 +95,10 @@ except redis.exceptions.ConnectionError as e:
 
 # Define Redis key patterns as constants
 class RedisKeys:
-    # Queue keys
+    # Main intake queue
+    QUEUE_MAIN_INTAKE = "ai_pipeline_queue"
+    
+    # Processing queues
     QUEUE_IMAGE_PREPROCESS = "queue:image:preprocess"
     QUEUE_IMAGE_PROCESSED = "queue:image:processed"
     QUEUE_IMAGE_PROCESSING = "queue:image:processing"
@@ -117,14 +145,18 @@ def queue_length(queue_name: str) -> int:
         raise
 
 # Hash Operations
-def hash_set(hash_name: str, field: str, value: Union[str, dict]) -> bool:
+def hash_set(hash_name: str, field: str, value: Union[str, dict, list, int, float, bool]) -> bool:
     """Set a field in a Redis hash"""
     try:
-        if isinstance(value, dict):
-            # For dictionary values, serialize to JSON
+        if isinstance(value, (dict, list)):
+            # For dictionary and list values, serialize to JSON
             redis_client.hset(hash_name, field, json.dumps(value))
+        elif isinstance(value, (int, float, bool)):
+            # Convert numbers and booleans to string
+            redis_client.hset(hash_name, field, str(value))
         else:
-            redis_client.hset(hash_name, field, value)
+            # Assume string or already serializable
+            redis_client.hset(hash_name, field, str(value))
         return True
     except Exception as e:
         print(f"Redis error in hash_set: {e}")
@@ -133,7 +165,17 @@ def hash_set(hash_name: str, field: str, value: Union[str, dict]) -> bool:
 def hash_set_map(hash_name: str, mapping: dict) -> bool:
     """Set multiple fields in a Redis hash using a mapping"""
     try:
-        redis_client.hset(hash_name, mapping=mapping)
+        # Convert all values to strings/JSON for Redis storage
+        serialized_mapping = {}
+        for key, value in mapping.items():
+            if isinstance(value, (dict, list)):
+                serialized_mapping[key] = json.dumps(value)
+            elif isinstance(value, (int, float, bool)):
+                serialized_mapping[key] = str(value)
+            else:
+                serialized_mapping[key] = str(value)
+        
+        redis_client.hset(hash_name, mapping=serialized_mapping)
         return True
     except Exception as e:
         print(f"Redis error in hash_set_map: {e}")
@@ -344,3 +386,137 @@ def is_redis_available() -> bool:
         return True
     except Exception:
         return False
+
+# Batch Processing Functions
+def store_batch_metadata(batch_id: str, total_jobs: int, job_ids: List[str], status: str = "processing") -> bool:
+    """Store batch processing metadata"""
+    try:
+        import time
+        batch_data: BatchMetadata = {
+            "batch_id": batch_id,
+            "total_jobs": total_jobs,
+            "completed_jobs": 0,
+            "failed_jobs": 0,
+            "status": status,
+            "start_time": str(time.time()),
+            "end_time": "",
+            "job_ids": job_ids,
+            "failed_job_ids": [],
+            "results": {}
+        }
+        return hash_set(f"batch:metadata:{batch_id}", "data", batch_data)
+    except Exception as e:
+        print(f"Error storing batch metadata: {e}")
+        return False
+
+def update_batch_progress(batch_id: str, job_id: str, success: bool, result: Dict[str, Any] = None) -> bool:
+    """Update batch processing progress"""
+    try:
+        batch_data = hash_get_json(f"batch:metadata:{batch_id}", "data")
+        if not batch_data:
+            return False
+        
+        if success:
+            batch_data["completed_jobs"] += 1
+            if result:
+                batch_data["results"][job_id] = result
+        else:
+            batch_data["failed_jobs"] += 1
+            batch_data["failed_job_ids"].append(job_id)
+            if result:
+                batch_data["results"][job_id] = {"error": result}
+        
+        # Update status
+        total_processed = batch_data["completed_jobs"] + batch_data["failed_jobs"]
+        if total_processed >= batch_data["total_jobs"]:
+            batch_data["status"] = "completed" if batch_data["failed_jobs"] == 0 else "partial_success"
+            import time
+            batch_data["end_time"] = str(time.time())
+        
+        return hash_set(f"batch:metadata:{batch_id}", "data", batch_data)
+    except Exception as e:
+        print(f"Error updating batch progress: {e}")
+        return False
+
+def get_batch_result(batch_id: str) -> BatchResult:
+    """Get final batch processing result"""
+    try:
+        batch_data = hash_get_json(f"batch:metadata:{batch_id}", "data")
+        if not batch_data:
+            return {"error": "Batch not found"}
+        
+        processing_time = 0.0
+        if batch_data.get("end_time") and batch_data.get("start_time"):
+            processing_time = float(batch_data["end_time"]) - float(batch_data["start_time"])
+        
+        result: BatchResult = {
+            "batch_id": batch_id,
+            "success": batch_data["status"] == "completed",
+            "total_jobs": batch_data["total_jobs"],
+            "successful_jobs": batch_data["completed_jobs"],
+            "failed_jobs": batch_data["failed_jobs"],
+            "processing_time": processing_time,
+            "status": batch_data["status"],
+            "results": batch_data["results"],
+            "errors": [batch_data["results"].get(job_id, {}) for job_id in batch_data.get("failed_job_ids", [])]
+        }
+        
+        return result
+    except Exception as e:
+        print(f"Error getting batch result: {e}")
+        return {"error": str(e)}
+
+def process_main_queue_batch(batch_size: int = 10) -> Dict[str, Any]:
+    """Process jobs from main intake queue in batches"""
+    try:
+        import uuid
+        
+        # Get batch of jobs from main queue
+        jobs = []
+        for _ in range(batch_size):
+            job = queue_pop(RedisKeys.QUEUE_MAIN_INTAKE)
+            if job and job != "STOP":
+                jobs.append(job)
+            else:
+                break
+        
+        if not jobs:
+            return {"message": "No jobs in queue", "batch_id": None}
+        
+        # Create batch
+        batch_id = str(uuid.uuid4())
+        job_ids = [str(uuid.uuid4()) for _ in jobs]
+        
+        # Store batch metadata
+        store_batch_metadata(batch_id, len(jobs), job_ids)
+        
+        print(f"Created batch {batch_id} with {len(jobs)} jobs")
+        
+        return {
+            "batch_id": batch_id,
+            "jobs": jobs,
+            "job_ids": job_ids,
+            "total_jobs": len(jobs)
+        }
+    except Exception as e:
+        print(f"Error processing main queue batch: {e}")
+        return {"error": str(e)}
+
+def get_batch_status(batch_id: str) -> Dict[str, Any]:
+    """Get current status of a batch"""
+    try:
+        batch_data = hash_get_json(f"batch:metadata:{batch_id}", "data")
+        if not batch_data:
+            return {"error": "Batch not found"}
+        
+        return {
+            "batch_id": batch_id,
+            "status": batch_data["status"],
+            "total_jobs": batch_data["total_jobs"],
+            "completed_jobs": batch_data["completed_jobs"],
+            "failed_jobs": batch_data["failed_jobs"],
+            "progress_percentage": (batch_data["completed_jobs"] + batch_data["failed_jobs"]) / batch_data["total_jobs"] * 100
+        }
+    except Exception as e:
+        print(f"Error getting batch status: {e}")
+        return {"error": str(e)}

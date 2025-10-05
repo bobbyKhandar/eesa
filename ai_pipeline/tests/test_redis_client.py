@@ -10,8 +10,8 @@ import sys
 import os
 from datetime import datetime
 
-# Add the src directory to the path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
+# Add the parent directory to the path to import from src
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 import src.redis_client as redis_client
 
