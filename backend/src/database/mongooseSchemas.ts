@@ -19,6 +19,9 @@ import {examZodSchema,Exam} from "./schemas/examSchemaZod.js"
 import {questionsZodSchema,Question} from "./schemas/questionSchemaZod.js"
 import {subjectZodSchema,Subject} from "./schemas/subjectSchemaZod.js"
 import {userZodSchema,User} from "./schemas/userSchemaZod.js"
+import {examSubmissionDocumentZodSchema,ExamSubmissionDocument,examSubmissionSchemaOptions} from "./schemas/examSubmissionZod.js"
+import {promptZodSchema, Prompt} from "./schemas/promptSchemaZod.js"
+import {examQuestionZodSchema, ExamQuestion} from "./schemas/examQuestionSchemaZod.js"
 
 
 //schema conversion(zod->mongoose) -----------------------------------------------------------------------------------------------
@@ -26,6 +29,9 @@ const examSchema = zodSchema(examZodSchema);
 const questionSchema =zodSchema(questionsZodSchema)
 const subjectSchema =zodSchema(subjectZodSchema)
 const userSchema =zodSchema(userZodSchema)
+const examSubmissionSchema = zodSchema(examSubmissionDocumentZodSchema, examSubmissionSchemaOptions)
+const promptSchema = zodSchema(promptZodSchema)
+const examQuestionSchema = zodSchema(examQuestionZodSchema)
 
 
 
@@ -50,4 +56,28 @@ export  function getSubjectModel():Model<Subject> {
 */
 export  function getUserModel(): Model<User> {
    return models["user"] || model("user", userSchema);
+}
+
+/**
+ * lazily initializes exam submission model
+ * @returns mongoose model for exam submissions
+ */
+export function getExamSubmissionModel(): Model<ExamSubmissionDocument> {
+  return models["ExamSubmission"] || model("ExamSubmission", examSubmissionSchema);
+}
+
+/**
+ * lazily initializes prompt model (central question library)
+ * @returns mongoose model for prompts
+ */
+export function getPromptModel(): Model<Prompt> {
+  return models["Prompt"] || model("Prompt", promptSchema);
+}
+
+/**
+ * lazily initializes exam question model (exam-specific question instances)
+ * @returns mongoose model for exam questions
+ */
+export function getExamQuestionModel(): Model<ExamQuestion> {
+  return models["ExamQuestion"] || model("ExamQuestion", examQuestionSchema);
 }

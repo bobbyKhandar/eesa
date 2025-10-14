@@ -1,6 +1,6 @@
 "use client"
 import Link from "next/link"
-import { useState, useEffect } from "react"
+import { useState, useEffect, use } from "react"
 import { Button } from "@/frontend/components/ui/button"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/frontend/components/ui/card"
 import { BookOpen, FileText, BarChart3, Plus } from "lucide-react"
@@ -10,55 +10,96 @@ import { ArrowRight } from "lucide-react"
 
 export default function DashboardPage() {
   const [submissions, setSubmissions] = useState<any[]>([])
+  const [allocatedExams, setAllocatedExams] = useState<any[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [avgScore, setAvgScore] = useState<number | string>("loading..")
+  const [recentExams, setRecentExams] = useState<any[]>([])
   const { user } = useUser()
-
-  // Load user's graded submissions
+  
   useEffect(() => {
-    const email = user?.emailAddresses?.[0]?.emailAddress
-    if (!email) return
-
+    console.log('User effect triggered', user)
+    if (!user?.id) return
+    
     setLoading(true)
     setError(null)
-
-    fetch(`/api/users/submissions`, {
+    
+    // First, create/ensure user exists
+    fetch(`/api/users/create`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email }),
+      body: JSON.stringify({ user: user, role: "student" }),
     })
       .then(async (r) => {
-        const data = await r.json().catch(() => ({ success: false }))
-        if (!r.ok || !data?.success) throw new Error(data?.error || "Failed to fetch submissions")
-        setSubmissions(Array.isArray(data.submissions) ? data.submissions : [])
+        const resp = await r.json().catch(() => ({ success: false }))
+        console.log('Create user response:', r.ok, resp)
+        if (!r.ok || !resp?.success) throw new Error(resp?.error || "Failed to create user")
+
+        const exams = Array.isArray(resp.user?.currentAllocatedExams) ? resp.user.currentAllocatedExams : []
+        const subs = Array.isArray(resp.user?.submissionHistory) ? resp.user.submissionHistory : []
+        
+        console.log('Setting allocatedExams:', exams, 'submissions:', subs)
+        setAllocatedExams(exams)
+        const currentSubmissions = []
+        for(const submission of subs){
+          console.log(submission)
+          try {
+            const exam = await fetch(`api/users/submissions/${submission}/examDetails`)
+            if (exam.ok) {
+              const examData = await exam.json()
+              // Keep the submission ID for linking to results page
+              currentSubmissions.push({
+                ...examData.examSet,
+                submissionId: submission // Store the actual submission ID
+              })
+            }
+          } catch (error) {
+            console.error('Error fetching exam data:', error);
+          }
+        }
+        setSubmissions(currentSubmissions)
       })
       .catch((e) => setError(e.message || String(e)))
       .finally(() => setLoading(false))
-  }, [user?.emailAddresses])
-
+  }, [user?.id])
+  
   // Derived metrics from submissions
-  const totalExams = submissions.length
-  const completedExams = submissions.filter(s => !!s.evaluatedAt).length
-  const avgScore = (() => {
-    const vals = submissions
-      .map((s) => {
-        if (typeof s.percentage === "number") return s.percentage
-        if (s.obtainedMarks != null && s.totalMarks) return (s.obtainedMarks / s.totalMarks) * 100
+  const [totalExams, setTotalExams] = useState(0)
+  
+  // Update totalExams whenever allocatedExams or submissions change
+  useEffect(() => {
+    setTotalExams(allocatedExams.length + submissions.length)
+  }, [allocatedExams, submissions])
+
+
+   useEffect(() => {
+    const vals = submissions.map((s) => {
+
+        if (s.totalMarks != null && s.marksAchieved != null) return (s.marksAchieved / s.totalMarks) * 100
         return undefined
       })
       .filter((v): v is number => typeof v === "number" && !Number.isNaN(v))
-    if (vals.length === 0) return 0
-    return Math.round((vals.reduce((a, b) => a + b, 0) / vals.length) * 10) / 10
-  })()
+    
+    if (vals.length === 0) {
+      setAvgScore(0)
+      return
+    }
+    
+    const avgScore = Math.round((vals.reduce((a, b) => a + b, 0) / vals.length) * 10) / 10
+    setAvgScore(avgScore)
+  }, [submissions])
 
-  // Recent: newest first
-  const recent = [...submissions]
-    .sort((a, b) => {
-      const da = new Date(a.evaluatedAt || a.submittedAt || 0).getTime()
-      const db = new Date(b.evaluatedAt || b.submittedAt || 0).getTime()
-      return db - da
-    })
-    .slice(0, 6)
+  // Recent: newest first (just take first 6 from submissions - they're already fetched)
+  useEffect(() => {
+    if (submissions.length === 0) {
+      setRecentExams([])
+      return
+    }
+    
+    // Take the 6 most recent submissions (already sorted)
+    const recent = submissions.slice(0, 6)
+    setRecentExams(recent)
+  }, [submissions])
 
   return (
     <div className="space-y-6">
@@ -104,7 +145,7 @@ export default function DashboardPage() {
               <FileText className="h-4 w-4 text-gray-500 dark:text-gray-400" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">{completedExams}</div>
+              <div className="text-2xl font-bold">{submissions.length}</div>
               <p className="text-xs text-gray-500 dark:text-gray-400">Evaluated with results</p>
             </CardContent>
           </Card>
@@ -123,7 +164,7 @@ export default function DashboardPage() {
 
         <h2 className="text-xl font-bold mt-8">Recent Exams</h2>
         <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-          {recent.length === 0 && !loading && !error && (
+          {recentExams.length === 0 && !loading && !error && (
             <Card>
               <CardHeader>
                 <CardTitle>No recent submissions</CardTitle>
@@ -132,21 +173,18 @@ export default function DashboardPage() {
             </Card>
           )}
 
-          {recent.map((s) => {
-            const dt = new Date(s.evaluatedAt || s.submittedAt || Date.now())
-            const dateStr = dt.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" })
+          {recentExams.map((s,i) => {
+            console.log(s)
+            const date = new Date(s.submittedAt || 0)
+            const dateStr = date.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" })
             const status = s.evaluatedAt ? "Completed" : "Submitted"
-            const score =
-              typeof s.percentage === "number"
-                ? `${Math.round(s.percentage)}%`
-                : s.totalMarks
-                ? `${s.obtainedMarks ?? 0}/${s.totalMarks}`
-                : "—"
-
+            const score = s.marksAchieved && s.totalMarks ? `${((s.marksAchieved / s.totalMarks) * 100).toFixed(2)}%` : "N/A"
+            
+            const examSet = s.title 
             return (
-              <Card key={s._id}>
-                <CardHeader>
-                  <CardTitle>{s.examTitle || `Exam ${s.examId}`}</CardTitle>
+              <Card key={""+s.examId+" "+i}>
+                <CardHeader>  
+                  <CardTitle>{examSet}</CardTitle>
                   <CardDescription>{status} on {dateStr}</CardDescription>
                 </CardHeader>
                 <CardContent>
@@ -159,7 +197,7 @@ export default function DashboardPage() {
                   </div>
                 </CardContent>
                 <CardFooter>
-                  <Link href={`/results/${s.examId}`} className="w-full">
+                  <Link href={`/results/${s.submissionId}`} className="w-full">
                     <Button variant="outline" className="w-full">
                       View Result
                     </Button>

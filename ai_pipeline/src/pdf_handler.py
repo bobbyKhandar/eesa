@@ -264,106 +264,13 @@ class PDFHandler:
         
         return result
     
-    def split_pdf(self, pdf_path: str, output_dir: str, pages_per_chunk: int = 10) -> List[str]:
-        """
-        Split a large PDF into smaller chunks
-        
-        Args:
-            pdf_path: Path to source PDF
-            output_dir: Directory to save chunks
-            pages_per_chunk: Number of pages per chunk
-            
-        Returns:
-            List of created chunk file paths
-        """
-        chunk_paths = []
-        
-        try:
-            if not os.path.exists(pdf_path):
-                self.logger.error(f"Source PDF not found: {pdf_path}")
-                return chunk_paths
-            
-            # Create output directory
-            os.makedirs(output_dir, exist_ok=True)
-            
-            # Open source document
-            doc = fitz.open(pdf_path)
-            total_pages = doc.page_count
-            
-            if total_pages <= pages_per_chunk:
-                # No need to split
-                doc.close()
-                return [pdf_path]
-            
-            # Create chunks
-            base_name = os.path.splitext(os.path.basename(pdf_path))[0]
-            
-            for start_page in range(0, total_pages, pages_per_chunk):
-                end_page = min(start_page + pages_per_chunk, total_pages)
-                
-                # Create new document for chunk
-                chunk_doc = fitz.open()
-                chunk_doc.insert_pdf(doc, from_page=start_page, to_page=end_page - 1)
-                
-                # Save chunk
-                chunk_filename = f"{base_name}_chunk_{start_page + 1}-{end_page}.pdf"
-                chunk_path = os.path.join(output_dir, chunk_filename)
-                chunk_doc.save(chunk_path)
-                chunk_doc.close()
-                
-                chunk_paths.append(chunk_path)
-                self.logger.info(f"Created chunk: {chunk_filename}")
-            
-            doc.close()
-            
-        except Exception as e:
-            self.logger.error(f"Error splitting PDF: {e}")
-        
-        return chunk_paths
+
     
-    def extract_text_direct(self, pdf_path: str) -> Dict[str, Any]:
-        """
-        Extract text directly from PDF without OCR (for text-based PDFs)
-        
-        Args:
-            pdf_path: Path to PDF file
-            
-        Returns:
-            Direct text extraction result
-        """
-        result = {
-            "success": False,
-            "text": "",
-            "page_count": 0,
-            "has_text": False
-        }
-        
-        try:
-            if not os.path.exists(pdf_path):
-                result["error"] = f"File not found: {pdf_path}"
-                return result
-            
-            doc = fitz.open(pdf_path)
-            result["page_count"] = doc.page_count
-            
-            all_text = []
-            text_found = False
-            
-            for page_num in range(doc.page_count):
-                page = doc[page_num]
-                page_text = page.get_text()
-                
-                if page_text.strip():
-                    text_found = True
-                    all_text.append(f"--- Page {page_num + 1} ---\n{page_text}")
-            
-            doc.close()
-            
-            result["success"] = True
-            result["has_text"] = text_found
-            result["text"] = "\n\n".join(all_text)
-            
-        except Exception as e:
-            result["error"] = str(e)
-        
-        return result
+   # def split_pdf(self, pdf_path: str, output_dir: str, pages_per_chunk: int = 10) -> List[str]:
+    
+
+
+
+    ##del  this extract_text_direct
+    # def extract_text_direct(self, pdf_path: str) -> Dict[str, Any]:
+   
