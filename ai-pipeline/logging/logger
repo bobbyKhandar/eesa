@@ -1,0 +1,17 @@
+class logger:
+        def __init__(self,logfile:str):
+            self.logfile=logfile
+            open(self.logfile, "a").write(f"[INFO] Log started at {datetime.now()} \n")
+
+        def info(self,message:str):
+            open(self.logfile, "a").write(f"[INFO] at  {datetime.now()} : {message} \n")
+
+        def warning(self,message:str):
+            open(self.logfile, "a").write(f"[WARNING] at  {datetime.now()} : {message} \n")
+
+        def error(self,message:str):
+            open(self.logfile, "a").write(f"[ERROR] at  {datetime.now()} : {message} \n")
+
+        def updateLogFile(self,logfile:str):
+            self.logfile=logfile
+            open(self.logfile, "a").write(f"[INFO] Log updated at {datetime.now()} \n")

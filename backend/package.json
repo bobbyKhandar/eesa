@@ -3,7 +3,11 @@
   "version": "1.0.0",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "dev": "tsx watch src/database/scripts/generate-sample-data.ts",
+    "build": "tsc",
+    "build:scripts": "tsc src/database/scripts/*.ts --outDir dist/database/scripts --module esnext --target es2020 --moduleResolution node --esModuleInterop --skipLibCheck",
+    "generate-data": "node dist/database/scripts/generate-sample-data.js"
   },
   "type": "module",
   "keywords": [],
@@ -14,6 +18,7 @@
     "@types/lodash": "^4.17.20",
     "@types/node": "^24.0.13",
     "ts-node": "^10.9.2",
+    "tsx": "^4.20.6",
     "typescript": "^5.9.2"
   },
   "dependencies": {

@@ -1,13 +1,25 @@
-
 import { z } from "../zodGlobal.js";
-// User Schema
+/*
+ * User Zod Schema definition
+ * Transformed to mongoose schema using zod-to-mongoose in mongooseSchemas.ts
+ * Represents a user entity with authentication info, role, and exam tracking
+ */
+
 export const userZodSchema = z.object({
-  email: z.string(),
-  role: z.string().default("user"),
-  currentAllocatedExams: z.array(z.string()).default([]),
-  history: z.array(z.string()).default([]),
-//   userHistory: z.array(userHistoryZodSchema).default([]),
+  _id: z.string().optional(),
+  email: z.string().email(),
+  name: z.string().optional(),
+  role: z.enum(['student', 'teacher', 'admin']).default('student'),
+  
+  // Currently allocated/active exams
+  currentAllocatedExams: z.array(z.string()).default([]), // Array of Exam IDs
+  
+  // Historical exam submissions
+  submissionHistory: z.array(z.string()).default([]), // Array of ExamSubmission IDs
+  
+  // Authentication metadata
+  createdAt: z.date().default(() => new Date()),
+  lastLogin: z.date().optional(),
 });
 
-
-export type User= z.infer<typeof User>
+export type User = z.infer<typeof userZodSchema>

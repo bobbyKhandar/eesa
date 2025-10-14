@@ -1,35 +1,38 @@
 import { z } from "../zodGlobal.js";
 /*
   * Exam Zod Schema definition 
-  *Transformed to mongoose schema using zod-to-mongoose in the (filename) in parent directory  --todo: update this comment with the filename when the file is created
-  *validates the data before saving it to the database
-  *Represents an exam entity including the exam metadeta,Linked Questions,Users which are assigned to this test,users responses to the exams
+  * Transformed to mongoose schema using zod-to-mongoose in mongooseSchemas.ts
+  * Validates the data before saving it to the database
+  * Represents an exam entity including exam metadata, linked questions (via ExamQuestion), and assigned users
+  * Note: Student responses are now stored in separate ExamSubmission documents
  */
 
 export const examZodSchema = z.object({
-  examTitle: z.string(),               // Name of the exam
-  examDescription:z.string(),
-  passingPercentage: z.number(),   // Minimum percentage required to pass the exam
-  examDegree: z.string(),              // Degree programme for which the exam is conducted
-  examMaxMarks: z.number(),            // Total marks for which the exam is evaluated out of
-  examType: z.string(),                //Exam status displayed in the UI alongside the title of exam
-  questions: z.array(              // Array of question objects questions are uniquely stored in questionSchemaZod.ts and referenced here  
-    z.object({
-      questionId: z.string(),          // ObjectId as string
-      marks: z.number(),               // Marks assigned to the question 
-    })
-  ),
-  studentsResponse: z.array(           // Array of student responses to the exam questions (TODO: Make this an different schema as it will be used in userSchemaZod.ts too)
-    z.object({
-      question: z.string(),            //Foreign Key reffering to questionSchemaZod.ts
-      userResponse: z.string(),        // Student's response to the question
-      maximumMarks: z.number(),        //Maximum marks for the question
-      allottedMarks: z.number(),       // Marks allotted to the student for the question
-      feedback: z.string(),            // Feedback for the student's response given by the teacher agent 
-    })
-  ).optional(),
+  _id: z.string().optional(),
+  examTitle: z.string(),                    // Name of the exam
+  examDescription: z.string(),
+  passingPercentage: z.number(),            // Minimum percentage required to pass the exam
+  examDegree: z.string(),                   // Degree programme for which the exam is conducted
+  subject: z.string(),                      // Subject ID reference
+  examMaxMarks: z.number(),                 // Total marks for the exam (sum of all question marks)
+  examType: z.string(),                     // Exam status/type displayed in the UI
+  duration: z.number().optional(),          // Duration in minutes
+  scheduledAt: z.date().optional(),         // Scheduled start time
+  createdBy: z.string(),                    // User ID of creator
+  createdAt: z.date().default(() => new Date()),
+  
+  // Array of ExamQuestion IDs (references to examQuestionSchemaZod)
+  questions: z.array(z.string()),
+  
+  // Array of assigned user IDs
+  assignedUsers: z.array(z.string()).default([]),
+  
+  // Instructions/rules for the exam
+  instructions: z.string().optional(),
+  
+  // Negative marking configuration
+  negativeMarking: z.boolean().default(false),
+  negativeMarkingPercentage: z.number().optional(),
 })
 
-
-
-export type Exam= z.infer<typeof examZodSchema>
+export type Exam = z.infer<typeof examZodSchema>
