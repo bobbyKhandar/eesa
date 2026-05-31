@@ -3,14 +3,13 @@
 import { useState } from "react"
 import Link from "next/link"
 import { Button } from "@/frontend/components/ui/button"
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/frontend/components/ui/card"
+import { Card, CardContent, CardHeader, CardTitle } from "@/frontend/components/ui/card"
 import { Input } from "@/frontend/components/ui/input"
 import { Label } from "@/frontend/components/ui/label"
 import { Textarea } from "@/frontend/components/ui/textarea"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/frontend/components/ui/select"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/frontend/components/ui/tabs"
-import { RadioGroup, RadioGroupItem } from "@/frontend/components/ui/radio-group"
-import { ArrowLeft, Plus, Trash2, Upload, BookOpen, Users, FileText } from "lucide-react"
+import { ArrowLeft, Upload } from "lucide-react"
+import { ExamTypeSelector, SyllabusTypeSelector, SubjectSelector, QuestionEditor } from "@/frontend/components/features/exams"
+import type { Question } from "@/frontend/components/features/exams"
 
 export default function CreateExamPage() {
   const [examType, setExamType] = useState<string | null>(null)
@@ -18,43 +17,9 @@ export default function CreateExamPage() {
   const [selectedBranch, setSelectedBranch] = useState("")
   const [selectedSemester, setSelectedSemester] = useState("")
   const [selectedSubject, setSelectedSubject] = useState("")
-  const [questions, setQuestions] = useState<Array<{
-    id: number;
-    type: string;
-    text: string;
-    marks: number;
-    questionType: "TEXT" | "MCQ" | "TRUE_FALSE";
-    answer?: string;
-    options?: string[];
-    correctOption?: number;
-  }>>([
+  const [questions, setQuestions] = useState<Question[]>([
     { id: 1, type: "theory", text: "", marks: 10, questionType: "TEXT", answer: "" },
   ])
-  // Mock data for branches, semesters, and subjects
-  const branches = ["Computer Science", "Electrical Engineering", "Mechanical Engineering", "Civil Engineering"]
-  const semesters = [
-    "Semester 1",
-    "Semester 2",
-    "Semester 3",
-    "Semester 4",
-    "Semester 5",
-    "Semester 6",
-    "Semester 7",
-    "Semester 8",
-  ]
-  const subjects = {
-    "Computer Science": {
-      "Semester 1": ["Introduction to Programming", "Digital Logic", "Mathematics I"],
-      "Semester 2": ["Data Structures", "Computer Organization", "Mathematics II"],
-      // Add more semesters and subjects as needed
-    },
-    "Electrical Engineering": {
-      "Semester 1": ["Basic Electrical Engineering", "Physics", "Mathematics I"],
-      "Semester 2": ["Circuit Theory", "Electronics", "Mathematics II"],
-      // Add more branches as needed
-    },
-    // Add more branches as needed
-  }
 
   const addQuestion = (type: string) => {
     const newId = questions.length > 0 ? Math.max(...questions.map((q) => q.id)) + 1 : 1
@@ -194,48 +159,13 @@ async function uploadExamSet(): Promise<ApiResponse> {
           </Link>
           <h1 className="text-3xl font-bold">Create New Exam</h1>
         </div>
-
         <Card>
           <CardHeader>
             <CardTitle>Select Exam Type</CardTitle>
-            <CardDescription>Choose how you want to use this exam</CardDescription>
+            <p className="text-sm text-gray-500 dark:text-gray-400">Choose how you want to use this exam</p>
           </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <Card
-                className={`cursor-pointer border-2 hover:border-primary hover:bg-primary/5`}
-                onClick={() => setExamType("personal")}
-              >
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <BookOpen className="h-5 w-5" />
-                    Personal Use
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <p className="text-sm text-gray-500 dark:text-gray-400">
-                    Create an exam for your personal study or practice. You'll be the only one taking this exam.
-                  </p>
-                </CardContent>
-              </Card>
-
-              <Card
-                className={`cursor-pointer border-2 hover:border-primary hover:bg-primary/5`}
-                onClick={() => setExamType("teacher")}
-              >
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <Users className="h-5 w-5" />
-                    Teacher Assignment
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <p className="text-sm text-gray-500 dark:text-gray-400">
-                    Create an exam to assign to students. You'll be able to share this exam and collect responses.
-                  </p>
-                </CardContent>
-              </Card>
-            </div>
+          <CardContent>
+            <ExamTypeSelector onSelect={(t) => setExamType(t)} />
           </CardContent>
         </Card>
       </div>
@@ -252,52 +182,20 @@ async function uploadExamSet(): Promise<ApiResponse> {
           </Button>
           <h1 className="text-3xl font-bold">Create New Exam</h1>
         </div>
-
         <Card>
           <CardHeader>
             <CardTitle>Select Syllabus Type</CardTitle>
-            <CardDescription>
+            <p className="text-sm text-gray-500 dark:text-gray-400">
               {examType === "personal"
                 ? "Choose which syllabus to use for your personal exam"
                 : "Choose which syllabus to use for your student assignment"}
-            </CardDescription>
+            </p>
           </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <Card
-                className={`cursor-pointer border-2 hover:border-primary hover:bg-primary/5`}
-                onClick={() => setSyllabusType("pre-uploaded")}
-              >
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <FileText className="h-5 w-5" />
-                    Pre-uploaded Syllabus
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <p className="text-sm text-gray-500 dark:text-gray-400">
-                    Use an existing syllabus from our database for a specific subject.
-                  </p>
-                </CardContent>
-              </Card>
-
-              <Card
-                className={`cursor-pointer border-2 hover:border-primary hover:bg-primary/5`}
-                onClick={() => setSyllabusType("personal")}
-              >
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <Upload className="h-5 w-5" />
-                    Personal Syllabus
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <p className="text-sm text-gray-500 dark:text-gray-400">
-                    Upload or create your own custom syllabus for this exam.
-                  </p>
-                </CardContent>
-              </Card>
-            </div>
+          <CardContent>
+            <SyllabusTypeSelector
+              examType={examType}
+              onSelect={(t) => setSyllabusType(t)}
+            />
           </CardContent>
         </Card>
       </div>
@@ -314,81 +212,15 @@ async function uploadExamSet(): Promise<ApiResponse> {
           </Button>
           <h1 className="text-3xl font-bold">Select Subject</h1>
         </div>
-
-        <Card>
-          <CardHeader>
-            <CardTitle>Choose Subject from Syllabus</CardTitle>
-            <CardDescription>Select the branch, semester, and subject for your exam</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-6">
-            <div className="grid gap-4">
-              <div className="grid gap-2">
-                <Label htmlFor="branch">Branch</Label>
-                <Select value={selectedBranch} onValueChange={setSelectedBranch}>
-                  <SelectTrigger id="branch">
-                    <SelectValue placeholder="Select branch" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {branches.map((branch) => (
-                      <SelectItem key={branch} value={branch}>
-                        {branch}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="grid gap-2">
-                <Label htmlFor="semester">Semester</Label>
-                <Select value={selectedSemester} onValueChange={setSelectedSemester} disabled={!selectedBranch}>
-                  <SelectTrigger id="semester">
-                    <SelectValue placeholder="Select semester" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {semesters.map((semester) => (
-                      <SelectItem key={semester} value={semester}>
-                        {semester}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="grid gap-2">
-                <Label htmlFor="subject">Subject</Label>
-                <Select
-                  value={selectedSubject}
-                  onValueChange={setSelectedSubject}
-                  disabled={!selectedBranch || !selectedSemester}
-                >
-                  <SelectTrigger id="subject">
-                    <SelectValue placeholder="Select subject" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {selectedBranch &&
-                      selectedSemester &&
-                      subjects[selectedBranch]?.[selectedSemester]?.map((subject) => (
-                        <SelectItem key={subject} value={subject}>
-                          {subject}
-                        </SelectItem>
-                      ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-          </CardContent>
-          <CardFooter>
-            <Button
-              disabled={!selectedBranch || !selectedSemester || !selectedSubject}
-              onClick={() => {
-                // Continue to the main exam creation form
-                // The selected branch, semester, and subject are stored in state
-              }}
-            >
-              Continue
-            </Button>
-          </CardFooter>
-        </Card>
+        <SubjectSelector
+          branch={selectedBranch}
+          semester={selectedSemester}
+          subject={selectedSubject}
+          onBranchChange={setSelectedBranch}
+          onSemesterChange={setSelectedSemester}
+          onSubjectChange={setSelectedSubject}
+          onContinue={() => {}}
+        />
       </div>
     )
   }
@@ -622,161 +454,29 @@ async function uploadExamSet(): Promise<ApiResponse> {
         </CardContent>
       </Card> */}
 
-      <Card>
-        <CardHeader className="flex flex-row items-center justify-between">
-          <div>
-            <CardTitle>Questions</CardTitle>
-            <CardDescription>
-              Add and configure exam questions • Total Marks: {questions.reduce((sum, q) => sum + (q.marks || 0), 0)}
-            </CardDescription>
-          </div>
-          <Tabs defaultValue="theory">
-            <TabsList>
-              <TabsTrigger value="theory">theory</TabsTrigger>
-              {/* <TabsTrigger value="mcq">Multiple Choice</TabsTrigger> */}
-            </TabsList>
-            <TabsContent value="theory">
-              <Button onClick={() => addQuestion("theory")} size="sm" className="gap-1">
-                <Plus className="h-4 w-4" /> Add theory Question
-              </Button>
-            </TabsContent>
-            {/* <TabsContent value="mcq">
-              <Button onClick={() => addQuestion("mcq")} size="sm" className="gap-1">
-                <Plus className="h-4 w-4" /> Add MCQ
-              </Button>
-            </TabsContent> */}
-          </Tabs>
-        </CardHeader>
-        <CardContent className="space-y-6">
-          {questions.map((question, index) => (
-            <Card key={question.id} className="border border-gray-200 dark:border-gray-800">
-              <CardHeader className="flex flex-row items-center justify-between">
-                <CardTitle className="text-base">Question {index + 1}</CardTitle>
-                <Button variant="ghost" size="icon" onClick={() => removeQuestion(question.id)}>
-                  <Trash2 className="h-4 w-4" />
-                </Button>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="grid gap-2">
-                  <Label htmlFor={`question-${question.id}`}>Question Text</Label>
-                  <Textarea
-                    id={`question-${question.id}`}
-                    placeholder="Enter question text"
-                    value={question.text}
-                    readOnly={processingRequest}
-                    onChange={(e) => updateQuestion(question.id, { text: e.target.value })}
-                  />
-                </div>
-
-                {/* {question.type === "mcq" && (
-                  <div className="space-y-4">
-                    <Label>Options</Label>
-                    {question.options.map((option, optIndex) => (
-                      <div key={optIndex} className="flex items-center gap-2">
-                        <Input
-                          placeholder={`Option ${optIndex + 1}`}
-                          value={option}
-                          readOnly={processingRequest}
-                          onChange={(e) => {
-                            const newOptions = [...question.options]
-                            newOptions[optIndex] = e.target.value
-                            updateQuestion(question.id, { options: newOptions })
-                          }}
-                        />
-                        <Select
-                          value={question.correctOption === optIndex.toString() ? "correct" : "incorrect"}
-                          onValueChange={(value) => {
-                            if (value === "correct") {
-                              updateQuestion(question.id, { correctOption: optIndex.toString() })
-                            }
-                          }}
-                        >
-
-                          <SelectTrigger className="w-[120px]">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="correct">Correct</SelectItem>
-                            <SelectItem value="incorrect">Incorrect</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-                    ))}
-                  </div>
-                )} */}
-
-                <div className="grid gap-2">
-                  <Label htmlFor={`marks-${question.id}`}>Marks</Label>
-                  <Input
-                    id={`marks-${question.id}`}
-                    type="number"
-                    value={question.marks}
-                    onChange={(e) => updateQuestion(question.id, { marks: Number.parseInt(e.target.value) || 0 })}
-                  />
-                </div>
-
-                {/* {examType === "teacher" && (
-                  <div className="grid gap-2">
-                    <Label>Bloom's Taxonomy Level</Label>
-                    <RadioGroup defaultValue="understand">
-                      <div className="grid grid-cols-2 gap-2">
-                        <div className="flex items-center space-x-2">
-                          <RadioGroupItem value="remember" id="remember" />
-                          <Label htmlFor="remember">Remember</Label>
-                        </div>
-                        <div className="flex items-center space-x-2">
-                          <RadioGroupItem value="understand" id="understand" />
-                          <Label htmlFor="understand">Understand</Label>
-                        </div>
-                        <div className="flex items-center space-x-2">
-                          <RadioGroupItem value="apply" id="apply" />
-                          <Label htmlFor="apply">Apply</Label>
-                        </div>
-                        <div className="flex items-center space-x-2">
-                          <RadioGroupItem value="analyze" id="analyze" />
-                          <Label htmlFor="analyze">Analyze</Label>
-                        </div>
-                        <div className="flex items-center space-x-2">
-                          <RadioGroupItem value="evaluate" id="evaluate" />
-                          <Label htmlFor="evaluate">Evaluate</Label>
-                        </div>
-                        <div className="flex items-center space-x-2">
-                          <RadioGroupItem value="create" id="create" />
-                          <Label htmlFor="create">Create</Label>
-                        </div>
-                      </div>
-                    </RadioGroup>
-                  </div>
-                )} */}
-              </CardContent>
-            </Card>
-          ))}
-
-          {questions.length === 0 && (
-            <div className="flex flex-col items-center justify-center py-8 text-center">
-              <p className="text-gray-500 dark:text-gray-400">No questions added yet</p>
-              <p className="text-sm text-gray-500 dark:text-gray-400">Use the buttons above to add questions</p>
-            </div>
-          )}
-        </CardContent>
-        <CardFooter className="flex justify-between">
-          <Button variant="outline" disabled={processingRequest}>Save as Draft</Button>
-          <Button 
-            onClick={async () => {
-              const response = await uploadExamSet()
-              if (response.success) {
-                // Optionally redirect to exam list or show success message
-                setTimeout(() => {
-                  window.location.href = '/dashboard/exams'
-                }, 2000)
-              }
-            }}
-            disabled={processingRequest}
-          >
-            {processingRequest ? "Creating..." : "Create Exam"}
-          </Button>
-        </CardFooter>
-      </Card>
+      <QuestionEditor
+        questions={questions}
+        processingRequest={processingRequest}
+        onAdd={addQuestion}
+        onRemove={removeQuestion}
+        onUpdate={updateQuestion}
+      />
+      <div className="flex justify-between">
+        <Button variant="outline" disabled={processingRequest}>Save as Draft</Button>
+        <Button 
+          onClick={async () => {
+            const response = await uploadExamSet()
+            if (response.success) {
+              setTimeout(() => {
+                window.location.href = '/dashboard/exams'
+              }, 2000)
+            }
+          }}
+          disabled={processingRequest}
+        >
+          {processingRequest ? "Creating..." : "Create Exam"}
+        </Button>
+      </div>
     </div>
   )
 }

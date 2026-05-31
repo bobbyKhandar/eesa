@@ -1,15 +1,13 @@
-// app/api/exams/create/route.ts
 import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
+import { userRepo } from "@/backend/dist/database/repositories/index";
+import { ExamRepository } from "@/backend/dist/database/repositories/ExamRepository";
 
-// Assuming createExam is now a local function or directly interacts with DB here
-import { getExamSetData, getExamSetsId } from "@/backend/dist/database/db"; // Example if it's local
+const examRepo = new ExamRepository();
 
 export async function POST(req: Request) {
-    try {  
-    const body = await req.json();
-    const { email } = body;
-
+  try {
+    const { email } = await req.json();
     if (!email) {
       return NextResponse.json(
         { success: false, error: "Missing email" },
@@ -17,19 +15,29 @@ export async function POST(req: Request) {
       );
     }
 
-    const examSets = await getExamSetsId(email);
-    console.log(examSets)
-    const results = await Promise.all(examSets.currentAllocatedExams.map(async (examSetid) => {
-      return await getExamSetData(examSetid);
-    }));
+    const user = await userRepo.getByEmail(email);
+    if (!user) {
+      return NextResponse.json(
+        { success: false, error: "User not found" },
+        { status: 404 }
+      );
+    }
+
+    const examIds = user.currentAllocatedExams || [];
+    const results = await Promise.all(
+      examIds.map(async (examId: string) => {
+        return await examRepo.getById(examId);
+      })
+    );
+
     return NextResponse.json(
       { success: true, examSets: results },
       { status: 200 }
     );
   } catch (err) {
-    console.error("Error creating exam:", err);
+    console.error("Error fetching exams:", err);
     return NextResponse.json(
-      { success: false, error: "Failed to create exam" },
+      { success: false, error: "Failed to fetch exams" },
       { status: 500 }
     );
   }

@@ -1,55 +1,16 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { Button } from "@/frontend/components/ui/button"
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/frontend/components/ui/card"
-import { Input } from "@/frontend/components/ui/input"
-import { Label } from "@/frontend/components/ui/label"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/frontend/components/ui/select"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/frontend/components/ui/tabs"
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/frontend/components/ui/table"
-import { Badge } from "@/frontend/components/ui/badge"
-import { Textarea } from "@/frontend/components/ui/textarea"
+import { BookOpen, AlertCircle } from "lucide-react"
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/frontend/components/ui/dialog"
-import { FileText, Download, Upload, BookOpen, Star, ThumbsUp, Eye, Calendar, User, Search, Plus, Loader2, AlertCircle } from "lucide-react"
-
-interface Subject {
-  id: string
-  name: string
-  code?: string
-  branch: string
-  semester: string
-  reportCount: number
-  questionCount: number
-}
-
-interface PYQ {
-  _id: string
-  id?: string
-  title: string
-  questionText: string
-  year?: string
-  years?: string[]
-  examType: string
-  occurrenceCount: number
-  frequency?: number
-  bloomsLevel: string
-  topic?: string
-  topics?: string[]
-  difficulty?: string
-  downloadCount: number
-  sourceReports: number
-}
+  UploadResourceDialog, StatsCards, SubjectFilter, SearchFilterBar, PyqsTable, NoteCard,
+  getDifficultyColor,
+} from "@/frontend/components/features/resources"
+import type { PYQ, Note } from "@/frontend/components/features/resources"
 
 interface ResourcesData {
-  subjects: Subject[]
+  subjects: { id: string; name: string; code?: string; branch: string; semester: string; reportCount: number; questionCount: number }[]
   branches: string[]
   semesters: string[]
   grouped: Record<string, Record<string, string[]>>
@@ -255,19 +216,6 @@ export default function ResourcesPage() {
     },
   ]
 
-  const getDifficultyColor = (difficulty: string) => {
-    switch (difficulty) {
-      case "Easy":
-        return "bg-green-500"
-      case "Medium":
-        return "bg-yellow-500"
-      case "Hard":
-        return "bg-red-500"
-      default:
-        return "bg-gray-500"
-    }
-  }
-
   return (
     <div className="space-y-6">
       {error && (
@@ -285,157 +233,29 @@ export default function ResourcesPage() {
           <h1 className="text-3xl font-bold">Resources</h1>
           <p className="text-gray-500 dark:text-gray-400">Access study materials, notes, and learning resources</p>
         </div>
-        <Dialog>
-          <DialogTrigger asChild>
-            <Button className="gap-2">
-              <Plus className="h-4 w-4" /> Upload Resource
-            </Button>
-          </DialogTrigger>
-          <DialogContent className="max-w-md">
-            <DialogHeader>
-              <DialogTitle>Upload Resource</DialogTitle>
-              <DialogDescription>Share your notes with fellow students</DialogDescription>
-            </DialogHeader>
-            <div className="space-y-4">
-              <div className="grid gap-2">
-                <Label htmlFor="title">Title</Label>
-                <Input id="title" placeholder="Enter resource title" />
-              </div>
-              <div className="grid gap-2">
-                <Label htmlFor="description">Description</Label>
-                <Textarea id="description" placeholder="Describe your resource" />
-              </div>
-              <div className="grid gap-2">
-                <Label htmlFor="file">File</Label>
-                <Input id="file" type="file" />
-              </div>
-              <div className="grid gap-2">
-                <Label htmlFor="tags">Tags (comma separated)</Label>
-                <Input id="tags" placeholder="e.g., algorithms, sorting, practice" />
-              </div>
-              <Button className="w-full">Upload Resource</Button>
-            </div>
-          </DialogContent>
-        </Dialog>
+        <UploadResourceDialog />
       </div>
 
-      {/* Statistics Cards */}
-      <div className="grid gap-6 md:grid-cols-4">
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium">Total Subjects</CardTitle>
-            <FileText className="h-4 w-4 text-gray-500 dark:text-gray-400" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">
-              {loading ? <Loader2 className="h-6 w-6 animate-spin" /> : (resourcesData?.subjects.length || 0)}
-            </div>
-            <p className="text-xs text-gray-500 dark:text-gray-400">Available subjects</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium">Total PYQs</CardTitle>
-            <BookOpen className="h-4 w-4 text-gray-500 dark:text-gray-400" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">
-              {pyqsLoading ? <Loader2 className="h-6 w-6 animate-spin" /> : (pyqsData?.stats?.totalQuestions || 0)}
-            </div>
-            <p className="text-xs text-gray-500 dark:text-gray-400">Questions available</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium">Unique Questions</CardTitle>
-            <Star className="h-4 w-4 text-gray-500 dark:text-gray-400" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">
-              {pyqsLoading ? <Loader2 className="h-6 w-6 animate-spin" /> : (pyqsData?.stats?.uniqueQuestions || pyqsData?.pyqs.length || 0)}
-            </div>
-            <p className="text-xs text-gray-500 dark:text-gray-400">Distinct questions</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium">Subjects Covered</CardTitle>
-            <Upload className="h-4 w-4 text-gray-500 dark:text-gray-400" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">
-              {pyqsLoading ? <Loader2 className="h-6 w-6 animate-spin" /> : (pyqsData?.stats?.subjectCount || resourcesData?.subjects.length || 0)}
-            </div>
-            <p className="text-xs text-gray-500 dark:text-gray-400">Different subjects</p>
-          </CardContent>
-        </Card>
-      </div>
+      <StatsCards
+        loading={loading}
+        pyqsLoading={pyqsLoading}
+        totalSubjects={resourcesData?.subjects.length || 0}
+        totalQuestions={pyqsData?.stats?.totalQuestions || 0}
+        uniqueQuestions={pyqsData?.stats?.uniqueQuestions || pyqsData?.pyqs.length || 0}
+        subjectCount={pyqsData?.stats?.subjectCount || resourcesData?.subjects.length || 0}
+      />
 
-      {/* Subject Selection */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Select Subject</CardTitle>
-          <CardDescription>Choose the branch, semester, and subject to view resources</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div className="grid gap-2">
-              <Label htmlFor="branch">Branch</Label>
-              <Select value={selectedBranch} onValueChange={setSelectedBranch}>
-                <SelectTrigger id="branch">
-                  <SelectValue placeholder="Select branch" />
-                </SelectTrigger>
-                <SelectContent>
-                  {branches.map((branch) => (
-                    <SelectItem key={branch} value={branch}>
-                      {branch}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="grid gap-2">
-              <Label htmlFor="semester">Semester</Label>
-              <Select value={selectedSemester} onValueChange={setSelectedSemester} disabled={!selectedBranch}>
-                <SelectTrigger id="semester">
-                  <SelectValue placeholder="Select semester" />
-                </SelectTrigger>
-                <SelectContent>
-                  {semesters.map((semester) => (
-                    <SelectItem key={semester} value={semester}>
-                      {semester}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="grid gap-2">
-              <Label htmlFor="subject">Subject</Label>
-              <Select
-                value={selectedSubject}
-                onValueChange={setSelectedSubject}
-                disabled={!selectedBranch || !selectedSemester}
-              >
-                <SelectTrigger id="subject">
-                  <SelectValue placeholder="Select subject" />
-                </SelectTrigger>
-                <SelectContent>
-                  {getSubjectsForSelection().map((subject) => (
-                    <SelectItem key={subject} value={subject}>
-                      {subject}
-                    </SelectItem>
-                  ))}
-                  {getSubjectsForSelection().length === 0 && selectedBranch && selectedSemester && (
-                    <SelectItem value="none" disabled>No subjects available</SelectItem>
-                  )}
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
+      <SubjectFilter
+        branches={branches}
+        semesters={semesters}
+        selectedBranch={selectedBranch}
+        selectedSemester={selectedSemester}
+        selectedSubject={selectedSubject}
+        subjectsForSelection={getSubjectsForSelection()}
+        onBranchChange={setSelectedBranch}
+        onSemesterChange={setSelectedSemester}
+        onSubjectChange={setSelectedSubject}
+      />
 
       {selectedBranch && selectedSemester && selectedSubject && (
         <div className="space-y-6">
@@ -446,29 +266,12 @@ export default function ResourcesPage() {
             </div>
           </div>
 
-          {/* Search and Filter */}
-          <div className="flex flex-col sm:flex-row gap-4">
-            <div className="relative flex-1">
-              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-gray-500 dark:text-gray-400" />
-              <Input
-                placeholder="Search resources..."
-                className="pl-8"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-              />
-            </div>
-            <Select value={filterType} onValueChange={setFilterType}>
-              <SelectTrigger className="w-full sm:w-[180px]">
-                <SelectValue placeholder="Filter by type" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Types</SelectItem>
-                <SelectItem value="pyqs">Previous Papers</SelectItem>
-                <SelectItem value="faculty">Faculty Notes</SelectItem>
-                <SelectItem value="student">Student Notes</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
+          <SearchFilterBar
+            searchQuery={searchQuery}
+            filterType={filterType}
+            onSearchChange={setSearchQuery}
+            onFilterChange={setFilterType}
+          />
 
           <Tabs defaultValue="pyqs" onValueChange={setActiveTab}>
             <TabsList className="grid grid-cols-3 w-full">
@@ -477,210 +280,27 @@ export default function ResourcesPage() {
               <TabsTrigger value="student">Student Notes</TabsTrigger>
             </TabsList>
 
-            {/* Previous Year Question Papers */}
             <TabsContent value="pyqs" className="mt-6">
-              <Card>
-                <CardHeader>
-                  <div className="flex items-center justify-between">
-                    <CardTitle>Previous Year Question Papers</CardTitle>
-                    <Button variant="outline" size="sm" className="gap-1 bg-transparent">
-                      <Download className="h-4 w-4" /> Download All
-                    </Button>
-                  </div>
-                  <CardDescription>Access past examination papers for {selectedSubject}</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  {pyqsLoading ? (
-                    <div className="flex justify-center py-8">
-                      <Loader2 className="h-6 w-6 animate-spin text-gray-500" />
-                    </div>
-                  ) : filteredPyqs.length === 0 ? (
-                    <div className="text-center py-8 text-gray-500 dark:text-gray-400">
-                      No PYQs available for {selectedSubject}
-                    </div>
-                  ) : (
-                    <div className="rounded-md border">
-                      <Table>
-                        <TableHeader>
-                          <TableRow>
-                            <TableHead>Question</TableHead>
-                            <TableHead>Year</TableHead>
-                            <TableHead>Frequency</TableHead>
-                            <TableHead>Difficulty</TableHead>
-                            <TableHead>Action</TableHead>
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {filteredPyqs.map((pyq) => (
-                            <TableRow key={pyq._id}>
-                              <TableCell>
-                                <div className="max-w-md">
-                                  <div className="font-medium line-clamp-2">{pyq.questionText}</div>
-                                  {pyq.topics && pyq.topics.length > 0 && (
-                                    <div className="flex flex-wrap gap-1 mt-1">
-                                      {pyq.topics.slice(0, 3).map((topic, idx) => (
-                                        <Badge key={idx} variant="outline" className="text-xs">
-                                          {topic}
-                                        </Badge>
-                                      ))}
-                                    </div>
-                                  )}
-                                </div>
-                              </TableCell>
-                              <TableCell>
-                                {pyq.years && pyq.years.length > 0 ? (
-                                  <div className="text-sm">{pyq.years.join(', ')}</div>
-                                ) : (
-                                  <span className="text-gray-400">N/A</span>
-                                )}
-                              </TableCell>
-                              <TableCell>
-                                <Badge variant="outline">{pyq.frequency || 0}×</Badge>
-                              </TableCell>
-                              <TableCell>
-                                <Badge className={getDifficultyColor(pyq.difficulty || 'medium')}>
-                                  {pyq.difficulty || 'Medium'}
-                                </Badge>
-                              </TableCell>
-                              <TableCell>
-                                <Button variant="ghost" size="sm">
-                                  <Eye className="h-4 w-4" />
-                                </Button>
-                              </TableCell>
-                            </TableRow>
-                          ))}
-                        </TableBody>
-                      </Table>
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
+              <PyqsTable
+                subjectName={selectedSubject}
+                pyqs={filteredPyqs}
+                loading={pyqsLoading}
+                getDifficultyColor={getDifficultyColor}
+              />
             </TabsContent>
 
-            {/* Faculty Notes */}
             <TabsContent value="faculty" className="mt-6">
               <div className="grid gap-6">
                 {facultyNotes.map((note) => (
-                  <Card key={note.id}>
-                    <CardHeader>
-                      <div className="flex items-start justify-between">
-                        <div>
-                          <CardTitle className="text-lg">{note.title}</CardTitle>
-                          <CardDescription className="mt-1">{note.description}</CardDescription>
-                        </div>
-                        <div className="flex items-center gap-1">
-                          <Star className="h-4 w-4 fill-yellow-400 text-yellow-400" />
-                          <span className="text-sm font-medium">{note.rating}</span>
-                        </div>
-                      </div>
-                    </CardHeader>
-                    <CardContent className="space-y-3">
-                      <div className="flex items-center gap-4 text-sm text-gray-500 dark:text-gray-400">
-                        <div className="flex items-center gap-1">
-                          <User className="h-4 w-4" />
-                          <span>{note.uploadedBy}</span>
-                        </div>
-                        <div className="flex items-center gap-1">
-                          <Calendar className="h-4 w-4" />
-                          <span>{new Date(note.uploadDate).toLocaleDateString()}</span>
-                        </div>
-                        <div className="flex items-center gap-1">
-                          <FileText className="h-4 w-4" />
-                          <span>
-                            {note.fileType} • {note.fileSize}
-                          </span>
-                        </div>
-                        <div className="flex items-center gap-1">
-                          <Download className="h-4 w-4" />
-                          <span>{note.downloadCount} downloads</span>
-                        </div>
-                      </div>
-                      <div className="flex flex-wrap gap-1">
-                        {note.tags.map((tag, index) => (
-                          <Badge key={index} variant="outline" className="text-xs">
-                            {tag}
-                          </Badge>
-                        ))}
-                      </div>
-                    </CardContent>
-                    <CardFooter className="flex gap-2">
-                      <Button size="sm" className="gap-1">
-                        <Download className="h-4 w-4" /> Download
-                      </Button>
-                      <Button variant="outline" size="sm" className="gap-1 bg-transparent">
-                        <Eye className="h-4 w-4" /> Preview
-                      </Button>
-                    </CardFooter>
-                  </Card>
+                  <NoteCard key={note.id} note={note} />
                 ))}
               </div>
             </TabsContent>
 
-            {/* Student Notes */}
             <TabsContent value="student" className="mt-6">
               <div className="grid gap-6">
                 {studentNotes.map((note) => (
-                  <Card key={note.id}>
-                    <CardHeader>
-                      <div className="flex items-start justify-between">
-                        <div>
-                          <div className="flex items-center gap-2">
-                            <CardTitle className="text-lg">{note.title}</CardTitle>
-                            {note.verified && <Badge className="bg-green-500">Verified</Badge>}
-                          </div>
-                          <CardDescription className="mt-1">{note.description}</CardDescription>
-                        </div>
-                        <div className="flex items-center gap-1">
-                          <Star className="h-4 w-4 fill-yellow-400 text-yellow-400" />
-                          <span className="text-sm font-medium">{note.rating}</span>
-                        </div>
-                      </div>
-                    </CardHeader>
-                    <CardContent className="space-y-3">
-                      <div className="flex items-center gap-4 text-sm text-gray-500 dark:text-gray-400">
-                        <div className="flex items-center gap-1">
-                          <User className="h-4 w-4" />
-                          <span>{note.uploadedBy}</span>
-                        </div>
-                        <div className="flex items-center gap-1">
-                          <Calendar className="h-4 w-4" />
-                          <span>{new Date(note.uploadDate).toLocaleDateString()}</span>
-                        </div>
-                        <div className="flex items-center gap-1">
-                          <FileText className="h-4 w-4" />
-                          <span>
-                            {note.fileType} • {note.fileSize}
-                          </span>
-                        </div>
-                        <div className="flex items-center gap-1">
-                          <Download className="h-4 w-4" />
-                          <span>{note.downloadCount} downloads</span>
-                        </div>
-                        <div className="flex items-center gap-1">
-                          <ThumbsUp className="h-4 w-4" />
-                          <span>{note.likes} likes</span>
-                        </div>
-                      </div>
-                      <div className="flex flex-wrap gap-1">
-                        {note.tags.map((tag, index) => (
-                          <Badge key={index} variant="outline" className="text-xs">
-                            {tag}
-                          </Badge>
-                        ))}
-                      </div>
-                    </CardContent>
-                    <CardFooter className="flex gap-2">
-                      <Button size="sm" className="gap-1">
-                        <Download className="h-4 w-4" /> Download
-                      </Button>
-                      <Button variant="outline" size="sm" className="gap-1 bg-transparent">
-                        <Eye className="h-4 w-4" /> Preview
-                      </Button>
-                      <Button variant="outline" size="sm" className="gap-1 bg-transparent">
-                        <ThumbsUp className="h-4 w-4" /> Like
-                      </Button>
-                    </CardFooter>
-                  </Card>
+                  <NoteCard key={note.id} note={note} showLike />
                 ))}
               </div>
             </TabsContent>

@@ -1,14 +1,12 @@
-
 import { NextResponse } from "next/server";
-import { auth } from "@clerk/nextjs/server";
+import { ExamRepository } from "@/backend/dist/database/repositories/ExamRepository";
 
-import { getQuestions } from "@/backend/dist/database/db"; 
+const examRepo = new ExamRepository();
 
 export async function POST(req: Request) {
-    try {  
+  try {
     const body = await req.json();
     const { examId } = body;
-
     if (!examId) {
       return NextResponse.json(
         { success: false, error: "Missing examId" },
@@ -16,17 +14,15 @@ export async function POST(req: Request) {
       );
     }
 
-    const examData = await getQuestions(examId);
-  
-   console.log(examData)
+    const examData = await examRepo.getWithFullDetails(examId);
     return NextResponse.json(
-      { success: true, examData: examData },
+      { success: true, examData },
       { status: 200 }
     );
   } catch (err) {
-    console.error("Error creating exam:", err);
+    console.error("Error fetching questions:", err);
     return NextResponse.json(
-      { success: false, error: "Failed to create exam" },
+      { success: false, error: "Failed to fetch questions" },
       { status: 500 }
     );
   }

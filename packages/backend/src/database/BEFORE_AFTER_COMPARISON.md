@@ -447,7 +447,7 @@ const prompts = await promptRepo.search({ subject: "Math" });
 ### Option 2: Use Facade (Backward Compatibility)
 ```typescript
 // EXISTING CODE (no changes needed)
-import { searchPrompts } from './database/db.refactored.js';
+import { searchPrompts } from './database/db.js';
 const prompts = await searchPrompts({ subject: "Math" });
 ```
 
@@ -457,7 +457,7 @@ const prompts = await searchPrompts({ subject: "Math" });
 import { searchPrompts } from './database/db.js';
 
 // Phase 2: Switch to facade
-import { searchPrompts } from './database/db.refactored.js';
+import { searchPrompts } from './database/db.js';
 
 // Phase 3: Switch to repositories
 import { promptRepo } from './database/repositories/index.js';

@@ -1,7 +1,8 @@
 "use client"
 import { useRef, useState, useEffect } from "react"
 import { useUser } from "@clerk/nextjs"
-import { AlertCircle, RefreshCw, FileText, X, CheckCircle, XCircle, Clock, Eye, History } from "lucide-react"
+import { AlertCircle, RefreshCw, FileText, X, Eye, History } from "lucide-react"
+import { StatusMessage, StageDetails, getStatusColor, getStageStatusSummary } from "@/frontend/components/features/upload"
 
 type JobStatus = {
   job_id: string
@@ -390,25 +391,6 @@ export default function Page() {
     }
   }
 
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'success': return 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300'
-      case 'failed': return 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300'
-      case 'partial_success': return 'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-300'
-      case 'in_progress': return 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300'
-      default: return 'bg-gray-100 dark:bg-gray-900/30 text-gray-700 dark:text-gray-300'
-    }
-  }
-
-  const getStageStatus = (job: JobStatus) => {
-    if (!job.stages) return 'Unknown'
-    
-    const stages = ['ocr', 'parsing', 'enrichment', 'organization']
-    const completed = stages.filter(s => job.stages[s]?.status === 'success').length
-    
-    return `${completed}/4 stages completed`
-  }
-
   const viewJobDetails = async (jobId: string) => {
     setLoadingJobDetails(true)
     setQuestionsData(null)
@@ -463,130 +445,6 @@ export default function Page() {
     } finally {
       setLoadingQuestions(false)
     }
-  }
-
-  const renderStageDetails = (stageName: string, stageData: any) => {
-    if (!stageData) return null
-
-    const getStageIcon = () => {
-      if (stageData.status === 'success') return <CheckCircle className="h-5 w-5 text-green-500" />
-      if (stageData.status === 'failed') return <XCircle className="h-5 w-5 text-red-500" />
-      if (stageData.status === 'in_progress') return <Clock className="h-5 w-5 text-blue-500 animate-spin" />
-      return <Clock className="h-5 w-5 text-gray-400" />
-    }
-
-    const getStageColor = () => {
-      if (stageData.status === 'success') return 'border-green-200 dark:border-green-800 bg-green-50 dark:bg-green-900/20'
-      if (stageData.status === 'failed') return 'border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-900/20'
-      if (stageData.status === 'in_progress') return 'border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-900/20'
-      return 'border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800'
-    }
-
-    return (
-      <div className={`p-4 border rounded-lg ${getStageColor()}`}>
-        <div className="flex items-center justify-between mb-3">
-          <div className="flex items-center gap-2">
-            {getStageIcon()}
-            <h4 className="font-semibold capitalize">{stageName}</h4>
-          </div>
-          <span className={`px-2 py-1 text-xs rounded font-medium ${getStatusColor(stageData.status)}`}>
-            {stageData.status}
-          </span>
-        </div>
-        
-        {stageData.error && (
-          <div className="mb-3 p-2 bg-red-100 dark:bg-red-900/30 border border-red-300 dark:border-red-700 rounded text-sm">
-            <p className="font-medium text-red-800 dark:text-red-200">Error:</p>
-            <p className="text-red-700 dark:text-red-300">{stageData.error}</p>
-          </div>
-        )}
-
-        <div className="space-y-2 text-sm">
-          {stageData.start_time && (
-            <p className="text-gray-600 dark:text-gray-400">
-              <span className="font-medium">Started:</span> {new Date(stageData.start_time).toLocaleString()}
-            </p>
-          )}
-          {stageData.end_time && (
-            <p className="text-gray-600 dark:text-gray-400">
-              <span className="font-medium">Completed:</span> {new Date(stageData.end_time).toLocaleString()}
-            </p>
-          )}
-          {stageData.duration && (
-            <p className="text-gray-600 dark:text-gray-400">
-              <span className="font-medium">Duration:</span> {stageData.duration}
-            </p>
-          )}
-
-          {/* OCR specific details */}
-          {stageName === 'ocr' && stageData.result && (
-            <div className="mt-3 p-3 bg-white dark:bg-gray-900 rounded border border-gray-200 dark:border-gray-700">
-              <p className="font-medium mb-2">OCR Results:</p>
-              {stageData.result.pages_processed && (
-                <p className="text-gray-600 dark:text-gray-400">Pages Processed: {stageData.result.pages_processed}</p>
-              )}
-              {stageData.result.text_blocks && (
-                <p className="text-gray-600 dark:text-gray-400">Text Blocks: {stageData.result.text_blocks}</p>
-              )}
-              {stageData.result.confidence && (
-                <p className="text-gray-600 dark:text-gray-400">Average Confidence: {(stageData.result.confidence * 100).toFixed(1)}%</p>
-              )}
-            </div>
-          )}
-
-          {/* Parsing specific details */}
-          {stageName === 'parsing' && stageData.result && (
-            <div className="mt-3 p-3 bg-white dark:bg-gray-900 rounded border border-gray-200 dark:border-gray-700">
-              <p className="font-medium mb-2">Parsing Results:</p>
-              {stageData.result.questions_found !== undefined && (
-                <p className="text-gray-600 dark:text-gray-400">Questions Found: {stageData.result.questions_found}</p>
-              )}
-              {stageData.result.sections !== undefined && (
-                <p className="text-gray-600 dark:text-gray-400">Sections: {stageData.result.sections}</p>
-              )}
-            </div>
-          )}
-
-          {/* Enrichment specific details */}
-          {stageName === 'enrichment' && stageData.result && (
-            <div className="mt-3 p-3 bg-white dark:bg-gray-900 rounded border border-gray-200 dark:border-gray-700">
-              <p className="font-medium mb-2">Enrichment Results:</p>
-              {stageData.result.questions_enriched !== undefined && (
-                <p className="text-gray-600 dark:text-gray-400">Questions Enriched: {stageData.result.questions_enriched}</p>
-              )}
-              {stageData.result.topics_identified !== undefined && (
-                <p className="text-gray-600 dark:text-gray-400">Topics Identified: {stageData.result.topics_identified}</p>
-              )}
-            </div>
-          )}
-
-          {/* Organization specific details */}
-          {stageName === 'organization' && stageData.result && (
-            <div className="mt-3 p-3 bg-white dark:bg-gray-900 rounded border border-gray-200 dark:border-gray-700">
-              <p className="font-medium mb-2">Organization Results:</p>
-              {stageData.result.subjects_identified !== undefined && (
-                <p className="text-gray-600 dark:text-gray-400">Subjects Identified: {stageData.result.subjects_identified}</p>
-              )}
-              {stageData.result.questions_organized !== undefined && (
-                <p className="text-gray-600 dark:text-gray-400">Questions Organized: {stageData.result.questions_organized}</p>
-              )}
-              {stageData.result.subjects && Array.isArray(stageData.result.subjects) && (
-                <div className="mt-2">
-                  <p className="text-gray-600 dark:text-gray-400 mb-1">Subjects:</p>
-                  <div className="flex flex-wrap gap-1">
-                    {stageData.result.subjects.map((subject: string, idx: number) => (
-                      <span key={idx} className="px-2 py-1 bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 rounded text-xs">
-                        {subject}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-      </div>
-    )
   }
 
   return (
@@ -646,20 +504,7 @@ export default function Page() {
           </div>
         )}
 
-        {/* Status Message */}
-        {message && !loadingSession && (
-          <div className={`mt-4 p-4 rounded ${
-            message.startsWith("✓") 
-              ? "bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-300"
-              : message.startsWith("✗")
-              ? "bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-300"
-              : message.startsWith("📋")
-              ? "bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-300"
-              : "bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300"
-          }`}>
-            {message}
-          </div>
-        )}
+        {message && !loadingSession && <StatusMessage message={message} />}
 
         {/* Job Status */}
         {jobs.length > 0 && (
@@ -733,7 +578,7 @@ export default function Page() {
                         Job ID: {job.job_id}
                       </p>
                       <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
-                        {getStageStatus(job)}
+                        {getStageStatusSummary(job.stages)}
                       </p>
                     </div>
                     <div className="flex items-center gap-2">
@@ -873,10 +718,10 @@ export default function Page() {
                 <div>
                   <h4 className="font-semibold mb-4 text-lg">Pipeline Stages</h4>
                   <div className="space-y-4">
-                    {renderStageDetails('ocr', selectedJobDetails.stages.ocr)}
-                    {renderStageDetails('parsing', selectedJobDetails.stages.parsing)}
-                    {renderStageDetails('enrichment', selectedJobDetails.stages.enrichment)}
-                    {renderStageDetails('organization', selectedJobDetails.stages.organization)}
+                    <StageDetails stageName="ocr" stageData={selectedJobDetails.stages.ocr} />
+                    <StageDetails stageName="parsing" stageData={selectedJobDetails.stages.parsing} />
+                    <StageDetails stageName="enrichment" stageData={selectedJobDetails.stages.enrichment} />
+                    <StageDetails stageName="organization" stageData={selectedJobDetails.stages.organization} />
                   </div>
                 </div>
               )}

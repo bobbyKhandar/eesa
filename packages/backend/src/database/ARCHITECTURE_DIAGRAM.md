@@ -456,7 +456,7 @@ backend/src/database/
 │   └── userSchemaZod.ts
 │
 ├── db.ts                  ← Original (can deprecate)
-├── db.refactored.ts       ← NEW: Backward compatibility
+├── db.ts       ← NEW: Backward compatibility
 ├── mongooseSchemas.ts     ← Model definitions
 ├── connect.ts             ← Connection
 │
