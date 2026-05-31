@@ -49,6 +49,7 @@ miniproject/
 │   └── python/                     # Python test suites
 ├── .vscode/                        # Debug configs (2 launch profiles)
 ├── .conda/                         # Embedded Conda Python 3.11 environment
+├── context.md                      # Global project rules for AI agents
 └── SCHEMAS_SUMMARY.md              # Database schema documentation
 ```
 
