@@ -5,31 +5,25 @@
 - **Dependencies:** Listed in `requirements-ocr.txt`. Key packages: `opencv-python`, `easyocr`, `pdf2image`, `PyMuPDF`, `Pillow`, `numpy`, `redis`, `lancedb`, `hdbscan`, `pyarrow`, `boto3`.
 - **CORS:** `flask-cors` — all servers enable `CORS(app)`.
 
-## Two Server Entry Points (Do Not Confuse)
+## Server Entry Point
 
-### 1. Root `server.py` (1124 lines) — Production/Unified
-- Module-level `app = Flask(__name__)` + `CORS(app)`.
-- Routes defined directly on `app` via `@app.route()` decorators.
-- AWS pipeline (Textract + Bedrock) with in-memory job tracking (`aws_active_jobs` dict).
-- Local pipeline delegates to `pipeline_manager` singleton.
-- **Threading:** `ThreadPoolExecutor(max_workers=3)` for background AWS jobs.
-- **Startup:** `app.run(host='0.0.0.0', port=port, debug=debug)` in main thread.
-- **Used by:** `wsgi.py` (Gunicorn), production deployments.
-- **Routes:** `/health`, `/process`, `/process/batch`, `/job/<id>/status`, `/job/<id>/metadata`, `/job/<id>/questions`, `/jobs/active`, `/submit-local`, `/status/<batch_id>`, `/upload/question-papers`.
+### `src/api/server.py` — Canonical Server
+- Module-level `app = Flask(__name__)` + `CORS(app)` — serves as the WSGI entry point.
+- All routes registered via decorators at import time (for Gunicorn/WSGI compatibility).
+- `AIServer` class wraps the module-level `app` for non-blocking thread lifecycle (`start_server()` / `stop_server()`).
+- **Threading:** `ThreadPoolExecutor(max_workers=3)` with lazy double-checked init for background AWS jobs.
+- **Job persistence:** S3-backed metadata with in-memory LRU cache (100-job limit with eviction).
+- **Startup:** `python src/api/server.py` (blocking), `start_server()` (non-blocking), or via `wsgi.py` (Gunicorn).
+- **Used by:** `wsgi.py` (production), `start_server.py` (development), `src/server.py` (bootstrap re-exporter).
+- **Routes:** `/health`, `/process`, `/process/batch`, `/job/<id>/status`, `/job/<id>/metadata`, `/job/<id>/questions`, `/jobs/active`, `/submit-local`, `/submit` (legacy), `/submit-aws`, `/status-aws/<job_id>`, `/status/<batch_id>`, `/result/<batch_id>`, `/upload/question-papers`.
 
-### 2. `src/server.py` (19 lines) + `src/api/` — Refactored/Modular
-- Thin bootstrap that imports from `src/api/` module.
-- `AIServer` class wraps Flask app, creates routes via `register_routes(app, aws_manager, pipeline_manager)`.
-- **Threading:** Flask runs in a daemon `threading.Thread`, with `threaded=True`.
-- **Startup:** `api.start_server(host, port)` — non-blocking.
-- **Used by:** `start_server.py`, development.
-- **Routes:** `/health`, `/submit-local`, `/submit` (legacy), `/submit-aws`, `/status-aws/<job_id>`, `/status/<batch_id>`, `/result/<batch_id>`.
+> Note: Root `server.py` is a deprecated backward-compat shim. Do not use for new code.
 
 ## Pipeline Modes
 
 ### AWS Pipeline (Production)
 - **Stages:** Textract OCR -> Bedrock Parsing -> Bedrock Enrichment -> S3 Organization -> Question Clustering.
-- **Orchestrator:** `AWSPipelineManager` in `src/api/aws_manager.py` or inline in root `server.py`.
+- **Orchestrator:** `AWSPipelineManager` in `src/api/aws_manager.py`.
 - **S3 structure per job:**
   ```
   jobs/{job_id}/original/{filename}                      # Uploaded PDF
@@ -39,7 +33,7 @@
   jobs/{job_id}/organized_output/                        # Organized by subject
   jobs/{job_id}/metadata.json                            # Job metadata
   ```
-- **Threading per job:** `threading.Thread(target=_process_batch, daemon=True)` or `ThreadPoolExecutor.submit()`.
+- **Threading per job:** `ThreadPoolExecutor(max_workers=3)` with lazy double-checked init.
 
 ### Local Pipeline (Development/Testing)
 - **Engine:** EasyOCR via `OCREngine` class (`src/local_ocr_engine.py`).
@@ -70,9 +64,10 @@
 | File | Role |
 |---|---|
 | `__init__.py` | Exports `create_app`, `start_server`, `stop_server`, `AWSPipelineManager` |
-| `server.py` | `AIServer` class — wraps Flask, creates app, registers routes, manages thread lifecycle |
-| `routes.py` | Route definitions via `register_routes()` function |
-| `aws_manager.py` | `AWSPipelineManager` — submits/ tracks AWS batch jobs with threading |
+| `server.py` | Module-level Flask app with CORS, route registration, `AIServer` class for thread lifecycle |
+| `routes.py` | Route definitions via `register_routes()` function — 14 routes covering production + legacy paths |
+| `aws_manager.py` | `AWSPipelineManager` — full 5-stage pipeline orchestration, S3 metadata persistence, bounded thread pool |
+| `question_retriever.py` | Question retrieval with 3-level S3 fallback (organized → enriched → parsed), Bloom's taxonomy stats |
 
 ### Supporting Modules
 | File | Role |

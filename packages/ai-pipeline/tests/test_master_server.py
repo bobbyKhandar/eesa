@@ -18,14 +18,16 @@ import os
 from unittest.mock import Mock, patch, MagicMock, call
 from datetime import datetime
 
-# Add parent directory to path
-sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
+# Add src directory to path (contains api/ module)
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(__file__)), 'src'))
 
 # Mock AWS modules before importing server
 sys.modules['boto3'] = MagicMock()
 sys.modules['aws_texttract_pipeline'] = MagicMock()
 sys.modules['enrich_questions_job_based'] = MagicMock()
 sys.modules['organize_by_subject_job_based'] = MagicMock()
+sys.modules['intelligent_chunking'] = MagicMock()
+sys.modules['question_clustering'] = MagicMock()
 
 
 class TestMasterServerHealth(unittest.TestCase):
