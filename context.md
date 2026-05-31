@@ -1,7 +1,7 @@
 # Global Project Rules
 
 ## Project Setup
-- This is a **modular monolith** — 3 packages under `packages/`: `backend/`, `frontend/`, `ai-pipeline/`. All code lives in a single deployable unit.
+- This is **EESA (Enterprise Exam Scoring Architecture)** — a **modular monolith** with 3 packages under `packages/`: `backend/`, `frontend/`, `ai-pipeline/`. All code lives in a single deployable unit.
 
 ## Stack
 - **Frontend:** Next.js 15 (App Router), TypeScript, Tailwind CSS v3, shadcn/ui, Clerk auth
