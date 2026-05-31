@@ -9,7 +9,7 @@ current_dir = Path(__file__).parent
 src_dir = current_dir / 'src'
 sys.path.insert(0, str(src_dir))
 
-from server import app
+from api.server import app
 
 if __name__ == "__main__":
     app.run()

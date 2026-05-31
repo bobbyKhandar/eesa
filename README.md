@@ -297,34 +297,24 @@ Or use **VSCode** (`.vscode/launch.json`) — open Run & Debug (Ctrl+Shift+D), s
 
 ### AI Pipeline Routes
 
-Two server entry points exist — root `server.py` (production/unified, 1124 lines) and `src/server.py` + `src/api/` (refactored/modular). See `packages/ai-pipeline/context.md` for details.
-
-**Root `server.py` routes (production):**
+All routes registered on the canonical server at `src/api/server.py`. See `packages/ai-pipeline/context.md` for full documentation.
 
 | Route | Method | Description |
 |-------|--------|-------------|
 | `/health` | GET | Health check |
-| `/process` | POST | Start a new pipeline job |
-| `/process/batch` | POST | Batch process multiple items |
-| `/job/<id>/status` | GET | Job status |
-| `/job/<id>/metadata` | GET | Job metadata |
-| `/job/<id>/questions` | GET | Extracted questions for a job |
-| `/jobs/active` | GET | List active jobs |
-| `/submit-local` | POST | Submit local pipeline batch (EasyOCR) |
-| `/status/<batch_id>` | GET | Local batch job status |
-| `/upload/question-papers` | POST | Upload question paper |
-
-**`src/api/routes.py` routes (modular):**
-
-| Route | Method | Description |
-|-------|--------|-------------|
-| `/health` | GET | Health check |
-| `/submit-local` | POST | Submit local pipeline batch (EasyOCR) |
-| `/submit` | POST | Legacy submit |
-| `/submit-aws` | POST | Submit AWS pipeline batch (Textract → Bedrock) |
-| `/status-aws/<job_id>` | GET | AWS batch job status |
-| `/status/<batch_id>` | GET | Local batch job status |
+| `/process` | POST | Start a single AWS pipeline job |
+| `/process/batch` | POST | Batch process multiple AWS jobs |
+| `/job/<id>/status` | GET | AWS job full stage details (from S3 metadata) |
+| `/job/<id>/metadata` | GET | Alias for `/job/<id>/status` |
+| `/job/<id>/questions` | GET | Processed questions with 3-level S3 fallback + Bloom's stats |
+| `/jobs/active` | GET | List active AWS jobs |
+| `/submit-local` | POST | Submit local EasyOCR batch |
+| `/submit` | POST | Legacy alias for `/submit-local` |
+| `/submit-aws` | POST | Submit AWS batch job (legacy interface) |
+| `/status-aws/<job_id>` | GET | AWS job status (legacy interface) |
+| `/status/<batch_id>` | GET | Local batch status |
 | `/result/<batch_id>` | GET | Local batch result |
+| `/upload/question-papers` | POST | Upload PDFs from frontend, uploads to S3, starts pipeline |
 
 ---
 
