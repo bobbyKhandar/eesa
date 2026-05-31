@@ -37,6 +37,9 @@ export class UserRepository {
       }
 
       const userData: any = { ...validation.data };
+      if (!userData._id) {
+        userData._id = new Types.ObjectId().toString();
+      }
       const savedUsers = await this.model.insertMany([userData]);
       const savedUser = savedUsers[0];
 
