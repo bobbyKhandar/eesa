@@ -49,7 +49,6 @@ miniproject/
 │   └── python/                     # Python test suites
 ├── .vscode/                        # Debug configs (2 launch profiles)
 ├── .conda/                         # Embedded Conda Python 3.11 environment
-├── context.md                      # Global project rules for AI agents
 └── SCHEMAS_SUMMARY.md              # Database schema documentation
 ```
 
@@ -62,7 +61,9 @@ Frontend (Next.js) ────┬── MongoDB (via repositories)
        └── (Clerk auth)
 ```
 
-The **Next.js frontend** owns the full web server — API routes handle all CRUD by importing repository classes from `packages/backend/` directly. The **AI pipeline** is a standalone Flask server called via HTTP when OCR/enrichment jobs need processing. No Express middleware layer exists between the frontend and the database.
+The **Next.js frontend** owns the full web server — API routes handle all CRUD by importing repository classes from `@/backend/dist/database/repositories/` and calling `connect()` from `@/backend/dist/database/connect.js`. The `@/` path alias (from frontend tsconfig `"@/*": [".././*"]`) resolves to the repo root, so `@/backend/` maps to `packages/backend/`. The **AI pipeline** is a standalone Flask server called via HTTP when OCR/enrichment jobs need processing. No Express middleware layer exists between the frontend and the database.
+
+> See [`context.md`](./context.md) for authoritative global project rules.
 
 ---
 
@@ -351,7 +352,8 @@ Or use **VSCode** (`.vscode/launch.json`) — open Run & Debug (Ctrl+Shift+D), s
 ### Key Design Decisions
 
 - **Feature components** live under `components/features/<domain>/` with barrel exports via `index.ts`
-- **API routes** live in `app/api/` and import repositories directly from `packages/backend/`
-- **Repositories** are imported directly by consumers — no facade or God object
+- **API routes** live in `app/api/` and import repositories from `@/backend/dist/database/repositories/`
+- **Repositories** are imported directly by consumers — no facade or God object. Both singleton instances (from `repositories/index.ts`) and direct instantiation (`new RepositoryName()`) are used.
+- **Raw Mongoose models** are also used directly in some API routes (e.g., `getUserModel().findById(userId)`), alongside the repository pattern.
 - **No Express server** — Next.js API routes are the sole backend entry point (besides the Python AI pipeline)
 - **Git history** is fully preserved — all moves detected as 100% similar (R100)
