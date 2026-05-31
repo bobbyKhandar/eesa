@@ -1,4 +1,4 @@
-# MiniProject — Exam Evaluator
+# EESA — Enterprise Exam Scoring Architecture
 
 A modular monolith for end-to-end exam processing: upload scanned question papers, run OCR + AI enrichment, create and manage exams, collect student submissions, and generate analysis reports.
 
@@ -29,7 +29,7 @@ A modular monolith for end-to-end exam processing: upload scanned question paper
 | AI/OCR | AWS Textract, AWS Bedrock (Gemma 3 27B), Google Gemini, EasyOCR |
 | Vector Storage | LanceDB (FAISS + HDBSCAN clustering) |
 | Pipeline | Python 3.10+, Flask, flask-cors, EasyOCR, OpenCV, PyMuPDF, Pillow, Redis, boto3 |
-| DevOps | Monorepo (standalone packages), Embedded Conda env, VSCode launch configs |
+| DevOps | Monorepo (npm workspaces), Embedded Conda env, VSCode launch configs |
 
 ---
 
@@ -38,7 +38,7 @@ A modular monolith for end-to-end exam processing: upload scanned question paper
 The project is a **modular monolith** — everything lives in one repo but is organized into three packages under `packages/`:
 
 ```
-miniproject/
+eesa/
 ├── packages/
 │   ├── backend/                    # Shared data layer (repositories, schemas, services)
 │   ├── frontend/                   # Next.js app :3000 (owns the full web server)
@@ -215,15 +215,12 @@ packages/ai-pipeline/
 
 ```bash
 git clone https://github.com/bobbyKhandar/eesa.git
-cd miniproject
+cd eesa
 
-# Backend dependencies
-cd packages/backend && npm install && cd ../..
+# Install all Node.js workspace packages (backend + frontend)
+npm install
 
-# Frontend dependencies
-cd packages/frontend && npm install && cd ../..
-
-# AI Pipeline dependencies
+# AI Pipeline Python dependencies
 cd packages/ai-pipeline && pip install -r requirements-ocr.txt && cd ../..
 ```
 
