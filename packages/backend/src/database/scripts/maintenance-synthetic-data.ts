@@ -5,15 +5,14 @@
  * users, prompts, exam questions, exams, and submissions.
  *
  * Usage:
- *   npx tsx src/database/scripts/maintenance-synthetic-data.ts [--clear] [--count=N]
+ *   npx tsx src/database/scripts/maintenance-synthetic-data.ts [--count=N]
  *
  * Options:
- *   --clear    Drop existing data before generating
  *   --count=N  Items per collection (default: 10)
  *
  * Examples:
- *   npx tsx src/database/scripts/maintenance-synthetic-data.ts --clear
- *   npx tsx src/database/scripts/maintenance-synthetic-data.ts --count=5 --clear
+ *   npx tsx src/database/scripts/maintenance-synthetic-data.ts
+ *   npx tsx src/database/scripts/maintenance-synthetic-data.ts --count=5
  *
  * WARNING: This script is for development/testing only.
  * Do NOT run against production databases.
@@ -24,7 +23,6 @@ import { UserRepository } from '../repositories/UserRepository.js';
 import { PromptRepository } from '../repositories/PromptRepository.js';
 import { ExamRepository } from '../repositories/ExamRepository.js';
 import { ExamSubmissionRepository } from '../repositories/ExamSubmissionRepository.js';
-import { getUserModel, getPromptModel, getExamModel, getExamQuestionModel, getExamSubmissionModel } from '../mongooseSchemas.js';
 
 const WARNING = `
 ╔══════════════════════════════════════════════════════════════╗
@@ -104,40 +102,18 @@ function pickN<T>(arr: T[], n: number): T[] {
 
 // ── Main ──────────────────────────────────────────────────────────────────
 
-async function clearCollections() {
-  const models = [
-    getExamSubmissionModel(),
-    getExamModel(),
-    getExamQuestionModel(),
-    getPromptModel(),
-    getUserModel(),
-  ];
-  for (const model of models) {
-    await model.deleteMany({});
-    console.log(`  ✓ Cleared ${model.collection.name}`);
-  }
-}
-
 async function main() {
   const args = process.argv.slice(2);
-  const shouldClear = args.includes('--clear');
   const countArg = args.find(a => a.startsWith('--count='));
   const count = countArg ? parseInt(countArg.split('=')[1], 10) : 10;
 
   console.log(WARNING);
-  console.log(`Count per collection: ${count}`);
-  console.log(`Clear existing: ${shouldClear}\n`);
+  console.log(`Count per collection: ${count}\n`);
 
   const conn = await connect();
   if (conn.successCode === -1) {
     console.error('Failed to connect to database');
     process.exit(1);
-  }
-
-  if (shouldClear) {
-    console.log('Clearing existing data...');
-    await clearCollections();
-    console.log('');
   }
 
   const userRepo = new UserRepository();
