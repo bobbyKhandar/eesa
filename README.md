@@ -1,80 +1,356 @@
-# MiniProject
+# MiniProject — Exam Evaluator
 
-Welcome to the Exam evaluator repository!
-
-## Overview
-
-This project is designed to demonstrate key concepts in software engineering, including modular design, code organization, and best practices. It serves as a template for building scalable and maintainable applications.
-
-## Features
-
-- Modular architecture
-- Easy-to-follow folder structure
-- Example scripts and utilities
-- Instructions for setup and usage
-
-## Getting Started
-
-1. **Clone the repository:**
-    ```bash
-    git clone https://github.com/yourusername/miniproject.git
-    cd miniproject
-    ```
-
-2. **Install dependencies:**
-    ```bash
-    # Example for Node.js projects
-    npm install
-    ```
-
-3. **Run the project:**
-    ```bash
-    # Example for Node.js projects
-    npm start
-    ```
-
-## Folder Structure
-
-```
-miniproject/
-├── src/            # Source code
-├── tests/          # Test cases
-├── docs/           # Documentation
-├── README.md       # Project overview
-└── package.json    # Project metadata (if applicable)
-```
-
-## Contributing
-
-Contributions are welcome! Please open issues or submit pull requests for improvements.
-
-## License
-
-This project is licensed under the MIT License.
+A modular monolith for end-to-end exam processing: upload scanned question papers, run OCR + AI enrichment, create and manage exams, collect student submissions, and generate analysis reports.
 
 ---
 
+## Features
 
-# Technical Approach & Current Status
+- **OCR Pipeline** — Upload scanned PDFs/images; EasyOCR local mode (free) or AWS Textract + Bedrock pipeline for parsing, enrichment, and subject organization
+- **Question Clustering** — FAISS + HDBSCAN similarity-based clustering of extracted questions
+- **Exam Management** — Create exams from enriched question banks, organize by subject/syllabus, publish for students
+- **Student Submissions** — Take exams, auto-grading, result analysis
+- **Resource Library** — Upload and browse notes, PYQs, and study materials with subject filtering
+- **Admin Tools** — Database stats, collection truncation, job status monitoring, failed job retry
+- **AI Analysis** — Bloom's taxonomy classification, exam analysis reports, Gemini-powered exam helper
+- **Clerk Authentication** — Secure login via email, Google, or GitHub
 
-This project is an active build, with a primary focus on the backend data processing pipeline.
+---
 
-## Backend: OCR Preprocessing & Skew Correction
+## Tech Stack
 
-The core of this project is a pipeline designed to process real-world university exam papers, which often suffer from poor scan quality and heavy skew (>40°).
+| Layer | Technology |
+|-------|-----------|
+| Backend | Node.js, Mongoose 8, Zod, `@zodyac/zod-mongoose` |
+| Frontend | Next.js 15 (App Router), TypeScript |
+| UI | shadcn/ui, Radix UI, Tailwind CSS v3, Lucide icons, Recharts |
+| Auth | Clerk (Next.js SDK) |
+| Database | MongoDB Atlas |
+| AI/OCR | AWS Textract, AWS Bedrock (Claude), Google Gemini, EasyOCR |
+| Vector Storage | LanceDB (FAISS + HDBSCAN clustering) |
+| Pipeline | Python 3, Flask, Threading, OpenCV |
+| DevOps | Monorepo (standalone packages), Embedded Conda env, VSCode launch configs |
 
-**Challenge:** Standard computer vision techniques were unreliable for these challenging documents.  
-**Solution:** I implemented a robust skew-correction module. It employs a "best-of-four" algorithmic analysis, running multiple detection methods on each image to determine the optimal orientation before OCR. This has dramatically improved the reliability of text extraction.
+---
 
-**Current State & Next Steps:** The algorithm is fully functional within the main processing script. My immediate next step is to refactor this logic into a standalone, documented module to improve the system's overall modularity and testability.
+## Architecture
 
-## Frontend: A Functional Interface
+The project is a **modular monolith** — everything lives in one repo but is organized into three packages under `packages/`:
 
-The frontend is built with Next.js and modern toolkits to provide a clean user interface for the backend's features. While the backend has been my main area of development, I designed the frontend to be a practical and effective demonstration of the application's capabilities.
+```
+miniproject/
+├── packages/
+│   ├── backend/                    # Shared data layer (repositories, schemas, services)
+│   ├── frontend/                   # Next.js app :3000 (owns the full web server)
+│   └── ai-pipeline/                # Python Flask :5000
+├── data/                           # Runtime outputs, uploads, cache
+├── tests/
+│   ├── node/                       # Node.js test suites (placeholder)
+│   └── python/                     # Python test suites
+├── .vscode/                        # Debug configs (2 launch profiles)
+├── .conda/                         # Embedded Conda Python 3.11 environment
+└── SCHEMAS_SUMMARY.md              # Database schema documentation
+```
 
-## A Note on AI-Assisted Development
+### Communication Pattern
 
-To accelerate development and focus on core architectural problems, this project was built with the assistance of AI-powered tools like GitHub Copilot and ChatGPT. Here’s a transparent breakdown of their role:
+```
+Frontend (Next.js) ────┬── MongoDB (via repositories)
+       │               └── HTTP ──▶ AI Pipeline (Flask) ──▶ AWS (Textract, Bedrock, S3)
+       │
+       └── (Clerk auth)
+```
 
-- **AI Was Used For:** Boilerplate code generation (e.g., initial React components, basic API route setups), refactoring suggestions for cleaner code, debugging cryptic errors, and helping to write documentation.
-- **My Core Contribution:** The architectural design, the core problem-solving logic (including the conception and implementation of the "best-of-four" skew algorithm), and the integration of all system components are my own work. The AI tools served as a modern developer's productivity multiplier, not as a substitute for fundamental engineering.
+The **Next.js frontend** owns the full web server — API routes handle all CRUD by importing repository classes from `packages/backend/` directly. The **AI pipeline** is a standalone Flask server called via HTTP when OCR/enrichment jobs need processing. No Express middleware layer exists between the frontend and the database.
+
+---
+
+## Project Structure
+
+### `packages/backend/`
+
+```
+packages/backend/
+├── src/
+│   ├── database/
+│   │   ├── connect.ts               # MongoDB connection manager
+│   │   ├── mongooseSchemas.ts       # Zod-to-Mongoose schema conversion
+│   │   ├── repositories/            # Data access layer (10 files, domain-separated)
+│   │   │   ├── ExamRepository.ts
+│   │   │   ├── ExamSubmissionRepository.ts
+│   │   │   ├── ExamQuestionRepository.ts
+│   │   │   ├── ExamAnalysisRepository.ts
+│   │   │   ├── AnalysisReportRepository.ts
+│   │   │   ├── SubjectRepository.ts
+│   │   │   ├── UserRepository.ts
+│   │   │   ├── JobMetadataRepository.ts
+│   │   │   ├── UploadSessionRepository.ts
+│   │   │   ├── UniqueQuestionRepository.ts
+│   │   │   ├── PromptRepository.ts
+│   │   │   └── index.ts             # Barrel exports + singleton instances
+│   │   ├── schemas/                 # 17 Zod schemas & TypeScript types
+│   │   └── scripts/                 # Utility scripts (generate-data, migrate, indexes)
+│   ├── services/                    # Business logic (13 files)
+│   │   ├── examAnalysisService.ts   # AI-based exam analysis
+│   │   ├── examOcrService.ts        # OCR service orchestration
+│   │   ├── ocrService.ts
+│   │   ├── geminiAi.js              # Google Gemini AI integration
+│   │   ├── generateBloomsAnatomy.ts # Bloom's taxonomy classification
+│   │   ├── publishAnalysisService.ts
+│   │   ├── questionSimilarityService.ts
+│   │   ├── ec2OcrClient.ts
+│   │   ├── s3CleanupService.ts
+│   │   └── ...
+│   ├── scripts/                     # Migration/import scripts
+│   └── utils/multer.js              # File upload middleware
+└── package.json
+```
+
+### `packages/frontend/`
+
+```
+packages/frontend/
+├── app/
+│   ├── api/                         # 15 API route directories
+│   │   ├── exams/                   # Create, list, display, details, exam sets
+│   │   ├── subjects/                # Subject listing, from-job
+│   │   ├── upload/                  # Question paper upload & split
+│   │   ├── jobs/                    # Job status & cleanup
+│   │   ├── failed-jobs/             # Failed job details & bulk retry
+│   │   ├── submissions/             # Submit & get results
+│   │   ├── resources/               # Resource CRUD
+│   │   ├── admin/database/          # Database truncation
+│   │   ├── exam-analysis/           # Publish, upload, upload-bulk
+│   │   ├── llm/                     # Gemini AI exam helper
+│   │   ├── users/                   # User CRUD, submissions, metadata
+│   │   ├── upload-sessions/         # Upload session management
+│   │   ├── results/                 # Results retrieval
+│   │   ├── reports/                 # Report generation
+│   │   └── unique-questions/        # Unique questions retrieval
+│   ├── admin/                       # Admin pages (database, upload, analytics, etc.)
+│   ├── dashboard/                   # User dashboard, exam creation
+│   ├── exams/                       # Exam listing & taking
+│   ├── resources/                   # Resource library
+│   ├── subjects/                    # Subject explorer
+│   ├── take-exam/                   # Exam-taking interface
+│   ├── ai-analyze/                  # AI exam analysis
+│   ├── ai-helper/                   # Gemini exam helper
+│   └── upload-status/               # Upload session tracking
+├── components/
+│   ├── ui/                          # 50 shadcn/ui components
+│   ├── features/                    # Domain-organized feature components
+│   │   ├── admin/                   # DatabaseStatCard, ConfirmTruncateDialog, SqlQueryEditor
+│   │   ├── exams/                   # ExamTypeSelector, QuestionEditor, SubjectSelector
+│   │   ├── resources/               # UploadResourceDialog, NoteCard, PyqsTable, SearchFilterBar
+│   │   └── upload/                  # JobStatusBadge, StageDetails, StatusMessage
+│   ├── permanent-sidebar.tsx
+│   ├── top-navigation.tsx
+│   ├── theme-provider.tsx
+│   └── notification-system.tsx
+├── hooks/                           # use-mobile, use-toast
+├── lib/utils.ts                     # cn() utility (clsx + tailwind-merge)
+├── middleware.ts                    # Clerk auth middleware
+└── package.json
+```
+
+### `packages/ai-pipeline/`
+
+```
+packages/ai-pipeline/
+├── server.py                        # Unified pipeline server (1124 lines)
+├── src/
+│   ├── server.py                    # Bootstrap (19 lines — imports from api/)
+│   ├── api/                         # Extracted API module
+│   │   ├── __init__.py              # create_app, AWSPipelineManager exports
+│   │   ├── server.py                # AIServer class, start/stop logic (96 lines)
+│   │   ├── routes.py                # Flask route handlers (86 lines)
+│   │   └── aws_manager.py           # AWSPipelineManager orchestrator (100 lines)
+│   ├── aws_texttract_pipeline.py    # AWS Textract document processing
+│   ├── parsing_pipeline.py          # Bedrock-based question parsing
+│   ├── enrich_questions_job_based.py    # Question enrichment with Bedrock
+│   ├── organize_by_subject_job_based.py # Subject organization
+│   ├── intelligent_chunking.py      # Document chunking for large PDFs
+│   ├── chunk_merger.py              # Merge chunked results
+│   ├── question_clustering.py       # FAISS + HDBSCAN clustering
+│   ├── local_ocr_engine.py          # EasyOCR-based local processing
+│   ├── local_image_processor_pipeline.py
+│   ├── pdf_handler.py
+│   ├── pipeline_manager.py
+│   ├── pipeline_orchestrator.py
+│   ├── batch_runner.py
+│   ├── manual_pipeline.py
+│   ├── textract_extract_text.py
+│   ├── redis_client.py / redisMaster.py  # Redis integration
+│   └── reprocess_errors.py
+├── imagePreprocess.py               # Image preprocessing module
+├── constants.py                     # Enums (JobStatus, Severity, etc.)
+├── tests/                           # 15 test files
+├── requirements-ocr.txt
+├── pyproject.toml
+├── wsgi.py                          # Gunicorn WSGI entry point
+└── start_server.py                  # Server starter
+```
+
+---
+
+## Getting Started
+
+### Prerequisites
+
+- **Node.js** >= 18 + npm
+- **Python** >= 3.10 + pip (or use embedded `.conda/`)
+- **MongoDB Atlas** account (or local MongoDB)
+- **AWS** account (for Textract + Bedrock features)
+- **Clerk** account (for authentication)
+
+### 1. Clone & Install Dependencies
+
+```bash
+git clone https://github.com/bobbyKhandar/eesa.git
+cd miniproject
+
+# Backend dependencies
+cd packages/backend && npm install && cd ../..
+
+# Frontend dependencies
+cd packages/frontend && npm install && cd ../..
+
+# AI Pipeline dependencies
+cd packages/ai-pipeline && pip install -r requirements-ocr.txt && cd ../..
+```
+
+### 2. Configure Environment Variables
+
+Each package has its own `.env` file:
+
+**`packages/backend/.env`**
+| Variable | Description |
+|----------|-------------|
+| `mongodb_url` | MongoDB Atlas connection string |
+| `gemini_api_key` | Google Gemini API key |
+| `TEST_EMAIL` | Test user email for development |
+
+**`packages/frontend/.env.local`**
+| Variable | Description |
+|----------|-------------|
+| `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` | Clerk publishable key |
+| `CLERK_SECRET_KEY` | Clerk secret key |
+| `AI_PIPELINE_URL` | AI Pipeline server URL (`http://127.0.0.1:5000`) |
+
+**`packages/ai-pipeline/.env`**
+| Variable | Description |
+|----------|-------------|
+| `APPLICATION_EMAIL` | Sender email for notifications |
+| `APPLICATION_EMAIL_PASSWORD` | Email app password |
+| `APPLICATION_ADMIN` | Admin email address |
+| `aws_location` | AWS region (e.g. `ap-south-1`) |
+
+### 3. Run in Development
+
+Open **two terminals**:
+
+```bash
+# Terminal 1 — Frontend (port 3000)
+cd packages/frontend
+npm run dev
+
+# Terminal 2 — AI Pipeline (port 5000)
+cd packages/ai-pipeline
+python src/server.py
+```
+
+Or use **VSCode** (`.vscode/launch.json`) — open Run & Debug (Ctrl+Shift+D), select a profile, press F5:
+
+| Profile | Path |
+|---------|------|
+| **Frontend (Next.js)** | Launches Next.js dev server on port 3000 |
+| **AI Pipeline (Flask)** | Launches Flask server on port 5000 |
+
+---
+
+## API Overview
+
+### Frontend API Routes (`packages/frontend/app/api/`)
+
+| Prefix | Purpose |
+|--------|---------|
+| `exams/` | Create, list, details, exam sets, display |
+| `subjects/` | Subject listing, from-job |
+| `upload/` | Question paper upload & split |
+| `jobs/` | Status, cleanup |
+| `failed-jobs/` | Failed job details, bulk retry |
+| `submissions/` | Submit & get results |
+| `resources/` | Resource CRUD |
+| `admin/database/` | Database truncation |
+| `exam-analysis/` | Publish, upload, upload-bulk |
+| `llm/` | Gemini AI exam helper |
+| `users/` | User CRUD, submissions, metadata |
+| `upload-sessions/` | Upload session management |
+| `results/` | Results retrieval |
+| `reports/` | Report generation |
+| `unique-questions/` | Unique questions retrieval |
+
+### AI Pipeline Routes
+
+| Route | Method | Description |
+|-------|--------|-------------|
+| `/health` | GET | Health check |
+| `/submit-local` | POST | Submit local pipeline batch (EasyOCR) |
+| `/submit-aws` | POST | Submit AWS pipeline batch (Textract → Bedrock) |
+| `/status-aws/<job_id>` | GET | AWS batch job status |
+| `/status/<batch_id>` | GET | Local batch job status |
+| `/result/<batch_id>` | GET | Local batch result |
+
+---
+
+## Scripts
+
+### Backend (`packages/backend/package.json`)
+
+| Script | Description |
+|--------|-------------|
+| `npm run build` | TypeScript compilation |
+| `npm run generate-data` | Generate sample data in MongoDB |
+
+### Frontend (`packages/frontend/package.json`)
+
+| Script | Description |
+|--------|-------------|
+| `npm run dev` | Start Next.js dev server |
+| `npm run build` | Production build |
+| `npm run start` | Start production server |
+| `npm run lint` | ESLint check |
+
+---
+
+## Testing
+
+| Location | Framework | Contents |
+|----------|-----------|----------|
+| `packages/ai-pipeline/tests/` | Python unittest | 15 test files (server, OCR, pipeline, AWS, integration) |
+| `tests/python/` | Python unittest | 2 test files (experiment, image preprocessing) |
+| `tests/node/` | — | Empty (placeholder for future Node.js tests) |
+
+---
+
+## Refactoring Status
+
+| Work Item | Status |
+|-----------|--------|
+| **Monorepo layout** — Moved `backend/`, `frontend/`, `ai_pipeline/` → `packages/` | ✅ Done |
+| **Legacy directory purge** — Removed `deprecated/`, `debugging-temp/`, `server_aws_only.py.bak` | ✅ Done |
+| **Data consolidation** — All runtime data → `data/` | ✅ Done |
+| **Test consolidation** — All tests → `tests/node/` + `tests/python/` | ✅ Done |
+| **Express removal** — Removed Express server, routes, and `db.ts` facade | ✅ Done |
+| **Database layer** — 10 domain-separated repository files, direct imports | ✅ Done |
+| **Frontend mammoth splits** — 4 pages split, 17 feature component files created | ✅ Done |
+| **AI pipeline API extraction** — Extracted `api/` module from monolithic `server.py` | ✅ Done |
+| **VSCode configs** — `launch.json` (2 profiles) + `settings.json` | ✅ Done |
+
+### Key Design Decisions
+
+- **Feature components** live under `components/features/<domain>/` with barrel exports via `index.ts`
+- **API routes** live in `app/api/` and import repositories directly from `packages/backend/`
+- **Repositories** are imported directly by consumers — no facade or God object
+- **No Express server** — Next.js API routes are the sole backend entry point (besides the Python AI pipeline)
+- **Git history** is fully preserved — all moves detected as 100% similar (R100)
