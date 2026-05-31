@@ -2,8 +2,8 @@
 
 ## Code Architecture
 
-- Strictly follow a **modular monolithic** approach. All code lives in a single deployable unit (no microservices, no separate servers). Modules within the project (`src/rag/`, `src/bot/`, `src/config/`) are logically separated by concern but remain in one codebase.
-- Keep modules loosely coupled: each module imports from `src/...` paths but should not depend on internal implementation details of sibling modules.
+- Strictly follow a **modular monolithic** approach. All code lives in a single deployable unit (no microservices, no separate servers). Packages within the project (`packages/backend/`, `packages/frontend/`, `packages/ai-pipeline/`) are logically separated by concern but remain in one codebase.
+- Keep packages loosely coupled: each package imports across the repo via the `@/` path alias but should not depend on internal implementation details of sibling packages. Reference `context.md` at the repo root for authoritative global rules.
 
 ## Commit & Push Discipline
 
@@ -17,7 +17,7 @@
 ## Documentation
 
 - Update `README.md` with every execution if anything mentioned in `README.md` was changed.
-- When adding or significantly updating a feature, review all `.md` files in the project (`README.md`, `context.md`, and any package-level docs) and update them if they reference the changed functionality.
+- When adding or significantly updating a feature, review all `.md` files in the project (`README.md`, `context.md`, and any package-level documentation) and update them if they reference the changed functionality.
 
 ## Testing
 
