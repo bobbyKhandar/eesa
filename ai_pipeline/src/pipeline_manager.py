@@ -18,16 +18,17 @@ import threading
 from typing import Dict, List, Optional, Any
 from dataclasses import dataclass
 from enum import Enum
+import cv2
 
 try:
     from . import redis_client
-    from .ocr_engine import OCREngine
-    from .image_processor import ImageProcessor
+    from .local_ocr_engine import OCREngine
+    from .local_image_processor_pipeline import ImageProcessor
     from .pdf_handler import PDFHandler
 except ImportError:
     import redis_client
-    from ocr_engine import OCREngine
-    from image_processor import ImageProcessor
+    from local_ocr_engine import OCREngine
+    from local_image_processor_pipeline  import ImageProcessor
     from pdf_handler import PDFHandler
 
 
@@ -264,18 +265,22 @@ class PipelineManager:
                     print(f"  📖 Processing file {i+1}/{len(file_locations)}: {file_location}")
                     
                     # Process the PDF file
-                    file_result = self._process_pdf_file(file_location)
+                    file_result = self._process_pdf_file(file_location, batch_id)
                     
                     if file_result["success"]:
                         batch_results[file_location] = file_result
                         processed_files += 1
                         print(f"  ✅ Successfully processed: {file_location}")
+                        print(f"     - Total Pages: {file_result['total_pages']}")
+                        print(f"     - Successful Pages: {file_result['successful_pages']}")
+                        print(file_result)
                     else:
                         batch_errors.append(f"Failed to process {file_location}: {file_result.get('error', 'Unknown error')}")
                         failed_files += 1
                         print(f"  ❌ Failed to process: {file_location}")
                     
                     # Update progress
+
                     metadata["processed_files"] = processed_files + failed_files
                     metadata["failed_files"] = failed_files
                     redis_client.hash_set(f"batch:{batch_id}", "metadata", metadata)
@@ -335,7 +340,7 @@ class PipelineManager:
             except Exception as cleanup_error:
                 print(f"Error during cleanup: {cleanup_error}")
     
-    def _process_pdf_file(self, file_location: str) -> Dict[str, Any]:
+    def _process_pdf_file(self, file_location: str, batch_id: Optional[str] = None) -> Dict[str, Any]:
         """Process a single PDF file through the OCR pipeline"""
         try:
             # Extract pages from PDF
@@ -352,7 +357,25 @@ class PipelineManager:
                 try:
                     # Preprocess image
                     processed_image = self.image_processor.preprocess_image(page_data["image"])
-                    
+
+                    # Save preprocessed image for analysis/debugging if batch_id provided
+                    try:
+                        # Build output directory: processed_images/{batch_id}/{file_stem}/
+                        base_name = Path(file_location).stem
+                        out_dir = Path(current_dir.parent) / "processed_images"
+                        if batch_id:
+                            out_dir = out_dir / str(batch_id)
+                        out_dir = out_dir / base_name
+                        out_dir.mkdir(parents=True, exist_ok=True)
+
+                        out_path = out_dir / f"page_{int(page_data['page_number']):03}.png"
+                        # Attempt to write image using OpenCV
+                        cv2.imwrite(str(out_path), processed_image)
+                        # attach path for downstream visibility
+                        page_data["processed_image_path"] = str(out_path)
+                    except Exception as save_err:
+                        print(f"⚠️ Could not save processed image for {file_location} page {page_data.get('page_number')}: {save_err}")
+
                     # Perform OCR
                     ocr_result = self.ocr_engine.process_image(processed_image)
                     

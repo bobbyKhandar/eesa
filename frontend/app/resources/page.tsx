@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Button } from "@/frontend/components/ui/button"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/frontend/components/ui/card"
 import { Input } from "@/frontend/components/ui/input"
@@ -18,7 +18,54 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/frontend/components/ui/dialog"
-import { FileText, Download, Upload, BookOpen, Star, ThumbsUp, Eye, Calendar, User, Search, Plus } from "lucide-react"
+import { FileText, Download, Upload, BookOpen, Star, ThumbsUp, Eye, Calendar, User, Search, Plus, Loader2, AlertCircle } from "lucide-react"
+
+interface Subject {
+  id: string
+  name: string
+  code?: string
+  branch: string
+  semester: string
+  reportCount: number
+  questionCount: number
+}
+
+interface PYQ {
+  _id: string
+  id?: string
+  title: string
+  questionText: string
+  year?: string
+  years?: string[]
+  examType: string
+  occurrenceCount: number
+  frequency?: number
+  bloomsLevel: string
+  topic?: string
+  topics?: string[]
+  difficulty?: string
+  downloadCount: number
+  sourceReports: number
+}
+
+interface ResourcesData {
+  subjects: Subject[]
+  branches: string[]
+  semesters: string[]
+  grouped: Record<string, Record<string, string[]>>
+}
+
+interface PYQsData {
+  pyqs: PYQ[]
+  stats: {
+    totalQuestions: number
+    totalOccurrences: number
+    avgOccurrence: number
+    bloomsDistribution: Record<string, number>
+    uniqueQuestions?: number
+    subjectCount?: number
+  }
+}
 
 export default function ResourcesPage() {
   const [selectedBranch, setSelectedBranch] = useState("")
@@ -27,78 +74,102 @@ export default function ResourcesPage() {
   const [activeTab, setActiveTab] = useState("pyqs")
   const [searchQuery, setSearchQuery] = useState("")
   const [filterType, setFilterType] = useState("all")
+  
+  // API state
+  const [loading, setLoading] = useState(true)
+  const [pyqsLoading, setPyqsLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [resourcesData, setResourcesData] = useState<ResourcesData | null>(null)
+  const [pyqsData, setPyqsData] = useState<PYQsData | null>(null)
 
-  // Mock data for branches, semesters, and subjects
-  const branches = ["Computer Science", "Electrical Engineering", "Mechanical Engineering", "Civil Engineering"]
-  const semesters = [
-    "Semester 1",
-    "Semester 2",
-    "Semester 3",
-    "Semester 4",
-    "Semester 5",
-    "Semester 6",
-    "Semester 7",
-    "Semester 8",
-  ]
-  const subjects = {
-    "Computer Science": {
-      "Semester 1": ["Programming Fundamentals", "Digital Logic", "Mathematics I"],
-      "Semester 2": ["Data Structures", "Computer Organization", "Mathematics II"],
-      "Semester 3": ["Data Structures & Algorithms", "Database Systems", "Operating Systems"],
-      "Semester 4": ["Computer Networks", "Software Engineering", "Web Technologies"],
-      "Semester 5": ["Machine Learning", "Artificial Intelligence", "Cybersecurity"],
-      "Semester 6": ["Distributed Systems", "Mobile Computing", "Cloud Computing"],
-    },
-    "Electrical Engineering": {
-      "Semester 1": ["Basic Electrical Engineering", "Physics", "Mathematics I"],
-      "Semester 2": ["Circuit Theory", "Electronics", "Mathematics II"],
-    },
+  // Fetch initial subjects/branches/semesters data
+  useEffect(() => {
+    const fetchResourcesData = async () => {
+      try {
+        setLoading(true)
+        setError(null)
+        
+        const response = await fetch("/api/resources?action=subjects")
+        const json = await response.json()
+        
+        if (!response.ok || !json.success) {
+          throw new Error(json.error || "Failed to fetch resources")
+        }
+        
+        setResourcesData(json.data)
+      } catch (err: any) {
+        setError(err.message || "Failed to load resources")
+      } finally {
+        setLoading(false)
+      }
+    }
+    
+    fetchResourcesData()
+  }, [])
+
+  // Fetch PYQs when subject is selected
+  useEffect(() => {
+    if (!selectedSubject) {
+      setPyqsData(null)
+      return
+    }
+    
+    const fetchPYQs = async () => {
+      try {
+        setPyqsLoading(true)
+        
+        const response = await fetch(`/api/resources?action=pyqs&subject=${encodeURIComponent(selectedSubject)}`)
+        const json = await response.json()
+        
+        console.log("PYQ API Response:", json)
+        
+        if (!response.ok || !json.success) {
+          throw new Error(json.error || "Failed to fetch questions")
+        }
+        
+        console.log("PYQs data:", json.data)
+        console.log("Number of PYQs:", json.data?.pyqs?.length || 0)
+        
+        setPyqsData(json.data)
+      } catch (err: any) {
+        console.error("Error fetching PYQs:", err)
+      } finally {
+        setPyqsLoading(false)
+      }
+    }
+    
+    fetchPYQs()
+  }, [selectedSubject])
+
+  // Get branches and semesters from loaded data or use defaults
+  const branches = resourcesData?.branches?.length 
+    ? resourcesData.branches 
+    : ["Computer Science", "Electrical Engineering", "Mechanical Engineering", "Civil Engineering"]
+  
+  const semesters = resourcesData?.semesters?.length 
+    ? resourcesData.semesters 
+    : ["Semester 1", "Semester 2", "Semester 3", "Semester 4", "Semester 5", "Semester 6", "Semester 7", "Semester 8"]
+  
+  // Get subjects for selected branch/semester from API data or use empty array
+  const getSubjectsForSelection = (): string[] => {
+    if (resourcesData?.grouped && selectedBranch && selectedSemester) {
+      return resourcesData.grouped[selectedBranch]?.[selectedSemester] || []
+    }
+    return []
   }
 
-  // Mock data for PYQs
-  const pyqs = [
-    {
-      id: 1,
-      title: "Data Structures Midterm 2023",
-      year: "2023",
-      examType: "Midterm",
-      duration: "3 hours",
-      totalMarks: 100,
-      downloadCount: 245,
-      uploadedBy: "Faculty",
-      uploadDate: "2023-12-15",
-      fileSize: "2.5 MB",
-      difficulty: "Medium",
-    },
-    {
-      id: 2,
-      title: "Data Structures Final 2023",
-      year: "2023",
-      examType: "Final",
-      duration: "3 hours",
-      totalMarks: 100,
-      downloadCount: 189,
-      uploadedBy: "Faculty",
-      uploadDate: "2023-05-20",
-      fileSize: "3.1 MB",
-      difficulty: "Hard",
-    },
-    {
-      id: 3,
-      title: "Data Structures Quiz 2022",
-      year: "2022",
-      examType: "Quiz",
-      duration: "1 hour",
-      totalMarks: 50,
-      downloadCount: 156,
-      uploadedBy: "Faculty",
-      uploadDate: "2022-11-10",
-      fileSize: "1.8 MB",
-      difficulty: "Easy",
-    },
-  ]
+  // Get PYQs filtered by search
+  const filteredPyqs = pyqsData?.pyqs.filter(pyq => 
+    pyq.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    pyq.questionText?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    pyq.topic?.toLowerCase().includes(searchQuery.toLowerCase())
+  ) || []
 
-  // Mock data for faculty notes
+  console.log("Filtered PYQs count:", filteredPyqs.length)
+  console.log("Search query:", searchQuery)
+  console.log("PYQs data object:", pyqsData)
+
+  // Mock data for faculty notes (keep until we have an API for notes)
   const facultyNotes = [
     {
       id: 1,
@@ -199,6 +270,16 @@ export default function ResourcesPage() {
 
   return (
     <div className="space-y-6">
+      {error && (
+        <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4">
+          <div className="flex items-center gap-2 text-red-800 dark:text-red-200">
+            <AlertCircle className="h-4 w-4" />
+            <span className="font-medium">Error loading resources</span>
+          </div>
+          <p className="text-sm text-red-700 dark:text-red-300 mt-1">{error}</p>
+        </div>
+      )}
+      
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold">Resources</h1>
@@ -242,42 +323,50 @@ export default function ResourcesPage() {
       <div className="grid gap-6 md:grid-cols-4">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium">Total Resources</CardTitle>
+            <CardTitle className="text-sm font-medium">Total Subjects</CardTitle>
             <FileText className="h-4 w-4 text-gray-500 dark:text-gray-400" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">1,247</div>
-            <p className="text-xs text-gray-500 dark:text-gray-400">+12% from last month</p>
+            <div className="text-2xl font-bold">
+              {loading ? <Loader2 className="h-6 w-6 animate-spin" /> : (resourcesData?.subjects.length || 0)}
+            </div>
+            <p className="text-xs text-gray-500 dark:text-gray-400">Available subjects</p>
           </CardContent>
         </Card>
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium">Downloads</CardTitle>
-            <Download className="h-4 w-4 text-gray-500 dark:text-gray-400" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">45,231</div>
-            <p className="text-xs text-gray-500 dark:text-gray-400">+8% from last month</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium">Faculty Notes</CardTitle>
+            <CardTitle className="text-sm font-medium">Total PYQs</CardTitle>
             <BookOpen className="h-4 w-4 text-gray-500 dark:text-gray-400" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">342</div>
-            <p className="text-xs text-gray-500 dark:text-gray-400">+5 new this week</p>
+            <div className="text-2xl font-bold">
+              {pyqsLoading ? <Loader2 className="h-6 w-6 animate-spin" /> : (pyqsData?.stats?.totalQuestions || 0)}
+            </div>
+            <p className="text-xs text-gray-500 dark:text-gray-400">Questions available</p>
           </CardContent>
         </Card>
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium">Student Uploads</CardTitle>
+            <CardTitle className="text-sm font-medium">Unique Questions</CardTitle>
+            <Star className="h-4 w-4 text-gray-500 dark:text-gray-400" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">
+              {pyqsLoading ? <Loader2 className="h-6 w-6 animate-spin" /> : (pyqsData?.stats?.uniqueQuestions || pyqsData?.pyqs.length || 0)}
+            </div>
+            <p className="text-xs text-gray-500 dark:text-gray-400">Distinct questions</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between pb-2">
+            <CardTitle className="text-sm font-medium">Subjects Covered</CardTitle>
             <Upload className="h-4 w-4 text-gray-500 dark:text-gray-400" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">905</div>
-            <p className="text-xs text-gray-500 dark:text-gray-400">+23 this week</p>
+            <div className="text-2xl font-bold">
+              {pyqsLoading ? <Loader2 className="h-6 w-6 animate-spin" /> : (pyqsData?.stats?.subjectCount || resourcesData?.subjects.length || 0)}
+            </div>
+            <p className="text-xs text-gray-500 dark:text-gray-400">Different subjects</p>
           </CardContent>
         </Card>
       </div>
@@ -333,13 +422,14 @@ export default function ResourcesPage() {
                   <SelectValue placeholder="Select subject" />
                 </SelectTrigger>
                 <SelectContent>
-                  {selectedBranch &&
-                    selectedSemester &&
-                    subjects[selectedBranch]?.[selectedSemester]?.map((subject) => (
-                      <SelectItem key={subject} value={subject}>
-                        {subject}
-                      </SelectItem>
-                    ))}
+                  {getSubjectsForSelection().map((subject) => (
+                    <SelectItem key={subject} value={subject}>
+                      {subject}
+                    </SelectItem>
+                  ))}
+                  {getSubjectsForSelection().length === 0 && selectedBranch && selectedSemester && (
+                    <SelectItem value="none" disabled>No subjects available</SelectItem>
+                  )}
                 </SelectContent>
               </Select>
             </div>
@@ -400,51 +490,69 @@ export default function ResourcesPage() {
                   <CardDescription>Access past examination papers for {selectedSubject}</CardDescription>
                 </CardHeader>
                 <CardContent>
-                  <div className="rounded-md border">
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead>Title</TableHead>
-                          <TableHead>Year</TableHead>
-                          <TableHead>Type</TableHead>
-                          <TableHead>Duration</TableHead>
-                          <TableHead>Marks</TableHead>
-                          <TableHead>Difficulty</TableHead>
-                          <TableHead>Downloads</TableHead>
-                          <TableHead>Action</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {pyqs.map((paper) => (
-                          <TableRow key={paper.id}>
-                            <TableCell>
-                              <div>
-                                <div className="font-medium">{paper.title}</div>
-                                <div className="text-sm text-gray-500 dark:text-gray-400">
-                                  {paper.fileSize} • Uploaded by {paper.uploadedBy}
-                                </div>
-                              </div>
-                            </TableCell>
-                            <TableCell>{paper.year}</TableCell>
-                            <TableCell>
-                              <Badge variant="outline">{paper.examType}</Badge>
-                            </TableCell>
-                            <TableCell>{paper.duration}</TableCell>
-                            <TableCell>{paper.totalMarks}</TableCell>
-                            <TableCell>
-                              <Badge className={getDifficultyColor(paper.difficulty)}>{paper.difficulty}</Badge>
-                            </TableCell>
-                            <TableCell>{paper.downloadCount}</TableCell>
-                            <TableCell>
-                              <Button variant="ghost" size="sm">
-                                <Download className="h-4 w-4" />
-                              </Button>
-                            </TableCell>
+                  {pyqsLoading ? (
+                    <div className="flex justify-center py-8">
+                      <Loader2 className="h-6 w-6 animate-spin text-gray-500" />
+                    </div>
+                  ) : filteredPyqs.length === 0 ? (
+                    <div className="text-center py-8 text-gray-500 dark:text-gray-400">
+                      No PYQs available for {selectedSubject}
+                    </div>
+                  ) : (
+                    <div className="rounded-md border">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Question</TableHead>
+                            <TableHead>Year</TableHead>
+                            <TableHead>Frequency</TableHead>
+                            <TableHead>Difficulty</TableHead>
+                            <TableHead>Action</TableHead>
                           </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
-                  </div>
+                        </TableHeader>
+                        <TableBody>
+                          {filteredPyqs.map((pyq) => (
+                            <TableRow key={pyq._id}>
+                              <TableCell>
+                                <div className="max-w-md">
+                                  <div className="font-medium line-clamp-2">{pyq.questionText}</div>
+                                  {pyq.topics && pyq.topics.length > 0 && (
+                                    <div className="flex flex-wrap gap-1 mt-1">
+                                      {pyq.topics.slice(0, 3).map((topic, idx) => (
+                                        <Badge key={idx} variant="outline" className="text-xs">
+                                          {topic}
+                                        </Badge>
+                                      ))}
+                                    </div>
+                                  )}
+                                </div>
+                              </TableCell>
+                              <TableCell>
+                                {pyq.years && pyq.years.length > 0 ? (
+                                  <div className="text-sm">{pyq.years.join(', ')}</div>
+                                ) : (
+                                  <span className="text-gray-400">N/A</span>
+                                )}
+                              </TableCell>
+                              <TableCell>
+                                <Badge variant="outline">{pyq.frequency || 0}×</Badge>
+                              </TableCell>
+                              <TableCell>
+                                <Badge className={getDifficultyColor(pyq.difficulty || 'medium')}>
+                                  {pyq.difficulty || 'Medium'}
+                                </Badge>
+                              </TableCell>
+                              <TableCell>
+                                <Button variant="ghost" size="sm">
+                                  <Eye className="h-4 w-4" />
+                                </Button>
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  )}
                 </CardContent>
               </Card>
             </TabsContent>

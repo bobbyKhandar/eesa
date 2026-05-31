@@ -2,7 +2,7 @@
 *TODO: Add complete definitions to this file after V1.0 is done
 */
 
-import { z } from "../zodGlobal.js";
+import { z } from "../zodGlobal";
 
 export const questionsZodSchema = z.object({
   // The question itself, required field

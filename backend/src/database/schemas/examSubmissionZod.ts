@@ -4,7 +4,8 @@ import { z } from "zod";
 export const submissionResponseZodSchema = z.object({
   questionId: z.string(),
   userResponse: z.string(), // The actual answer text or selected option
-  allottedMarks: z.number(),
+  maxMarks: z.number(), // Maximum marks possible for this question
+  allottedMarks: z.number(), // Marks awarded for this response
   feedback: z.string().optional(),
   suggestions: z.array(z.string()).optional(),
 });

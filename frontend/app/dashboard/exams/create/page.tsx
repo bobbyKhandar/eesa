@@ -18,8 +18,17 @@ export default function CreateExamPage() {
   const [selectedBranch, setSelectedBranch] = useState("")
   const [selectedSemester, setSelectedSemester] = useState("")
   const [selectedSubject, setSelectedSubject] = useState("")
-  const [questions, setQuestions] = useState([
-    { id: 1, type: "theory", text: "", marks: 10 },
+  const [questions, setQuestions] = useState<Array<{
+    id: number;
+    type: string;
+    text: string;
+    marks: number;
+    questionType: "TEXT" | "MCQ" | "TRUE_FALSE";
+    answer?: string;
+    options?: string[];
+    correctOption?: number;
+  }>>([
+    { id: 1, type: "theory", text: "", marks: 10, questionType: "TEXT", answer: "" },
   ])
   // Mock data for branches, semesters, and subjects
   const branches = ["Computer Science", "Electrical Engineering", "Mechanical Engineering", "Civil Engineering"]
@@ -48,12 +57,27 @@ export default function CreateExamPage() {
   }
 
   const addQuestion = (type: string) => {
-    
     const newId = questions.length > 0 ? Math.max(...questions.map((q) => q.id)) + 1 : 1
     if (type === "theory") {
-      setQuestions([...questions, { id: newId, type:"theory", text: "", marks: 10 }])
+      setQuestions([...questions, { 
+        id: newId, 
+        type: "theory", 
+        text: "", 
+        marks: 10, 
+        questionType: "TEXT",
+        answer: ""
+      }])
     } else if (type === "mcq") {
-      setQuestions([...questions, { id: newId, type:"theory", text: "", options: ["", "", "", ""], correctOption: "", marks: 5 }])
+      setQuestions([...questions, { 
+        id: newId, 
+        type: "mcq", 
+        text: "", 
+        options: ["", "", "", ""], 
+        correctOption: 0, 
+        marks: 5,
+        questionType: "MCQ",
+        answer: ""
+      }])
     }
   }
   const [examTitle,setExamTitle]=useState<string>("")
@@ -61,8 +85,13 @@ export default function CreateExamPage() {
   const [examDuration,setExamDuration]=useState<number>(60)
   const [passingPercentage,setPassingPercentage]=useState<number>(35)
   const [examDegree,setExamDegree]=useState<string>("")
-  // const [examScope,setExamScope]=useState<string>("")
+  const [subject,setSubject]=useState<string>("")
+  const [instructions,setInstructions]=useState<string>("")
+  const [negativeMarking,setNegativeMarking]=useState<boolean>(false)
+  const [negativeMarkingPercentage,setNegativeMarkingPercentage]=useState<number>(25)
   const [processingRequest,setProcessingRequest]=useState<boolean>(false)
+  const [error,setError]=useState<string>("")
+  const [success,setSuccess]=useState<string>("")
 
   const removeQuestion = (id: number) => {
     setQuestions(questions.filter((q) => q.id !== id))
@@ -72,37 +101,85 @@ export default function CreateExamPage() {
     setQuestions(questions.map((q) => (q.id === id ? { ...q, ...data } : q)))
   }
 
-  interface MyApiResponse {
-  message: string;
-  timestamp: string;
-  items: Array<{ id: number; name: string }>;
+  interface ApiResponse {
+  success: boolean;
+  message?: string;
+  error?: string;
+  examId?: string;
 }
 
-async function uploadExamSet(): Promise<MyApiResponse> {
-  const args = {
-    examTitle: examTitle,
-    examDescription: examDescription,
-    examType: examType,
-    passingPercentage: passingPercentage,
-    examDegree: examDegree,
-    examMaxMarks: 20,
-    examUsers: [""],
-    clientQuestions: questions,
-  }
-  const response = await fetch(`http://localhost:3000/api/exams/create`, {
-     method: 'POST', // Specify the HTTP method
+async function uploadExamSet(): Promise<ApiResponse> {
+  try {
+    // Validate required fields
+    if (!examTitle || !examDescription || !subject || !examDegree) {
+      setError("Please fill in all required fields")
+      return { success: false, error: "Missing required fields" }
+    }
+
+    if (questions.length === 0) {
+      setError("Please add at least one question")
+      return { success: false, error: "No questions added" }
+    }
+
+    // Validate all questions have text and marks
+    for (const q of questions) {
+      if (!q.text || q.marks <= 0) {
+        setError("All questions must have text and positive marks")
+        return { success: false, error: "Invalid question data" }
+      }
+    }
+
+    setProcessingRequest(true)
+    setError("")
+    setSuccess("")
+
+    // Calculate total marks
+    const totalMarks = questions.reduce((sum, q) => sum + q.marks, 0)
+
+    const payload = {
+      examTitle,
+      examDescription,
+      subject,
+      examDegree,
+      examType: examType || "assignment",
+      passingPercentage,
+      duration: examDuration,
+      instructions,
+      negativeMarking,
+      negativeMarkingPercentage: negativeMarking ? negativeMarkingPercentage : undefined,
+      examMaxMarks: totalMarks,
+      examUsers: [],
+      questions: questions.map(q => ({
+        text: q.text,
+        marks: q.marks,
+        type: q.questionType || "TEXT"
+      }))
+    }
+
+    const response = await fetch(`/api/exams/create`, {
+      method: 'POST',
       headers: {
-        'Content-Type': 'application/json', // Tell the server we're sending JSON
+        'Content-Type': 'application/json',
       },
-      body: JSON.stringify(args), // Convert your arguments object to a JSON string
-  })
-  console.log(response)
+      body: JSON.stringify(payload),
+    })
 
+    const data = await response.json()
 
-  
+    if (!response.ok || !data.success) {
+      setError(data.error || "Failed to create exam")
+      return { success: false, error: data.error }
+    }
 
-  if(response){
+    setSuccess("Exam created successfully!")
+    return { success: true, message: data.message, examId: data.examId }
 
+  } catch (err: any) {
+    console.error("Error creating exam:", err)
+    setError(err.message || "Network error occurred")
+    return { success: false, error: err.message }
+  } finally {
+    setProcessingRequest(false)
   }
 }
   // Step 1: Select exam type (Personal Use or Teacher Assignment)
@@ -346,19 +423,39 @@ async function uploadExamSet(): Promise<MyApiResponse> {
         </div>
       </div>
 
+      {error && (
+        <div className="bg-red-50 dark:bg-red-950 border border-red-200 dark:border-red-800 rounded-lg p-4">
+          <p className="text-sm text-red-800 dark:text-red-200">{error}</p>
+        </div>
+      )}
+
+      {success && (
+        <div className="bg-green-50 dark:bg-green-950 border border-green-200 dark:border-green-800 rounded-lg p-4">
+          <p className="text-sm text-green-800 dark:text-green-200">{success}</p>
+        </div>
+      )}
+
       <Card>
         <CardHeader>
           <CardTitle>Exam Details</CardTitle>
-          <CardDescription>Enter the basic information about your exam</CardDescription>
+          <CardDescription>Enter the basic information about your exam (* indicates required field)</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid gap-2">
-            <Label htmlFor="title">Exam Title</Label>
+            <Label htmlFor="title">Exam Title *</Label>
             <Input id="title" required readOnly={processingRequest} value={examTitle} onChange={e=>{setExamTitle(e.target.value)}} placeholder="Enter exam title" />
           </div>
           <div className="grid gap-2">
-            <Label htmlFor="description">Description</Label>
+            <Label htmlFor="description">Description *</Label>
             <Textarea id="description" required readOnly={processingRequest} value={examDescription} onChange={e=>{setExamDescription(e.target.value)}} placeholder="Enter exam description" />
+          </div>
+          <div className="grid gap-2">
+            <Label htmlFor="subject">Subject *</Label>
+            <Input id="subject" required readOnly={processingRequest} value={subject} onChange={e=>{setSubject(e.target.value)}} placeholder="e.g., Computer Science, Mathematics" />
+          </div>
+          <div className="grid gap-2">
+            <Label htmlFor="instructions">Instructions (Optional)</Label>
+            <Textarea id="instructions" readOnly={processingRequest} value={instructions} onChange={e=>{setInstructions(e.target.value)}} placeholder="Enter exam instructions for students" />
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="grid gap-2">
@@ -366,17 +463,47 @@ async function uploadExamSet(): Promise<MyApiResponse> {
               <Input id="duration" type="number" required value={examDuration} readOnly={processingRequest} onChange={e=>{setExamDuration(Number(e.target.value))}} placeholder="60" />
             </div>
             <div className="grid gap-2">
-              <Label htmlFor="passing-score">Passing Score (%)</Label>
-              <Input id="passing-score" type="number" required value={passingPercentage} readOnly={processingRequest} onChange={e=>{setPassingPercentage(Number(e.target.value))}} placeholder="60" />
+              <Label htmlFor="passing-score">Passing Score (%) *</Label>
+              <Input id="passing-score" type="number" required value={passingPercentage} readOnly={processingRequest} onChange={e=>{setPassingPercentage(Number(e.target.value))}} placeholder="60" min="0" max="100" />
             </div>
             <div className="grid gap-2">
-              <Label htmlFor="exam-degree">degree at which exam is conducted at</Label>
-              <Input id="exam-degree" value={examDegree} required readOnly={processingRequest} onChange={e=>{setExamDegree(e.target.value)}} placeholder="exam degree" />
+              <Label htmlFor="exam-degree">Degree/Program *</Label>
+              <Input id="exam-degree" value={examDegree} required readOnly={processingRequest} onChange={e=>{setExamDegree(e.target.value)}} placeholder="e.g., B.Tech, M.Sc, PhD" />
             </div>
-            {/* <div className="grid gap-2">
-              <Label htmlFor="exam name">enter the scope of exam (ese,ise,etc.)</Label>
-              <Input id="passing-score" value={examScope} required readOnly={processingRequest} onChange={e=>{setExamScope(e.target.value)}} type="number" placeholder="60" />
-            </div> */}
+          </div>
+
+          <div className="grid gap-4">
+            <div className="flex items-center space-x-2">
+              <input 
+                type="checkbox" 
+                id="negative-marking" 
+                checked={negativeMarking}
+                onChange={e => setNegativeMarking(e.target.checked)}
+                disabled={processingRequest}
+                className="h-4 w-4 rounded border-gray-300"
+              />
+              <Label htmlFor="negative-marking" className="font-normal">
+                Enable Negative Marking
+              </Label>
+            </div>
+            {negativeMarking && (
+              <div className="grid gap-2 ml-6">
+                <Label htmlFor="negative-percentage">Negative Marking Percentage</Label>
+                <Input 
+                  id="negative-percentage" 
+                  type="number" 
+                  value={negativeMarkingPercentage} 
+                  readOnly={processingRequest} 
+                  onChange={e=>{setNegativeMarkingPercentage(Number(e.target.value))}} 
+                  placeholder="25" 
+                  min="0" 
+                  max="100"
+                />
+                <p className="text-xs text-gray-500 dark:text-gray-400">
+                  Percentage of question marks to deduct for wrong answers
+                </p>
+              </div>
+            )}
           </div>
 
           {syllabusType === "personal" && (
@@ -499,7 +626,9 @@ async function uploadExamSet(): Promise<MyApiResponse> {
         <CardHeader className="flex flex-row items-center justify-between">
           <div>
             <CardTitle>Questions</CardTitle>
-            <CardDescription>Add and configure exam questions</CardDescription>
+            <CardDescription>
+              Add and configure exam questions • Total Marks: {questions.reduce((sum, q) => sum + (q.marks || 0), 0)}
+            </CardDescription>
           </div>
           <Tabs defaultValue="theory">
             <TabsList>
@@ -631,24 +760,21 @@ async function uploadExamSet(): Promise<MyApiResponse> {
           )}
         </CardContent>
         <CardFooter className="flex justify-between">
-          <Button variant="outline">Save as Draft</Button>
-          <Button onClick={async (e)=>{
-                try {
-      const response = await uploadExamSet();
-    
-      
-      if (response.success) {
-        alert("")
-      } else {
-        setError(data.error || 'Failed to load exams');
-      }
-    } catch (err) {
-      setError('Network error occurred');
-      console.error('Error loading exams:', err);
-    } 
-            
-            
-            }}>Create Exam</Button>
+          <Button variant="outline" disabled={processingRequest}>Save as Draft</Button>
+          <Button 
+            onClick={async () => {
+              const response = await uploadExamSet()
+              if (response.success) {
+                // Optionally redirect to exam list or show success message
+                setTimeout(() => {
+                  window.location.href = '/dashboard/exams'
+                }, 2000)
+              }
+            }}
+            disabled={processingRequest}
+          >
+            {processingRequest ? "Creating..." : "Create Exam"}
+          </Button>
         </CardFooter>
       </Card>
     </div>

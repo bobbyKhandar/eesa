@@ -1,0 +1,6 @@
+$3b29c3fb-3f92-4dad-89bb-ae09b3136c52²Þid ÿÿÿÿÿÿÿÿÿ*string08*question_number ÿÿÿÿÿÿÿÿÿ*string08(question_text ÿÿÿÿÿÿÿÿÿ*string08"subject ÿÿÿÿÿÿÿÿÿ*string08year ÿÿÿÿÿÿÿÿÿ*string08#semester ÿÿÿÿÿÿÿÿÿ*string08$	exam_type ÿÿÿÿÿÿÿÿÿ*string08!branch ÿÿÿÿÿÿÿÿÿ*string08marks ÿÿÿÿÿÿÿÿÿ*int3208&bloom_level	 ÿÿÿÿÿÿÿÿÿ*string08%
+difficulty
+ ÿÿÿÿÿÿÿÿÿ*string08!keywords ÿÿÿÿÿÿÿÿÿ*list08item *string08'topics_covered ÿÿÿÿÿÿÿÿÿ*list08item *string08%
+source_key ÿÿÿÿÿÿÿÿÿ*string08!job_id ÿÿÿÿÿÿÿÿÿ*string084vector ÿÿÿÿÿÿÿÿÿ*fixed_size_list:float:51208"!
+lance.auto_cleanup.interval20"'
+lance.auto_cleanup.older_than14days

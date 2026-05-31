@@ -2,7 +2,7 @@
 *TODO: Add Definitions to this file after V1.0 is done
 */
 
-import { z } from "../zodGlobal.js";
+import { z } from "../zodGlobal";
 
 export const subjectZodSchema = z.object({
   subjectName: z.string(),
@@ -22,7 +22,10 @@ export const subjectZodSchema = z.object({
   numberOfReviews: z.number().default(0),
   totalRating: z.number().default(0),
   subjectPyq: z.array(z.any()).default([]),
-  subjectSyllabus: z.string().default(""),
+  subjectSyllabus: z.string().optional().default(""),
+  
+  // Question bank - references to AnalysisReport collection
+  analysisReportIds: z.array(z.string()).default([]),
 });
 
 // User History Schema

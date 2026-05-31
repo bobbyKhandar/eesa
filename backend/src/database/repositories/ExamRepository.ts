@@ -129,6 +129,7 @@ export class ExamRepository {
     try {
       await connect();
 
+      // Exam _id is stored as string in the database (see examSchemaZod.ts)
       const result = await this.model.aggregate([
         { $match: { _id: examId } },
         {
@@ -137,10 +138,16 @@ export class ExamRepository {
             let: { questionIds: '$questions' },
             pipeline: [
               {
+                $addFields: {
+                  // Convert ObjectId to string for comparison
+                  _idStr: { $toString: '$_id' }
+                }
+              },
+              {
                 $match: {
                   $expr: {
                     // questions array stores string IDs, so compare stringified _id with array elements
-                    $in: [{ $toString: '$_id' }, '$$questionIds']
+                    $in: ['$_idStr', '$$questionIds']
                   }
                 }
               },

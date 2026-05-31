@@ -5,10 +5,10 @@
 
 import { Types } from "mongoose";
 import type { Model } from "mongoose";
-import { connect } from "../connect.js";
-import { getPromptModel } from "../mongooseSchemas.js";
-import { promptZodSchema } from "../schemas/promptSchemaZod.js";
-import type { Prompt } from "../schemas/promptSchemaZod.js";
+import { connect } from "../connect";
+import { getPromptModel } from "../mongooseSchemas";
+import { promptZodSchema } from "../schemas/promptSchemaZod";
+import type { Prompt } from "../schemas/promptSchemaZod";
 
 export class PromptRepository {
   private model: Model<Prompt>;
@@ -111,6 +111,27 @@ export class PromptRepository {
     } catch (error) {
       console.error('Error getting prompt:', error);
       return null;
+    }
+  }
+
+  /**
+   * Find prompt by ID (alias for getById for compatibility)
+   */
+  async findById(promptId: string): Promise<Prompt | null> {
+    return this.getById(promptId);
+  }
+
+  /**
+   * Find multiple prompts by their IDs
+   */
+  async findByIds(promptIds: string[]): Promise<Prompt[]> {
+    try {
+      await connect();
+      const objectIds = promptIds.map(id => new Types.ObjectId(id));
+      return await this.model.find({ _id: { $in: objectIds } }).lean();
+    } catch (error) {
+      console.error("Error finding prompts by IDs:", error);
+      return [];
     }
   }
 
@@ -278,6 +299,20 @@ export class PromptRepository {
     } catch (error) {
       console.error('Error getting prompt counts:', error);
       return { ocr: 0, llm: 0, user: 0 };
+    }
+  }
+
+  /**
+   * Find all prompts by subject
+   * Used by: Unique questions fallback
+   */
+  async findBySubject(subject: string): Promise<Prompt[]> {
+    try {
+      await connect();
+      return await this.model.find({ subject }).lean();
+    } catch (error) {
+      console.error('Error finding prompts by subject:', error);
+      return [];
     }
   }
 }
