@@ -128,10 +128,15 @@ async function main() {
   let adminId = '';
 
   console.log('─── Generating Users ───');
-  const userCount = Math.max(count, 3);
+
+  // Note: userZodSchema defines _id as z.string().optional() — Mongoose
+  // won't auto-generate one. Provide explicit _id values here.
+  let idCounter = 0;
+  const nextId = () => `synth_user_${++idCounter}`;
 
   // Admin (first)
   const adminResult = await userRepo.create({
+    _id: nextId(),
     email: 'admin@test.edu',
     name: 'System Admin',
     role: 'admin',
@@ -149,6 +154,7 @@ async function main() {
   for (let i = 0; i < Math.min(3, count); i++) {
     const name = teacherNames[i]!;
     const result = await userRepo.create({
+      _id: nextId(),
       email: `teacher${i + 1}@test.edu`,
       name,
       role: 'teacher',
@@ -166,6 +172,7 @@ async function main() {
   for (let i = 0; i < count; i++) {
     const name = STUDENT_NAMES[i % STUDENT_NAMES.length]!;
     const result = await userRepo.create({
+      _id: nextId(),
       email: `student${i + 1}@test.edu`,
       name,
       role: 'student',
