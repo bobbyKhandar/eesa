@@ -17,6 +17,7 @@
 ## Documentation
 
 - Update `README.md` with every execution if anything mentioned in `README.md` was changed.
+- When adding or significantly updating a feature, review all `.md` files in the project (`README.md`, `context.md`, and any package-level docs) and update them if they reference the changed functionality.
 
 ## Testing
 
