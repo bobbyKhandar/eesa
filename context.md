@@ -6,7 +6,7 @@
 ## Stack
 - **Frontend:** Next.js 15 (App Router), TypeScript, Tailwind CSS v3, shadcn/ui, Clerk auth
 - **Backend:** Node.js, TypeScript (ESM), Mongoose 8, Zod 3, `@zodyac/zod-mongoose`
-- **AI Pipeline:** Python 3.10+, Flask, OpenCV, EasyOCR, boto3, LanceDB
+- **AI Pipeline:** Python 3.10+, Flask, flask-cors, EasyOCR, OpenCV, PyMuPDF, Pillow, boto3, Redis, LanceDB
 - **Database:** MongoDB Atlas
 - **Auth:** Clerk
 
@@ -24,4 +24,5 @@ The Next.js frontend NEVER talks to AWS Textract or Bedrock directly. It must se
 ### Package-Specific Rules
 See the `context.md` file inside each package for domain-specific rules:
 - `packages/frontend/context.md` — React/TypeScript component and data-fetching patterns
-- `packages/ai-pipeline/context.md` — Python/Flask execution rules
+- `packages/backend/context.md` — Repository, schema, and model patterns
+- `packages/ai-pipeline/context.md` — Python/Flask pipeline architecture and threading rules

@@ -1,45 +1,36 @@
 "use client"
 
 import { useState } from "react"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/frontend/components/ui/card"
+import { Card, CardHeader, CardTitle, CardContent, CardDescription } from "@/frontend/components/ui/card"
 import { Button } from "@/frontend/components/ui/button"
 import { Badge } from "@/frontend/components/ui/badge"
-import { Textarea } from "@/frontend/components/ui/textarea"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/frontend/components/ui/tabs"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/frontend/components/ui/table"
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/frontend/components/ui/alert-dialog"
-import {
-  Database,
-  Play,
-  Download,
-  Upload,
-  RefreshCw,
-  Activity,
-  HardDrive,
-  FileText,
-  AlertCircle,
-  CheckCircle,
-  Clock,
-  Trash2,
-} from "lucide-react"
+import { Download, Upload, RefreshCw, CheckCircle, AlertCircle, Clock, Trash2 } from "lucide-react"
+import { DatabaseStatCard, SqlQueryEditor, useTruncateDialogs } from "@/frontend/components/features/admin"
 
 export default function AdminDatabase() {
-  const [sqlQuery, setSqlQuery] = useState("")
-  const [queryResult, setQueryResult] = useState<any[]>([])
-  const [isExecuting, setIsExecuting] = useState(false)
-  const [showTruncateDialog, setShowTruncateDialog] = useState(false)
-  const [showSecondConfirm, setShowSecondConfirm] = useState(false)
-  const [isTruncating, setIsTruncating] = useState(false)
   const [truncateResult, setTruncateResult] = useState<{ success: boolean; message: string } | null>(null)
+
+  const handleTruncate = async () => {
+    setIsTruncating(true)
+    setTruncateResult(null)
+    try {
+      const response = await fetch('/api/admin/database/truncate', { method: 'POST', headers: { 'Content-Type': 'application/json' } })
+      const data = await response.json()
+      if (response.ok) {
+        setTruncateResult({ success: true, message: `${data.message || 'Database truncated successfully'} (${data.totalDeleted || 0} records)` })
+      } else {
+        setTruncateResult({ success: false, message: data.error || 'Failed to truncate database' })
+      }
+    } catch (error) {
+      setTruncateResult({ success: false, message: 'Network error: ' + (error instanceof Error ? error.message : 'Unknown error') })
+    } finally {
+      setIsTruncating(false)
+    }
+  }
+
+  const { setShowFirst: setShowTruncateDialog, dialogs: truncateDialogs, isTruncating } = useTruncateDialogs(handleTruncate)
 
   // Mock database statistics
   const dbStats = [
@@ -105,95 +96,6 @@ export default function AdminDatabase() {
     { metric: "CPU Usage", value: "23%", status: "good" },
   ]
 
-  const executeQuery = async () => {
-    if (!sqlQuery.trim()) return
-
-    setIsExecuting(true)
-    // Simulate query execution
-    setTimeout(() => {
-      // Mock result for demonstration
-      setQueryResult([
-        { id: 1, name: "John Doe", email: "john@example.com", role: "student" },
-        { id: 2, name: "Jane Smith", email: "jane@example.com", role: "faculty" },
-      ])
-      setIsExecuting(false)
-    }, 1000)
-  }
-
-  const handleTruncateDatabase = async () => {
-    setIsTruncating(true)
-    setTruncateResult(null)
-    
-    try {
-      const response = await fetch('/api/admin/database/truncate', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-      })
-      
-      const data = await response.json()
-      
-      console.log('Truncate response:', data)
-      
-      if (response.ok) {
-        const totalDeleted = data.totalDeleted || 0
-        setTruncateResult({ 
-          success: true, 
-          message: `${data.message || 'Database truncated successfully'} (${totalDeleted} records)` 
-        })
-      } else {
-        setTruncateResult({ success: false, message: data.error || 'Failed to truncate database' })
-      }
-    } catch (error) {
-      setTruncateResult({ success: false, message: 'Network error: ' + (error instanceof Error ? error.message : 'Unknown error') })
-    } finally {
-      setIsTruncating(false)
-      setShowSecondConfirm(false)
-      setShowTruncateDialog(false)
-    }
-  }
-
-  const handleFirstConfirm = () => {
-    setShowTruncateDialog(false)
-    setShowSecondConfirm(true)
-  }
-
-  const getStatusBadge = (status: string) => {
-    const variants = {
-      completed: "default",
-      failed: "destructive",
-      running: "secondary",
-    } as const
-
-    const icons = {
-      completed: <CheckCircle className="h-3 w-3 mr-1" />,
-      failed: <AlertCircle className="h-3 w-3 mr-1" />,
-      running: <Clock className="h-3 w-3 mr-1" />,
-    }
-
-    return (
-      <Badge variant={variants[status as keyof typeof variants] || "secondary"} className="flex items-center">
-        {icons[status as keyof typeof icons]}
-        {status.charAt(0).toUpperCase() + status.slice(1)}
-      </Badge>
-    )
-  }
-
-  const getPerformanceStatus = (status: string) => {
-    const colors = {
-      good: "text-green-600 bg-green-50 dark:bg-green-950 dark:text-green-400",
-      warning: "text-yellow-600 bg-yellow-50 dark:bg-yellow-950 dark:text-yellow-400",
-      critical: "text-red-600 bg-red-50 dark:bg-red-950 dark:text-red-400",
-    }
-
-    return (
-      <Badge className={colors[status as keyof typeof colors] || colors.good}>
-        {status.charAt(0).toUpperCase() + status.slice(1)}
-      </Badge>
-    )
-  }
-
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
@@ -216,15 +118,7 @@ export default function AdminDatabase() {
       {/* Database Statistics */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         {dbStats.map((stat) => (
-          <Card key={stat.title}>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">{stat.title}</CardTitle>
-              <stat.icon className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{stat.value}</div>
-            </CardContent>
-          </Card>
+          <DatabaseStatCard key={stat.title} title={stat.title} value={stat.value} icon={stat.icon} />
         ))}
       </div>
 
@@ -271,57 +165,7 @@ export default function AdminDatabase() {
         </TabsContent>
 
         <TabsContent value="query" className="space-y-4">
-          <Card>
-            <CardHeader>
-              <CardTitle>SQL Query Editor</CardTitle>
-              <CardDescription>Execute SQL queries against the database</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="space-y-2">
-                <Textarea
-                  placeholder="Enter your SQL query here..."
-                  value={sqlQuery}
-                  onChange={(e) => setSqlQuery(e.target.value)}
-                  rows={6}
-                  className="font-mono"
-                />
-              </div>
-              <div className="flex gap-2">
-                <Button onClick={executeQuery} disabled={isExecuting || !sqlQuery.trim()}>
-                  <Play className="h-4 w-4 mr-2" />
-                  {isExecuting ? "Executing..." : "Execute Query"}
-                </Button>
-                <Button variant="outline" onClick={() => setSqlQuery("")}>
-                  Clear
-                </Button>
-              </div>
-              {queryResult.length > 0 && (
-                <div className="space-y-2">
-                  <h3 className="text-lg font-medium">Query Results</h3>
-                  <div className="rounded-md border">
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          {Object.keys(queryResult[0]).map((key) => (
-                            <TableHead key={key}>{key}</TableHead>
-                          ))}
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {queryResult.map((row, index) => (
-                          <TableRow key={index}>
-                            {Object.values(row).map((value, i) => (
-                              <TableCell key={i}>{String(value)}</TableCell>
-                            ))}
-                          </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
-                  </div>
-                </div>
-              )}
-            </CardContent>
-          </Card>
+          <SqlQueryEditor />
         </TabsContent>
 
         <TabsContent value="backups" className="space-y-4">
@@ -360,7 +204,13 @@ export default function AdminDatabase() {
                         <TableCell>{backup.size}</TableCell>
                         <TableCell>{backup.created}</TableCell>
                         <TableCell className="capitalize">{backup.type}</TableCell>
-                        <TableCell>{getStatusBadge(backup.status)}</TableCell>
+                        <TableCell>
+                          <Badge variant={backup.status === 'failed' ? 'destructive' : 'default'} className="flex items-center">
+                            {backup.status === 'completed' && <CheckCircle className="h-3 w-3 mr-1" />}
+                            {backup.status === 'failed' && <AlertCircle className="h-3 w-3 mr-1" />}
+                            {backup.status.charAt(0).toUpperCase() + backup.status.slice(1)}
+                          </Badge>
+                        </TableCell>
                         <TableCell>
                           <div className="flex gap-1">
                             <Button variant="outline" size="sm">
@@ -394,7 +244,9 @@ export default function AdminDatabase() {
                       <div className="font-medium">{metric.metric}</div>
                       <div className="text-2xl font-bold">{metric.value}</div>
                     </div>
-                    <div>{getPerformanceStatus(metric.status)}</div>
+                    <Badge className={metric.status === 'good' ? 'bg-green-50 text-green-600 dark:bg-green-950 dark:text-green-400' : 'bg-yellow-50 text-yellow-600 dark:bg-yellow-950 dark:text-yellow-400'}>
+                      {metric.status.charAt(0).toUpperCase() + metric.status.slice(1)}
+                    </Badge>
                   </div>
                 ))}
               </div>
@@ -474,85 +326,7 @@ export default function AdminDatabase() {
         </TabsContent>
       </Tabs>
 
-      {/* First Confirmation Dialog */}
-      <AlertDialog open={showTruncateDialog} onOpenChange={setShowTruncateDialog}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle className="flex items-center gap-2 text-destructive">
-              <AlertCircle className="h-5 w-5" />
-              Are you absolutely sure?
-            </AlertDialogTitle>
-            <AlertDialogDescription className="space-y-2">
-              <p>This action will permanently delete ALL data from the database, including:</p>
-              <ul className="list-disc list-inside space-y-1 text-sm">
-                <li>All users and accounts</li>
-                <li>All exams and submissions</li>
-                <li>All resources and subjects</li>
-                <li>All questions and question papers</li>
-                <li>All analytics and reports</li>
-                <li>All exam analyses and analysis reports</li>
-                <li>All past papers and syllabi</li>
-                <li>All unique questions and deduplication data</li>
-                <li>All job metadata and upload sessions</li>
-              </ul>
-              <p className="font-semibold text-destructive mt-3">
-                This action CANNOT be undone. Make sure you have a recent backup.
-              </p>
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <Button variant="destructive" onClick={handleFirstConfirm}>
-              Continue
-            </Button>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-
-      {/* Second Confirmation Dialog */}
-      <AlertDialog open={showSecondConfirm} onOpenChange={setShowSecondConfirm}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle className="flex items-center gap-2 text-destructive">
-              <Trash2 className="h-5 w-5" />
-              Final Confirmation
-            </AlertDialogTitle>
-            <AlertDialogDescription className="space-y-3">
-              <p className="text-base font-semibold">
-                You are about to PERMANENTLY DELETE all data from the database.
-              </p>
-              <div className="rounded-lg bg-destructive/20 p-3 border border-destructive">
-                <p className="text-sm font-mono text-destructive">
-                  ⚠️ This will erase everything. No recovery possible.
-                </p>
-              </div>
-              <p className="text-sm">
-                Click "Delete Everything" to proceed with database truncation.
-              </p>
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={isTruncating}>Cancel</AlertDialogCancel>
-            <Button 
-              variant="destructive" 
-              onClick={handleTruncateDatabase}
-              disabled={isTruncating}
-            >
-              {isTruncating ? (
-                <>
-                  <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
-                  Truncating...
-                </>
-              ) : (
-                <>
-                  <Trash2 className="h-4 w-4 mr-2" />
-                  Delete Everything
-                </>
-              )}
-            </Button>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      {truncateDialogs}
     </div>
   )
 }

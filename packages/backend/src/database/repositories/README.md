@@ -24,7 +24,7 @@ database/
 │   └── userSchemaZod.ts
 │
 ├── db.ts                        # Original (1200 lines)
-├── db.refactored.ts            # New facade (200 lines) (NEW)
+├── db.ts            # New facade (200 lines) (NEW)
 ├── mongooseSchemas.ts          # Mongoose model definitions
 ├── connect.ts                  # Database connection
 │
@@ -79,7 +79,7 @@ const prompts = await promptRepo.search({
 ### 3. Using Legacy Functions (For Existing Code)
 
 ```typescript
-import { createPrompt, searchPrompts } from './database/db.refactored.js';
+import { createPrompt, searchPrompts } from './database/db.js';
 
 // Old function signatures still work
 const result = await createPrompt({ ... });
@@ -381,7 +381,7 @@ const prompts = await promptRepo.search({ subject: "Math" });
 **Option B: Use facade (no changes needed)**
 ```typescript
 // Keep existing imports
-import { searchPrompts } from './database/db.refactored.js';
+import { searchPrompts } from './database/db.js';
 const prompts = await searchPrompts({ subject: "Math" });
 ```
 

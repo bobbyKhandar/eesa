@@ -26,9 +26,9 @@ A modular monolith for end-to-end exam processing: upload scanned question paper
 | UI | shadcn/ui, Radix UI, Tailwind CSS v3, Lucide icons, Recharts |
 | Auth | Clerk (Next.js SDK) |
 | Database | MongoDB Atlas |
-| AI/OCR | AWS Textract, AWS Bedrock (Claude), Google Gemini, EasyOCR |
+| AI/OCR | AWS Textract, AWS Bedrock (Gemma 3 27B), Google Gemini, EasyOCR |
 | Vector Storage | LanceDB (FAISS + HDBSCAN clustering) |
-| Pipeline | Python 3, Flask, Threading, OpenCV |
+| Pipeline | Python 3.10+, Flask, flask-cors, EasyOCR, OpenCV, PyMuPDF, Pillow, Redis, boto3 |
 | DevOps | Monorepo (standalone packages), Embedded Conda env, VSCode launch configs |
 
 ---
@@ -71,13 +71,15 @@ The **Next.js frontend** owns the full web server — API routes handle all CRUD
 
 ### `packages/backend/`
 
+> See [`packages/backend/context.md`](./packages/backend/context.md) for authoritative backend rules.
+
 ```
 packages/backend/
 ├── src/
 │   ├── database/
 │   │   ├── connect.ts               # MongoDB connection manager
 │   │   ├── mongooseSchemas.ts       # Zod-to-Mongoose schema conversion
-│   │   ├── repositories/            # Data access layer (10 files, domain-separated)
+│   │   ├── repositories/            # Data access layer (12 files, domain-separated)
 │   │   │   ├── ExamRepository.ts
 │   │   │   ├── ExamSubmissionRepository.ts
 │   │   │   ├── ExamQuestionRepository.ts
@@ -109,6 +111,8 @@ packages/backend/
 ```
 
 ### `packages/frontend/`
+
+> See [`packages/frontend/context.md`](./packages/frontend/context.md) for authoritative frontend rules.
 
 ```
 packages/frontend/
@@ -156,6 +160,8 @@ packages/frontend/
 ```
 
 ### `packages/ai-pipeline/`
+
+> See [`packages/ai-pipeline/context.md`](./packages/ai-pipeline/context.md) for authoritative AI pipeline rules.
 
 ```
 packages/ai-pipeline/
@@ -294,10 +300,30 @@ Or use **VSCode** (`.vscode/launch.json`) — open Run & Debug (Ctrl+Shift+D), s
 
 ### AI Pipeline Routes
 
+Two server entry points exist — root `server.py` (production/unified, 1124 lines) and `src/server.py` + `src/api/` (refactored/modular). See `packages/ai-pipeline/context.md` for details.
+
+**Root `server.py` routes (production):**
+
+| Route | Method | Description |
+|-------|--------|-------------|
+| `/health` | GET | Health check |
+| `/process` | POST | Start a new pipeline job |
+| `/process/batch` | POST | Batch process multiple items |
+| `/job/<id>/status` | GET | Job status |
+| `/job/<id>/metadata` | GET | Job metadata |
+| `/job/<id>/questions` | GET | Extracted questions for a job |
+| `/jobs/active` | GET | List active jobs |
+| `/submit-local` | POST | Submit local pipeline batch (EasyOCR) |
+| `/status/<batch_id>` | GET | Local batch job status |
+| `/upload/question-papers` | POST | Upload question paper |
+
+**`src/api/routes.py` routes (modular):**
+
 | Route | Method | Description |
 |-------|--------|-------------|
 | `/health` | GET | Health check |
 | `/submit-local` | POST | Submit local pipeline batch (EasyOCR) |
+| `/submit` | POST | Legacy submit |
 | `/submit-aws` | POST | Submit AWS pipeline batch (Textract → Bedrock) |
 | `/status-aws/<job_id>` | GET | AWS batch job status |
 | `/status/<batch_id>` | GET | Local batch job status |
@@ -344,7 +370,7 @@ Or use **VSCode** (`.vscode/launch.json`) — open Run & Debug (Ctrl+Shift+D), s
 | **Data consolidation** — All runtime data → `data/` | ✅ Done |
 | **Test consolidation** — All tests → `tests/node/` + `tests/python/` | ✅ Done |
 | **Express removal** — Removed Express server, routes, and `db.ts` facade | ✅ Done |
-| **Database layer** — 10 domain-separated repository files, direct imports | ✅ Done |
+| **Database layer** — 12 domain-separated repository files, direct imports | ✅ Done |
 | **Frontend mammoth splits** — 4 pages split, 17 feature component files created | ✅ Done |
 | **AI pipeline API extraction** — Extracted `api/` module from monolithic `server.py` | ✅ Done |
 | **VSCode configs** — `launch.json` (2 profiles) + `settings.json` | ✅ Done |

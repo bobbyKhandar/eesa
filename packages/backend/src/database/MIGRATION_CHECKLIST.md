@@ -377,7 +377,7 @@ If issues arise:
 ### Option 1: Use Facade
 ```typescript
 // Keep using old function signatures
-import { searchPrompts } from './database/db.refactored.js';
+import { searchPrompts } from './database/db.js';
 // Internally uses repositories, but same API
 ```
 

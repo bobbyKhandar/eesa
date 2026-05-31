@@ -198,7 +198,7 @@ Complete guide to the refactored database layer with repository pattern.
 ✅ Complete exams with submissions  
 
 ### Backward Compatibility
-✅ Facade pattern (db.refactored.ts)  
+✅ Facade pattern (db.ts)  
 ✅ Same function signatures  
 ✅ Gradual migration possible  
 ✅ No breaking changes  
@@ -379,7 +379,7 @@ scripts/
 
 ### Supporting Files (1 file)
 ```
-└── db.refactored.ts (backward compatibility facade)
+└── db.ts (backward compatibility facade)
 ```
 
 **Total**: 12 files, ~10,000 lines of code + documentation
