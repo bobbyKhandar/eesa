@@ -3,7 +3,7 @@
 ## Code Architecture
 
 - Strictly follow a **modular monolithic** approach. All code lives in a single deployable unit (no microservices, no separate servers). Packages within the project (`packages/backend/`, `packages/frontend/`, `packages/ai-pipeline/`) are logically separated by concern but remain in one codebase.
-- Keep packages loosely coupled: each package imports across the repo via the `@/` path alias but should not depend on internal implementation details of sibling packages. Reference `context.md` at the repo root for authoritative global rules.
+- Keep packages loosely coupled: each package imports across the repo via the `@/` path alias but should not depend on internal implementation details of sibling packages. Reference the 3-tier context files: `context.md` (global), `packages/frontend/context.md` (frontend), `packages/ai-pipeline/context.md` (AI pipeline) for authoritative rules.
 
 ## Commit & Push Discipline
 
