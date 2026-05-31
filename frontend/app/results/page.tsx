@@ -1,7 +1,8 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import Link from "next/link"
+import { useUser } from "@clerk/nextjs"
 import { Button } from "@/frontend/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/frontend/components/ui/card"
 import { Input } from "@/frontend/components/ui/input"
@@ -39,137 +40,86 @@ import {
   CheckCircle,
   XCircle,
   AlertCircle,
+  Loader2,
 } from "lucide-react"
 
+interface ExamResult {
+  id: string
+  examName: string
+  subject: string
+  date: string
+  score: number
+  totalMarks: number
+  percentage: number
+  grade: string
+  status: "passed" | "failed"
+  duration: string
+  autoSubmitted?: boolean
+  responsesCount?: number
+}
+
+interface ResultsData {
+  results: ExamResult[]
+  stats: {
+    totalExams: number
+    passedExams: number
+    avgScore: number
+    highestScore: number
+    passRate: number
+  }
+  performanceData: { month: string; score: number }[]
+  subjectPerformance: { subject: string; score: number; color: string }[]
+  gradeDistribution: { grade: string; count: number; color: string }[]
+}
+
 export default function ResultsPage() {
+  const { isLoaded, isSignedIn } = useUser()
   const [searchQuery, setSearchQuery] = useState("")
   const [subjectFilter, setSubjectFilter] = useState("all")
   const [statusFilter, setStatusFilter] = useState("all")
   const [dateFilter, setDateFilter] = useState("all")
   const [activeTab, setActiveTab] = useState("overview")
+  
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [data, setData] = useState<ResultsData | null>(null)
 
-  // Mock data for exam results
-  const examResults = [
-    {
-      id: 1,
-      examName: "Data Structures Final",
-      subject: "Computer Science",
-      date: "2024-01-15",
-      score: 85,
-      totalMarks: 100,
-      percentage: 85,
-      grade: "A",
-      status: "passed",
-      duration: "3 hours",
-      rank: 12,
-      totalStudents: 95,
-      averageScore: 72,
-    },
-    {
-      id: 2,
-      examName: "Database Systems Midterm",
-      subject: "Computer Science",
-      date: "2024-01-10",
-      score: 72,
-      totalMarks: 100,
-      percentage: 72,
-      grade: "B+",
-      status: "passed",
-      duration: "2 hours",
-      rank: 28,
-      totalStudents: 88,
-      averageScore: 68,
-    },
-    {
-      id: 3,
-      examName: "Operating Systems Quiz",
-      subject: "Computer Science",
-      date: "2024-01-05",
-      score: 45,
-      totalMarks: 60,
-      percentage: 75,
-      grade: "B",
-      status: "passed",
-      duration: "1 hour",
-      rank: 35,
-      totalStudents: 88,
-      averageScore: 42,
-    },
-    {
-      id: 4,
-      examName: "Computer Networks Final",
-      subject: "Computer Science",
-      date: "2023-12-20",
-      score: 58,
-      totalMarks: 100,
-      percentage: 58,
-      grade: "C+",
-      status: "passed",
-      duration: "3 hours",
-      rank: 45,
-      totalStudents: 72,
-      averageScore: 55,
-    },
-    {
-      id: 5,
-      examName: "Machine Learning Midterm",
-      subject: "Computer Science",
-      date: "2023-12-15",
-      score: 92,
-      totalMarks: 100,
-      percentage: 92,
-      grade: "A+",
-      status: "passed",
-      duration: "2.5 hours",
-      rank: 3,
-      totalStudents: 45,
-      averageScore: 78,
-    },
-    {
-      id: 6,
-      examName: "Web Development Project",
-      subject: "Computer Science",
-      date: "2023-12-10",
-      score: 88,
-      totalMarks: 100,
-      percentage: 88,
-      grade: "A",
-      status: "passed",
-      duration: "Project",
-      rank: 8,
-      totalStudents: 62,
-      averageScore: 75,
-    },
-  ]
+  useEffect(() => {
+    if (!isLoaded || !isSignedIn) {
+      setLoading(false)
+      return
+    }
+    
+    const fetchResults = async () => {
+      try {
+        setLoading(true)
+        setError(null)
+        
+        const response = await fetch("/api/results")
+        const json = await response.json()
+        
+        if (!response.ok || !json.success) {
+          throw new Error(json.error || "Failed to fetch results")
+        }
+        
+        setData(json.data)
+      } catch (err: any) {
+        setError(err.message || "Failed to load results")
+      } finally {
+        setLoading(false)
+      }
+    }
+    
+    fetchResults()
+  }, [isLoaded, isSignedIn])
 
-  // Performance data for charts
-  const performanceData = [
-    { month: "Sep", score: 75 },
-    { month: "Oct", score: 82 },
-    { month: "Nov", score: 78 },
-    { month: "Dec", score: 85 },
-    { month: "Jan", score: 79 },
-  ]
+  // Get unique subjects for filter
+  const subjects = data?.results
+    ? [...new Set(data.results.map(r => r.subject))]
+    : []
 
-  const subjectPerformance = [
-    { subject: "Data Structures", score: 85, color: "#8884d8" },
-    { subject: "Database Systems", score: 72, color: "#82ca9d" },
-    { subject: "Operating Systems", score: 75, color: "#ffc658" },
-    { subject: "Computer Networks", score: 58, color: "#ff7300" },
-    { subject: "Machine Learning", score: 92, color: "#00ff00" },
-    { subject: "Web Development", score: 88, color: "#ff00ff" },
-  ]
-
-  const gradeDistribution = [
-    { grade: "A+", count: 1, color: "#00ff00" },
-    { grade: "A", count: 2, color: "#8884d8" },
-    { grade: "B+", count: 1, color: "#82ca9d" },
-    { grade: "B", count: 1, color: "#ffc658" },
-    { grade: "C+", count: 1, color: "#ff7300" },
-  ]
-
-  // Filter results
-  const filteredResults = examResults.filter((result) => {
+  // Filter results from API data
+  const filteredResults = (data?.results || []).filter((result) => {
     const matchesSearch =
       result.examName.toLowerCase().includes(searchQuery.toLowerCase()) ||
       result.subject.toLowerCase().includes(searchQuery.toLowerCase())
@@ -230,11 +180,58 @@ export default function ResultsPage() {
     }
   }
 
-  // Calculate statistics
-  const averageScore = Math.round(examResults.reduce((sum, result) => sum + result.percentage, 0) / examResults.length)
-  const totalExams = examResults.length
-  const passedExams = examResults.filter((result) => result.status === "passed").length
-  const highestScore = Math.max(...examResults.map((result) => result.percentage))
+  // Show loading state
+  if (!isLoaded || loading) {
+    return (
+      <div className="flex items-center justify-center min-h-[400px]">
+        <Loader2 className="h-8 w-8 animate-spin text-gray-500" />
+        <span className="ml-2 text-gray-500">Loading results...</span>
+      </div>
+    )
+  }
+
+  // Show sign-in prompt
+  if (!isSignedIn) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[400px] text-center">
+        <Award className="h-16 w-16 text-gray-300 mb-4" />
+        <h2 className="text-2xl font-bold mb-2">Sign In Required</h2>
+        <p className="text-gray-500 mb-4">Please sign in to view your exam results.</p>
+        <Link href="/sign-in">
+          <Button>Sign In</Button>
+        </Link>
+      </div>
+    )
+  }
+
+  // Show error state
+  if (error) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[400px] text-center">
+        <AlertCircle className="h-16 w-16 text-red-300 mb-4" />
+        <h2 className="text-2xl font-bold mb-2">Error Loading Results</h2>
+        <p className="text-gray-500 mb-4">{error}</p>
+        <Button onClick={() => window.location.reload()}>Try Again</Button>
+      </div>
+    )
+  }
+
+  // Show empty state
+  if (!data?.results.length) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[400px] text-center">
+        <Award className="h-16 w-16 text-gray-300 mb-4" />
+        <h2 className="text-2xl font-bold mb-2">No Results Yet</h2>
+        <p className="text-gray-500 mb-4">You haven&apos;t completed any exams yet. Take an exam to see your results here.</p>
+        <Link href="/dashboard">
+          <Button>Go to Dashboard</Button>
+        </Link>
+      </div>
+    )
+  }
+
+  // Get stats and chart data from API response
+  const { stats, performanceData, subjectPerformance, gradeDistribution } = data
 
   return (
     <div className="space-y-6">
@@ -263,10 +260,10 @@ export default function ResultsPage() {
             <Target className="h-4 w-4 text-gray-500 dark:text-gray-400" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{averageScore}%</div>
+            <div className="text-2xl font-bold">{stats.avgScore}%</div>
             <p className="text-xs text-gray-500 dark:text-gray-400">
               <TrendingUp className="inline h-3 w-3 mr-1" />
-              +5% from last semester
+              Across all exams
             </p>
           </CardContent>
         </Card>
@@ -277,8 +274,8 @@ export default function ResultsPage() {
             <Award className="h-4 w-4 text-gray-500 dark:text-gray-400" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{totalExams}</div>
-            <p className="text-xs text-gray-500 dark:text-gray-400">This semester</p>
+            <div className="text-2xl font-bold">{stats.totalExams}</div>
+            <p className="text-xs text-gray-500 dark:text-gray-400">Completed exams</p>
           </CardContent>
         </Card>
 
@@ -288,9 +285,9 @@ export default function ResultsPage() {
             <CheckCircle className="h-4 w-4 text-gray-500 dark:text-gray-400" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{Math.round((passedExams / totalExams) * 100)}%</div>
+            <div className="text-2xl font-bold">{stats.passRate}%</div>
             <p className="text-xs text-gray-500 dark:text-gray-400">
-              {passedExams}/{totalExams} exams passed
+              {stats.passedExams}/{stats.totalExams} exams passed
             </p>
           </CardContent>
         </Card>
@@ -301,8 +298,8 @@ export default function ResultsPage() {
             <TrendingUp className="h-4 w-4 text-gray-500 dark:text-gray-400" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{highestScore}%</div>
-            <p className="text-xs text-gray-500 dark:text-gray-400">Machine Learning Midterm</p>
+            <div className="text-2xl font-bold">{stats.highestScore}%</div>
+            <p className="text-xs text-gray-500 dark:text-gray-400">Best performance</p>
           </CardContent>
         </Card>
       </div>
@@ -328,6 +325,7 @@ export default function ResultsPage() {
                 <CardDescription>Your score progression over time</CardDescription>
               </CardHeader>
               <CardContent>
+                {performanceData.length > 0 ? (
                 <ResponsiveContainer width="100%" height={300}>
                   <LineChart data={performanceData}>
                     <CartesianGrid strokeDasharray="3 3" />
@@ -337,6 +335,11 @@ export default function ResultsPage() {
                     <Line type="monotone" dataKey="score" stroke="#8884d8" strokeWidth={2} />
                   </LineChart>
                 </ResponsiveContainer>
+                ) : (
+                  <div className="flex items-center justify-center h-[300px] text-gray-500">
+                    Not enough data for trend analysis
+                  </div>
+                )}
               </CardContent>
             </Card>
 
@@ -350,6 +353,7 @@ export default function ResultsPage() {
                 <CardDescription>Distribution of your grades</CardDescription>
               </CardHeader>
               <CardContent>
+                {gradeDistribution.length > 0 ? (
                 <ResponsiveContainer width="100%" height={300}>
                   <PieChart>
                     <Pie
@@ -369,6 +373,11 @@ export default function ResultsPage() {
                     <Tooltip />
                   </PieChart>
                 </ResponsiveContainer>
+                ) : (
+                  <div className="flex items-center justify-center h-[300px] text-gray-500">
+                    No grade data available
+                  </div>
+                )}
               </CardContent>
             </Card>
           </div>
@@ -381,7 +390,7 @@ export default function ResultsPage() {
             </CardHeader>
             <CardContent>
               <div className="space-y-4">
-                {examResults.slice(0, 3).map((result) => (
+                {data.results.slice(0, 3).map((result) => (
                   <div key={result.id} className="flex items-center justify-between p-4 border rounded-lg">
                     <div className="flex items-center gap-4">
                       {getStatusIcon(result.status)}
@@ -442,9 +451,9 @@ export default function ResultsPage() {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">All Subjects</SelectItem>
-                    <SelectItem value="Computer Science">Computer Science</SelectItem>
-                    <SelectItem value="Mathematics">Mathematics</SelectItem>
-                    <SelectItem value="Physics">Physics</SelectItem>
+                    {subjects.map((subject) => (
+                      <SelectItem key={subject} value={subject}>{subject}</SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
 
@@ -490,7 +499,6 @@ export default function ResultsPage() {
                       <TableHead>Date</TableHead>
                       <TableHead>Score</TableHead>
                       <TableHead>Grade</TableHead>
-                      <TableHead>Rank</TableHead>
                       <TableHead>Status</TableHead>
                       <TableHead>Actions</TableHead>
                     </TableRow>
@@ -517,9 +525,6 @@ export default function ResultsPage() {
                         <TableCell>
                           <Badge className={getGradeColor(result.grade)}>{result.grade}</Badge>
                         </TableCell>
-                        <TableCell>
-                          {result.rank}/{result.totalStudents}
-                        </TableCell>
                         <TableCell>{getStatusIcon(result.status)}</TableCell>
                         <TableCell>
                           <div className="flex gap-1">
@@ -535,6 +540,13 @@ export default function ResultsPage() {
                         </TableCell>
                       </TableRow>
                     ))}
+                    {filteredResults.length === 0 && (
+                      <TableRow>
+                        <TableCell colSpan={7} className="text-center py-8 text-gray-500">
+                          No results match your filters
+                        </TableCell>
+                      </TableRow>
+                    )}
                   </TableBody>
                 </Table>
               </div>
@@ -555,6 +567,7 @@ export default function ResultsPage() {
                 <CardDescription>Your performance across different subjects</CardDescription>
               </CardHeader>
               <CardContent>
+                {subjectPerformance.length > 0 ? (
                 <ResponsiveContainer width="100%" height={300}>
                   <BarChart data={subjectPerformance}>
                     <CartesianGrid strokeDasharray="3 3" />
@@ -564,6 +577,11 @@ export default function ResultsPage() {
                     <Bar dataKey="score" fill="#8884d8" />
                   </BarChart>
                 </ResponsiveContainer>
+                ) : (
+                  <div className="flex items-center justify-center h-[300px] text-gray-500">
+                    No subject performance data
+                  </div>
+                )}
               </CardContent>
             </Card>
 
@@ -577,39 +595,45 @@ export default function ResultsPage() {
                 <div className="space-y-2">
                   <div className="flex justify-between text-sm">
                     <span>Overall Average</span>
-                    <span className="font-medium">{averageScore}%</span>
+                    <span className="font-medium">{stats.avgScore}%</span>
                   </div>
-                  <Progress value={averageScore} className="h-2" />
+                  <Progress value={stats.avgScore} className="h-2" />
                 </div>
 
-                <div className="space-y-2">
-                  <div className="flex justify-between text-sm">
-                    <span>Best Subject (Machine Learning)</span>
-                    <span className="font-medium">92%</span>
-                  </div>
-                  <Progress value={92} className="h-2" />
-                </div>
+                {subjectPerformance.length > 0 && (
+                  <>
+                    <div className="space-y-2">
+                      <div className="flex justify-between text-sm">
+                        <span>Best Subject ({[...subjectPerformance].sort((a, b) => b.score - a.score)[0]?.subject})</span>
+                        <span className="font-medium">{[...subjectPerformance].sort((a, b) => b.score - a.score)[0]?.score}%</span>
+                      </div>
+                      <Progress value={[...subjectPerformance].sort((a, b) => b.score - a.score)[0]?.score || 0} className="h-2" />
+                    </div>
 
-                <div className="space-y-2">
-                  <div className="flex justify-between text-sm">
-                    <span>Improvement Needed (Computer Networks)</span>
-                    <span className="font-medium">58%</span>
-                  </div>
-                  <Progress value={58} className="h-2" />
-                </div>
+                    {subjectPerformance.length > 1 && (
+                      <div className="space-y-2">
+                        <div className="flex justify-between text-sm">
+                          <span>Needs Improvement ({[...subjectPerformance].sort((a, b) => a.score - b.score)[0]?.subject})</span>
+                          <span className="font-medium">{[...subjectPerformance].sort((a, b) => a.score - b.score)[0]?.score}%</span>
+                        </div>
+                        <Progress value={[...subjectPerformance].sort((a, b) => a.score - b.score)[0]?.score || 0} className="h-2" />
+                      </div>
+                    )}
+                  </>
+                )}
 
                 <div className="pt-4 space-y-2">
                   <div className="flex justify-between">
-                    <span className="text-sm">Class Rank</span>
-                    <span className="font-medium">Top 25%</span>
+                    <span className="text-sm">Pass Rate</span>
+                    <span className="font-medium">{stats.passRate}%</span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-sm">Consistency Score</span>
-                    <span className="font-medium">78%</span>
+                    <span className="text-sm">Total Exams</span>
+                    <span className="font-medium">{stats.totalExams}</span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-sm">Improvement Rate</span>
-                    <span className="font-medium text-green-600">+12%</span>
+                    <span className="text-sm">Highest Score</span>
+                    <span className="font-medium text-green-600">{stats.highestScore}%</span>
                   </div>
                 </div>
               </CardContent>
@@ -622,36 +646,31 @@ export default function ResultsPage() {
           <Card>
             <CardHeader>
               <CardTitle>Performance Comparison</CardTitle>
-              <CardDescription>Compare your performance with class averages</CardDescription>
+              <CardDescription>Compare your performance across exams</CardDescription>
             </CardHeader>
             <CardContent>
               <div className="space-y-6">
-                {examResults.slice(0, 4).map((result) => (
+                {data.results.slice(0, 4).map((result) => (
                   <div key={result.id} className="space-y-2">
                     <div className="flex justify-between items-center">
                       <span className="font-medium">{result.examName}</span>
                       <div className="flex gap-4 text-sm">
                         <span>Your Score: {result.percentage}%</span>
-                        <span className="text-gray-500">Class Avg: {result.averageScore}%</span>
+                        <span className="text-gray-500">Total: {result.totalMarks}</span>
                       </div>
                     </div>
-                    <div className="grid grid-cols-2 gap-2">
+                    <div className="space-y-1">
                       <div>
                         <div className="text-xs text-gray-500 mb-1">Your Performance</div>
                         <Progress value={result.percentage} className="h-2" />
                       </div>
-                      <div>
-                        <div className="text-xs text-gray-500 mb-1">Class Average</div>
-                        <Progress value={result.averageScore} className="h-2 opacity-50" />
-                      </div>
                     </div>
                     <div className="flex justify-between text-xs text-gray-500">
                       <span>
-                        Rank: {result.rank}/{result.totalStudents}
+                        {result.subject} • {new Date(result.date).toLocaleDateString()}
                       </span>
-                      <span className={result.percentage > result.averageScore ? "text-green-600" : "text-red-600"}>
-                        {result.percentage > result.averageScore ? "+" : ""}
-                        {result.percentage - result.averageScore}% vs class avg
+                      <span className={result.status === "passed" ? "text-green-600" : "text-red-600"}>
+                        {result.status === "passed" ? "Passed" : "Failed"}
                       </span>
                     </div>
                   </div>

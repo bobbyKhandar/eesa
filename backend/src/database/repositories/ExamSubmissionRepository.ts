@@ -34,6 +34,7 @@ export class ExamSubmissionRepository {
     responses: Array<{
       questionId: string;
       userResponse: string;
+      maxMarks: number;
       allottedMarks: number;
       feedback?: string;
       suggestions?: string[];
@@ -93,6 +94,7 @@ export class ExamSubmissionRepository {
     submissionId: string,
     responses: Array<{
       questionId: string;
+      maxMarks?: number;
       allottedMarks: number;
       feedback?: string;
       suggestions?: string[];
@@ -114,6 +116,7 @@ export class ExamSubmissionRepository {
         if (update) {
           return {
             ...response,
+            maxMarks: update.maxMarks !== undefined ? update.maxMarks : response.maxMarks,
             allottedMarks: update.allottedMarks,
             feedback: update.feedback,
             suggestions: update.suggestions

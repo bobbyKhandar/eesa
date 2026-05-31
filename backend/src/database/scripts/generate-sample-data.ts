@@ -530,6 +530,7 @@ async function generateSubmissions(submissionRepo: ExamSubmissionRepository, exa
       responses.push({
         questionId: `q_${Math.random().toString(36).substr(2, 9)}`,
         userResponse: Math.random() > 0.5 ? `Answer ${q + 1}: This is a detailed response` : `${Math.floor(Math.random() * 4)}`,
+        maxMarks: maxMarksForQuestion,
         allottedMarks: marksAchieved,
         feedback: marksAchieved === maxMarksForQuestion 
           ? 'Excellent answer!' 

@@ -8,7 +8,8 @@ export const responseZodSchema = z.object({
   // This ID refers to the _id from the ExamQuestion within the Exam's questions array
   questionId: z.string(),
   userResponse: z.string(), // The actual answer text or selected option
-  allottedMarks: z.number(),
+  maxMarks: z.number(), // Maximum marks possible for this question
+  allottedMarks: z.number(), // Marks awarded for this response
   feedback: z.string().optional(),
   suggestions: z.array(z.string()).optional(),
 });

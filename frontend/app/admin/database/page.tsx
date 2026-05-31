@@ -8,6 +8,16 @@ import { Textarea } from "@/frontend/components/ui/textarea"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/frontend/components/ui/tabs"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/frontend/components/ui/table"
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/frontend/components/ui/alert-dialog"
+import {
   Database,
   Play,
   Download,
@@ -19,12 +29,17 @@ import {
   AlertCircle,
   CheckCircle,
   Clock,
+  Trash2,
 } from "lucide-react"
 
 export default function AdminDatabase() {
   const [sqlQuery, setSqlQuery] = useState("")
   const [queryResult, setQueryResult] = useState<any[]>([])
   const [isExecuting, setIsExecuting] = useState(false)
+  const [showTruncateDialog, setShowTruncateDialog] = useState(false)
+  const [showSecondConfirm, setShowSecondConfirm] = useState(false)
+  const [isTruncating, setIsTruncating] = useState(false)
+  const [truncateResult, setTruncateResult] = useState<{ success: boolean; message: string } | null>(null)
 
   // Mock database statistics
   const dbStats = [
@@ -103,6 +118,45 @@ export default function AdminDatabase() {
       ])
       setIsExecuting(false)
     }, 1000)
+  }
+
+  const handleTruncateDatabase = async () => {
+    setIsTruncating(true)
+    setTruncateResult(null)
+    
+    try {
+      const response = await fetch('/api/admin/database/truncate', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      })
+      
+      const data = await response.json()
+      
+      console.log('Truncate response:', data)
+      
+      if (response.ok) {
+        const totalDeleted = data.totalDeleted || 0
+        setTruncateResult({ 
+          success: true, 
+          message: `${data.message || 'Database truncated successfully'} (${totalDeleted} records)` 
+        })
+      } else {
+        setTruncateResult({ success: false, message: data.error || 'Failed to truncate database' })
+      }
+    } catch (error) {
+      setTruncateResult({ success: false, message: 'Network error: ' + (error instanceof Error ? error.message : 'Unknown error') })
+    } finally {
+      setIsTruncating(false)
+      setShowSecondConfirm(false)
+      setShowTruncateDialog(false)
+    }
+  }
+
+  const handleFirstConfirm = () => {
+    setShowTruncateDialog(false)
+    setShowSecondConfirm(true)
   }
 
   const getStatusBadge = (status: string) => {
@@ -373,6 +427,39 @@ export default function AdminDatabase() {
                   <Button variant="outline">Compress Archives</Button>
                 </div>
               </div>
+              <div className="space-y-4 border-t pt-4">
+                <h3 className="text-lg font-medium text-destructive">Danger Zone</h3>
+                <div className="rounded-lg border border-destructive/50 bg-destructive/10 p-4">
+                  <div className="flex items-start justify-between">
+                    <div className="space-y-1">
+                      <h4 className="font-semibold">Truncate Database</h4>
+                      <p className="text-sm text-muted-foreground">
+                        Permanently delete all data from the database. This action cannot be undone.
+                      </p>
+                    </div>
+                    <Button 
+                      variant="destructive" 
+                      onClick={() => setShowTruncateDialog(true)}
+                      disabled={isTruncating}
+                    >
+                      <Trash2 className="h-4 w-4 mr-2" />
+                      Truncate Database
+                    </Button>
+                  </div>
+                  {truncateResult && (
+                    <div className={`mt-3 p-3 rounded-md ${
+                      truncateResult.success 
+                        ? 'bg-green-50 dark:bg-green-950 text-green-900 dark:text-green-100 border border-green-200 dark:border-green-800' 
+                        : 'bg-red-50 dark:bg-red-950 text-red-900 dark:text-red-100 border border-red-200 dark:border-red-800'
+                    }`}>
+                      <div className="flex items-center gap-2">
+                        {truncateResult.success ? <CheckCircle className="h-4 w-4" /> : <AlertCircle className="h-4 w-4" />}
+                        <span className="text-sm font-medium">{truncateResult.message}</span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
               <div className="space-y-4">
                 <h3 className="text-lg font-medium">Monitoring</h3>
                 <div className="grid gap-2 md:grid-cols-2">
@@ -386,6 +473,86 @@ export default function AdminDatabase() {
           </Card>
         </TabsContent>
       </Tabs>
+
+      {/* First Confirmation Dialog */}
+      <AlertDialog open={showTruncateDialog} onOpenChange={setShowTruncateDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2 text-destructive">
+              <AlertCircle className="h-5 w-5" />
+              Are you absolutely sure?
+            </AlertDialogTitle>
+            <AlertDialogDescription className="space-y-2">
+              <p>This action will permanently delete ALL data from the database, including:</p>
+              <ul className="list-disc list-inside space-y-1 text-sm">
+                <li>All users and accounts</li>
+                <li>All exams and submissions</li>
+                <li>All resources and subjects</li>
+                <li>All questions and question papers</li>
+                <li>All analytics and reports</li>
+                <li>All exam analyses and analysis reports</li>
+                <li>All past papers and syllabi</li>
+                <li>All unique questions and deduplication data</li>
+                <li>All job metadata and upload sessions</li>
+              </ul>
+              <p className="font-semibold text-destructive mt-3">
+                This action CANNOT be undone. Make sure you have a recent backup.
+              </p>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <Button variant="destructive" onClick={handleFirstConfirm}>
+              Continue
+            </Button>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Second Confirmation Dialog */}
+      <AlertDialog open={showSecondConfirm} onOpenChange={setShowSecondConfirm}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2 text-destructive">
+              <Trash2 className="h-5 w-5" />
+              Final Confirmation
+            </AlertDialogTitle>
+            <AlertDialogDescription className="space-y-3">
+              <p className="text-base font-semibold">
+                You are about to PERMANENTLY DELETE all data from the database.
+              </p>
+              <div className="rounded-lg bg-destructive/20 p-3 border border-destructive">
+                <p className="text-sm font-mono text-destructive">
+                  ⚠️ This will erase everything. No recovery possible.
+                </p>
+              </div>
+              <p className="text-sm">
+                Click "Delete Everything" to proceed with database truncation.
+              </p>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isTruncating}>Cancel</AlertDialogCancel>
+            <Button 
+              variant="destructive" 
+              onClick={handleTruncateDatabase}
+              disabled={isTruncating}
+            >
+              {isTruncating ? (
+                <>
+                  <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                  Truncating...
+                </>
+              ) : (
+                <>
+                  <Trash2 className="h-4 w-4 mr-2" />
+                  Delete Everything
+                </>
+              )}
+            </Button>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }

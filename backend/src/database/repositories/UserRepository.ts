@@ -113,7 +113,6 @@ export class UserRepository {
   ): Promise<{ success: boolean; error?: string }> {
     try {
       await connect();
-      const userObjectId = Types.ObjectId.createFromHexString(userId);
 
       // Validate updates with Zod (partial)
       const validation = userZodSchema.partial().safeParse(updates);
@@ -123,7 +122,7 @@ export class UserRepository {
       }
 
       const result = await this.model.updateOne(
-        { _id: userObjectId },
+        { _id: userId },
         { $set: validation.data }
       );
 
@@ -144,10 +143,9 @@ export class UserRepository {
   async updateLastLogin(userId: string): Promise<{ success: boolean; error?: string }> {
     try {
       await connect();
-      const userObjectId = Types.ObjectId.createFromHexString(userId);
 
       await this.model.updateOne(
-        { _id: userObjectId },
+        { _id: userId },
         { $set: { lastLogin: new Date() } }
       );
 
@@ -164,10 +162,9 @@ export class UserRepository {
   async assignExam(userId: string, examId: string): Promise<{ success: boolean; error?: string }> {
     try {
       await connect();
-      const userObjectId = Types.ObjectId.createFromHexString(userId);
 
       const result = await this.model.updateOne(
-        { _id: userObjectId },
+        { _id: userId },
         { $addToSet: { currentAllocatedExams: examId } }
       );
 
@@ -191,10 +188,9 @@ export class UserRepository {
   ): Promise<{ success: boolean; assignedCount?: number; error?: string }> {
     try {
       await connect();
-      const userObjectIds = userIds.map(id => Types.ObjectId.createFromHexString(id));
 
       const result = await this.model.updateMany(
-        { _id: { $in: userObjectIds } },
+        { _id: { $in: userIds } },
         { $addToSet: { currentAllocatedExams: examId } }
       );
 
@@ -211,10 +207,9 @@ export class UserRepository {
   async unassignExam(userId: string, examId: string): Promise<{ success: boolean; error?: string }> {
     try {
       await connect();
-      const userObjectId = Types.ObjectId.createFromHexString(userId);
 
       await this.model.updateOne(
-        { _id: userObjectId },
+        { _id: userId },
         { $pull: { currentAllocatedExams: examId } }
       );
 
@@ -234,10 +229,9 @@ export class UserRepository {
   ): Promise<{ success: boolean; error?: string }> {
     try {
       await connect();
-      const userObjectId = Types.ObjectId.createFromHexString(userId);
 
       await this.model.updateOne(
-        { _id: userObjectId },
+        { _id: userId },
         { $addToSet: { submissionHistory: submissionId } }
       );
 
@@ -254,8 +248,8 @@ export class UserRepository {
   async getAllocatedExams(userId: string): Promise<string[]> {
     try {
       await connect();
-      const userObjectId = Types.ObjectId.createFromHexString(userId);
-      const user = await this.model.findById(userObjectId).select('currentAllocatedExams').lean();
+      // userId is a Clerk ID (string), not an ObjectId
+      const user = await this.model.findById(userId).select('currentAllocatedExams').lean();
       return user?.currentAllocatedExams || [];
     } catch (error) {
       console.error('Error getting allocated exams:', error);
@@ -269,8 +263,7 @@ export class UserRepository {
   async getSubmissionHistory(userId: string): Promise<string[]> {
     try {
       await connect();
-      const userObjectId = Types.ObjectId.createFromHexString(userId);
-      const user = await this.model.findById(userObjectId).select('submissionHistory').lean();
+      const user = await this.model.findById(userId).select('submissionHistory').lean();
       return user?.submissionHistory || [];
     } catch (error) {
       console.error('Error getting submission history:', error);
@@ -306,9 +299,8 @@ export class UserRepository {
   async delete(userId: string): Promise<{ success: boolean; error?: string }> {
     try {
       await connect();
-      const userObjectId = Types.ObjectId.createFromHexString(userId);
 
-      const result = await this.model.deleteOne({ _id: userObjectId });
+      const result = await this.model.deleteOne({ _id: userId });
 
       if (result.deletedCount === 0) {
         return { success: false, error: 'User not found' };

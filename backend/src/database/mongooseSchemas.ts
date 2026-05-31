@@ -15,13 +15,15 @@ import type { Model } from "mongoose";
 
 
 //schemas and types------------------------------------------------------------------------------------------
-import {examZodSchema,Exam} from "./schemas/examSchemaZod.js"
-import {questionsZodSchema,Question} from "./schemas/questionSchemaZod.js"
-import {subjectZodSchema,Subject} from "./schemas/subjectSchemaZod.js"
-import {userZodSchema,User} from "./schemas/userSchemaZod.js"
-import {examSubmissionDocumentZodSchema,ExamSubmissionDocument,examSubmissionSchemaOptions} from "./schemas/examSubmissionZod.js"
-import {promptZodSchema, Prompt} from "./schemas/promptSchemaZod.js"
-import {examQuestionZodSchema, ExamQuestion} from "./schemas/examQuestionSchemaZod.js"
+import {examZodSchema,Exam} from "./schemas/examSchemaZod"
+import {questionsZodSchema,Question} from "./schemas/questionSchemaZod"
+import {subjectZodSchema,Subject} from "./schemas/subjectSchemaZod"
+import {userZodSchema,User} from "./schemas/userSchemaZod"
+import {examSubmissionDocumentZodSchema,ExamSubmissionDocument,examSubmissionSchemaOptions} from "./schemas/examSubmissionZod"
+import {promptZodSchema, Prompt} from "./schemas/promptSchemaZod"
+import {examQuestionZodSchema, ExamQuestion} from "./schemas/examQuestionSchemaZod"
+import {jobMetadataZodSchema, JobMetadata} from "./schemas/jobMetadataZod"
+import {uploadSessionZodSchema, UploadSession} from "./schemas/uploadSessionZod"
 
 
 //schema conversion(zod->mongoose) -----------------------------------------------------------------------------------------------
@@ -32,6 +34,8 @@ const userSchema =zodSchema(userZodSchema)
 const examSubmissionSchema = zodSchema(examSubmissionDocumentZodSchema, examSubmissionSchemaOptions)
 const promptSchema = zodSchema(promptZodSchema)
 const examQuestionSchema = zodSchema(examQuestionZodSchema)
+const jobMetadataSchema = zodSchema(jobMetadataZodSchema)
+const uploadSessionSchema = zodSchema(uploadSessionZodSchema)
 
 
 
@@ -80,4 +84,20 @@ export function getPromptModel(): Model<Prompt> {
  */
 export function getExamQuestionModel(): Model<ExamQuestion> {
   return models["ExamQuestion"] || model("ExamQuestion", examQuestionSchema);
+}
+
+/**
+ * lazily initializes job metadata model (pipeline job tracking)
+ * @returns mongoose model for job metadata
+ */
+export function getJobMetadataModel(): Model<JobMetadata> {
+  return models["JobMetadata"] || model("JobMetadata", jobMetadataSchema);
+}
+
+/**
+ * lazily initializes upload session model (user upload session tracking)
+ * @returns mongoose model for upload sessions
+ */
+export function getUploadSessionModel(): Model<UploadSession> {
+  return models["UploadSession"] || model("UploadSession", uploadSessionSchema);
 }

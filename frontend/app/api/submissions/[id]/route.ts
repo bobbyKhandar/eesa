@@ -27,7 +27,8 @@ export async function GET(
     }
 
     // Get submission details
-    const submission = await submissionRepo.getByExamAndUser(submissionId,userId);
+    const submission = await submissionRepo.getById(submissionId);
+    console.log(submission)
     if (!submission) {
       return NextResponse.json(
         { success: false, error: "Submission not found" },
@@ -43,7 +44,7 @@ export async function GET(
         { status: 404 }
       );
     }
-
+    console.log("Exam details found:", examWithDetails.questionDetails);
     // Combine submission and exam data
     const result = {
       id: submission._id?.toString(),
@@ -61,17 +62,18 @@ export async function GET(
       questions: examWithDetails.questionDetails?.map((q: any) => ({
         id: q._id?.toString(),
         questionId: q._id?.toString(),
-        text: q.promptData?.promptText || q.promptText || '',
-        type: q.promptData?.promptType || q.promptType || 'essay',
-        options: q.promptData?.options || q.options || [],
-        correctAnswer: q.promptData?.correctAnswer || q.correctAnswer,
-        maxScore: q.promptData?.maxMarks || q.maxMarks || 10,
+        text: q.promptData?.questionText || '',
+        type: q.questionType || 'essay',
+        options:  q.options || [],
+        correctAnswer: q.correctAnswer || '',
+        feedback: submission.responses?.find((r: any) => r.questionId === q._id?.toString())?.feedback || '',
+        maxScore: q.maxMarks || 10,
         // Match with user's response
         userResponse: submission.responses?.find((r: any) => r.questionId === q._id?.toString()),
       })) || [],
       responses: submission.responses || [],
     };
-
+    console.log(result)
     return NextResponse.json(
       { success: true, data: result },
       { status: 200 }

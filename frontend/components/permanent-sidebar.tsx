@@ -14,6 +14,7 @@ import {
   Shield,
   Database,
   TrendingUp,
+  Upload,
 } from "lucide-react"
 import { cn } from "@/frontend/lib/utils"
 import { Button } from "@/frontend/components/ui/button"
@@ -31,25 +32,25 @@ const navigationItems = [
       { name: "Resources", href: "/resources", icon: GraduationCap },
       { name: "AI Helper", href: "/ai-helper", icon: Brain },
     ],
-  }
+  },
+  {
+    title: "Management",
+    items: [
+      { name: "Analytics", href: "/dashboard/analytics", icon: TrendingUp },
+      { name: "Settings", href: "/dashboard/settings", icon: Settings },
+    ],
+  },
+  {
+    title: "Admin",
+    items: [
+      { name: "Admin Panel", href: "/admin", icon: Shield },
+      { name: "Upload Papers", href: "/admin/upload/question-papers", icon: Upload },
+      { name: "User Management", href: "/admin/users", icon: Users },
+      { name: "System Analytics", href: "/admin/analytics", icon: BarChart3 },
+      { name: "Database", href: "/admin/database", icon: Database },
+    ],
+  },
 ]
-//   {
-//     title: "Management",
-//     items: [
-//       { name: "Analytics", href: "/dashboard/analytics", icon: TrendingUp },
-//       { name: "Settings", href: "/dashboard/settings", icon: Settings },
-//     ],
-//   },
-//   {
-//     title: "Admin",
-//     items: [
-//       { name: "Admin Panel", href: "/admin", icon: Shield },
-//       { name: "User Management", href: "/admin/users", icon: Users },
-//       { name: "System Analytics", href: "/admin/analytics", icon: BarChart3 },
-//       { name: "Database", href: "/admin/database", icon: Database },
-//     ],
-//   },
-// ]
 
 // const recentResults = [
 //   { id: 1, exam: "Mathematics Quiz", score: 85, date: "2024-01-15" },

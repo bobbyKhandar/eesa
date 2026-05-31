@@ -1,56 +1,97 @@
+//NOTE ALL EXAMS ARE FORCEFULLY GETTING TAGGED AS ACTIVE.Changes to this functionality are scheduled for future updates.
+"use client"
 import Link from "next/link"
+import { useState, useEffect } from "react"
 import { Button } from "@/frontend/components/ui/button"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/frontend/components/ui/card"
 import { Input } from "@/frontend/components/ui/input"
 import { Badge } from "@/frontend/components/ui/badge"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/frontend/components/ui/tabs"
-import { Search, Plus, Clock, BookOpen, ArrowRight, Eye, Edit, Trash2 } from "lucide-react"
+import { Search, Plus, Clock, BookOpen, ArrowRight, Eye, Edit, Trash2, Users } from "lucide-react"
 import { useUser } from "@clerk/nextjs"
 
-
 export default function DashboardExamsPage() {
-  // Mock exam data
-  async function getExamSets(email) {
-    const response=await fetch(`http://localhost:3000/api/exams/create`, {
-     method: 'POST', // Specify the HTTP method
-      headers: {
-        'Content-Type': 'application/json', // Tell the server we're sending JSON
-      },
-      body: JSON.stringify({"email":email}), // Convert your arguments object to a JSON string
-  })
-  return response
+  const { user } = useUser()
+  const [exams, setExams] = useState<any[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [searchQuery, setSearchQuery] = useState("")
+
+  useEffect(() => {
+    console.log("useEffect triggered, user:", user?.id);
+    
+    if (!user?.id) {
+      console.log("No user ID, skipping fetch");
+      return;
+    }
+
+    const fetchExams = async () => {
+      try {
+        console.log("Starting fetchExams...");
+        setLoading(true)
+        const response = await fetch('/api/exams/list')
+        console.log("Response received:", response.status);
+        const data = await response.json()
+        console.log("Data:", data)
+        
+        if (!response.ok || !data.success) {
+          throw new Error(data.error || 'Failed to fetch exams')
+        }
+
+        setExams(data.exams || [])
+      } catch (err: any) {
+        setError(err.message || 'Failed to load exams')
+        console.error('Error fetching exams:', err)
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    fetchExams()
+  }, [user?.id])
+
+  // Filter exams based on search query
+  const filteredExams = exams.filter(exam =>
+    exam.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    exam.description?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    exam.subject?.toLowerCase().includes(searchQuery.toLowerCase())
+  )
+
+  if (loading) {
+    return (
+      <div className="space-y-6">
+        <div className="flex items-center justify-between">
+          <h1 className="text-3xl font-bold">Exams</h1>
+          <Link href="/dashboard/exams/create">
+            <Button className="gap-2">
+              <Plus className="h-4 w-4" /> Create Exam
+            </Button>
+          </Link>
+        </div>
+        <div className="text-center py-12">
+          <p className="text-gray-500 dark:text-gray-400">Loading exams...</p>
+        </div>
+      </div>
+    )
   }
-  const exams = [
-    {
-      id: "1",
-      title: "Introduction to AI",
-      description: "Learn the fundamentals of artificial intelligence and machine learning.",
-      questions: 10,
-    },
-    {
-      id: "2",
-      title: "Data Structures Final",
-      description:
-        "Comprehensive exam covering arrays, linked lists, trees, graphs, and algorithm complexity analysis.",
-      duration: 90,
-      questions: 15,
-    },
-    {
-      id: "3",
-      title: "Machine Learning Midterm",
-      description:
-        "Covers supervised and unsupervised learning techniques, model evaluation, and basic neural networks.",
-      questions: 12,
- 
-    },
-    {
-      id: "4",
-      title: "Web Development Basics",
-      description: "Introduction to HTML, CSS, and JavaScript fundamentals.",
-      questions: 8,
- 
-    },
-  ]
+
+  if (error) {
+    return (
+      <div className="space-y-6">
+        <div className="flex items-center justify-between">
+          <h1 className="text-3xl font-bold">Exams</h1>
+          <Link href="/dashboard/exams/create">
+            <Button className="gap-2">
+              <Plus className="h-4 w-4" /> Create Exam
+            </Button>
+          </Link>
+        </div>
+        <div className="text-center py-12">
+          <p className="text-red-500">{error}</p>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="space-y-6">
@@ -66,37 +107,57 @@ export default function DashboardExamsPage() {
       <div className="flex items-center gap-4">
         <div className="relative flex-1">
           <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-gray-500 dark:text-gray-400" />
-          <Input placeholder="Search exams..." className="pl-8" />
+          <Input 
+            placeholder="Search exams by title, description, or subject..." 
+            className="pl-8"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+          />
         </div>
       </div>
 
+      {filteredExams.length === 0 && !loading && (
+        <div className="text-center py-12">
+          <p className="text-gray-500 dark:text-gray-400">
+            {searchQuery ? 'No exams found matching your search' : 'No exams created yet'}
+          </p>
+          {!searchQuery && (
+            <Link href="/dashboard/exams/create">
+              <Button className="mt-4 gap-2">
+                <Plus className="h-4 w-4" /> Create Your First Exam
+              </Button>
+            </Link>
+          )}
+        </div>
+      )}
+
       <Tabs defaultValue="all" className="w-full">
         <TabsList className="grid w-full grid-cols-4">
-          <TabsTrigger value="all">All</TabsTrigger>
-          <TabsTrigger value="active">Active</TabsTrigger>
-          <TabsTrigger value="completed">Completed</TabsTrigger>
-          <TabsTrigger value="draft">Drafts</TabsTrigger>
+          <TabsTrigger value="all">All ({filteredExams.length})</TabsTrigger>
+          <TabsTrigger value="active">Active ({filteredExams.filter(e => e.status === "active").length})</TabsTrigger>
+          <TabsTrigger value="scheduled">Scheduled ({filteredExams.filter(e => e.status === "scheduled").length})</TabsTrigger>
+          <TabsTrigger value="draft">Drafts ({filteredExams.filter(e => e.status === "draft").length})</TabsTrigger>
         </TabsList>
         <TabsContent value="all" className="mt-6">
           <div className="grid gap-4">
-            {exams.map((exam) => (
+            {filteredExams.map((exam) => (
               <ExamCard key={exam.id} exam={exam} />
             ))}
           </div>
         </TabsContent>
         <TabsContent value="active" className="mt-6">
           <div className="grid gap-4">
-            {exams
+            {filteredExams
               .filter((exam) => exam.status === "active")
               .map((exam) => (
                 <ExamCard key={exam.id} exam={exam} />
               ))}
           </div>
         </TabsContent>
-        <TabsContent value="completed" className="mt-6">
+        <TabsContent value="scheduled" className="mt-6">
           <div className="grid gap-4">
-            {exams
-              .filter((exam) => exam.status === "completed")
+            {filteredExams
+              .filter((exam) => exam.status === "scheduled")
               .map((exam) => (
                 <ExamCard key={exam.id} exam={exam} />
               ))}
@@ -104,7 +165,7 @@ export default function DashboardExamsPage() {
         </TabsContent>
         <TabsContent value="draft" className="mt-6">
           <div className="grid gap-4">
-            {exams
+            {filteredExams
               .filter((exam) => exam.status === "draft")
               .map((exam) => (
                 <ExamCard key={exam.id} exam={exam} />
@@ -116,13 +177,13 @@ export default function DashboardExamsPage() {
   )
 }
 
-function ExamCard({ exam }) {
-  const getStatusBadge = (status) => {
+function ExamCard({ exam }: { exam: any }) {
+  const getStatusBadge = (status: string) => {
     switch (status) {
       case "active":
         return <Badge className="bg-green-500">Active</Badge>
-      case "completed":
-        return <Badge variant="secondary">Completed</Badge>
+      case "scheduled":
+        return <Badge className="bg-blue-500">Scheduled</Badge>
       case "draft":
         return <Badge variant="outline">Draft</Badge>
       default:
@@ -130,54 +191,94 @@ function ExamCard({ exam }) {
     }
   }
 
+  const formatDate = (date: string | Date) => {
+    if (!date) return 'N/A'
+    return new Date(date).toLocaleDateString('en-US', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric'
+    })
+  }
+
   return (
     <Card>
       <CardHeader className="pb-2">
         <div className="flex items-center justify-between">
-          <div>
+          <div className="flex-1">
             <CardTitle>{exam.title}</CardTitle>
-            <CardDescription>Created on {exam.createdAt}</CardDescription>
+            <CardDescription>
+              Created on {formatDate(exam.createdAt)}
+              {exam.scheduledAt && ` • Scheduled for ${formatDate(exam.scheduledAt)}`}
+            </CardDescription>
           </div>
           {getStatusBadge(exam.status)}
         </div>
       </CardHeader>
       <CardContent>
-        <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">{exam.description}</p>
+        <p className="text-sm text-gray-500 dark:text-gray-400 mb-2">{exam.description}</p>
+        <div className="flex items-center gap-2 mb-4">
+          <Badge variant="secondary">{exam.subject}</Badge>
+          <Badge variant="outline">{exam.degree}</Badge>
+          <Badge variant="outline">{exam.type}</Badge>
+        </div>
         <div className="flex flex-wrap gap-4 text-sm">
           <div className="flex items-center gap-1">
             <Clock className="h-4 w-4 text-gray-500 dark:text-gray-400" />
-            <span>{exam.duration} minutes</span>
+            <span>{exam.duration || 60} minutes</span>
           </div>
           <div className="flex items-center gap-1">
             <BookOpen className="h-4 w-4 text-gray-500 dark:text-gray-400" />
-            <span>{exam.questions} questions</span>
+            <span>{exam.questions} questions • {exam.maxMarks} marks</span>
           </div>
-          {exam.status !== "draft" && (
+          {exam.assignedUsers > 0 && (
             <div className="flex items-center gap-1">
-              <Eye className="h-4 w-4 text-gray-500 dark:text-gray-400" />
-              <span>{exam.submissions} submissions</span>
+              <Users className="h-4 w-4 text-gray-500 dark:text-gray-400" />
+              <span>{exam.assignedUsers} assigned</span>
             </div>
+          )}
+          {exam.negativeMarking && (
+            <Badge variant="outline" className="text-xs">
+              Negative Marking
+            </Badge>
           )}
         </div>
       </CardContent>
       <CardFooter className="flex flex-wrap gap-2">
-        {/* <Link href={`/dashboard/exams/${exam.id}`}>
+        <Link href={`/dashboard/exams/${exam.id}`}>
           <Button variant="outline" size="sm" className="gap-1">
             <Eye className="h-4 w-4" /> View
           </Button>
-        </Link> */}
+        </Link>
         <Link href={`/dashboard/exams/${exam.id}/edit`}>
           <Button variant="outline" size="sm" className="gap-1">
             <Edit className="h-4 w-4" /> Edit
           </Button>
         </Link>
-        <Button variant="outline" size="sm" className="gap-1 text-red-500 hover:text-red-500">
+        <Button 
+          variant="outline" 
+          size="sm" 
+          className="gap-1 text-red-500 hover:text-red-500"
+          onClick={async () => {
+            if (confirm('Are you sure you want to delete this exam?')) {
+              try {
+                const response = await fetch(`/api/exams/${exam.id}`, {
+                  method: 'DELETE'
+                })
+                if (response.ok) {
+                  window.location.reload()
+                }
+              } catch (err) {
+                console.error('Error deleting exam:', err)
+              }
+            }
+          }}
+        >
           <Trash2 className="h-4 w-4" /> Delete
         </Button>
         {exam.status !== "draft" && (
           <Link href={`/take-exam/${exam.id}`} className="ml-auto">
             <Button size="sm" className="gap-1">
-              Take this test <ArrowRight className="h-4 w-4" />
+              Take Exam <ArrowRight className="h-4 w-4" />
             </Button>
           </Link>
         )}
