@@ -11,7 +11,7 @@ A modular monolith for end-to-end exam processing: upload scanned question paper
 - **Exam Management** — Create exams from enriched question banks, organize by subject/syllabus, publish for students
 - **Student Submissions** — Take exams, auto-grading, result analysis
 - **Resource Library** — Upload and browse notes, PYQs, and study materials with subject filtering
-- **Admin Tools** — Database stats, collection truncation, job status monitoring, failed job retry
+- **Admin Tools** — Database stats, S3 backup/restore, collection truncation, query editor, performance monitoring, job status monitoring, failed job retry
 - **AI Analysis** — Bloom's taxonomy classification, exam analysis reports, Gemini-powered exam helper
 - **Clerk Authentication** — Secure login via email, Google, or GitHub
 
@@ -125,7 +125,7 @@ packages/frontend/
 │   │   ├── failed-jobs/             # Failed job details & bulk retry
 │   │   ├── submissions/             # Submit & get results
 │   │   ├── resources/               # Resource CRUD
-│   │   ├── admin/database/          # Database truncation
+│   │   ├── admin/database/          # DB stats, S3 backup/restore, truncation
 │   │   ├── exam-analysis/           # Publish, upload, upload-bulk
 │   │   ├── llm/                     # Gemini AI exam helper
 │   │   ├── users/                   # User CRUD, submissions, metadata
@@ -286,7 +286,7 @@ Or use **VSCode** (`.vscode/launch.json`) — open Run & Debug (Ctrl+Shift+D), s
 | `failed-jobs/` | Failed job details, bulk retry |
 | `submissions/` | Submit & get results |
 | `resources/` | Resource CRUD |
-| `admin/database/` | Database truncation |
+| `admin/database/` | DB stats, S3 backup/restore, truncation |
 | `exam-analysis/` | Publish, upload, upload-bulk |
 | `llm/` | Gemini AI exam helper |
 | `users/` | User CRUD, submissions, metadata |
