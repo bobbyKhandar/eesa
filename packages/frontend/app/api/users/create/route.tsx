@@ -12,32 +12,28 @@ export async function POST(req: Request) {
       );
     }
 
-    const existing = await userRepo.getById(user.id);
-    if (existing) {
-        return NextResponse.json({user: existing, success: true}, {status: 200});
-    }
-
     const userMeta = {
         _id: user.id,
         email: user.emailAddresses?.[0]?.emailAddress || "",
         name: user.fullName || "",
         role: role,
+        profilePic: user.imageUrl || "",
+        status: "active",
+        branch: "",
         currentAllocatedExams: [],
         submissionHistory: [],
         createdAt: new Date(),
         lastLogin: new Date(),
+        settings: {
+            notifications: { examReminders: true, gradeUpdates: true, resourceUpdates: false, systemUpdates: true, emailNotifications: true, pushNotifications: false, weeklyDigest: true },
+            preferences: { theme: "system", language: "en", timezone: "UTC-5", dateFormat: "MM/DD/YYYY", defaultView: "dashboard" },
+            privacy: { dataUsageAnalytics: true, marketingCommunications: false, loginAlerts: true },
+        },
     };
 
-    const result = await userRepo.create(userMeta);
-    if (result.success) {
-        console.log("New user created:", userMeta);
-        return NextResponse.json({user: userMeta, success: true}, {status: 200});
-    }
-
-    // Race condition: another request inserted between our getById and create
-    const retry = await userRepo.getById(user.id);
-    if (retry) {
-        return NextResponse.json({user: retry, success: true}, {status: 200});
+    const result = await userRepo.upsertByClerkId(userMeta);
+    if (result.success && result.user) {
+        return NextResponse.json({user: result.user, success: true}, {status: 200});
     }
 
     return NextResponse.json(
