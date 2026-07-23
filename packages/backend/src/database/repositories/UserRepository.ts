@@ -80,6 +80,20 @@ export class UserRepository {
   }
 
   /**
+   * Get user by Clerk user ID
+   */
+  async findByClerkUserId(clerkUserId: string): Promise<User | null> {
+    try {
+      await connect();
+      const user = await this.model.findOne({ clerk_user_id: clerkUserId }).lean();
+      return user as User | null;
+    } catch (error) {
+      console.error('Error getting user by Clerk ID:', error);
+      return null;
+    }
+  }
+
+  /**
    * Get users by role
    */
   async getByRole(role: 'student' | 'teacher' | 'admin', limit: number = 100): Promise<User[]> {
@@ -105,6 +119,40 @@ export class UserRepository {
    */
   async getTeachers(limit: number = 100): Promise<User[]> {
     return this.getByRole('teacher', limit);
+  }
+
+  /**
+   * Get all users
+   */
+  async getAll(limit: number = 500): Promise<User[]> {
+    try {
+      await connect();
+      const users = await this.model.find({}).limit(limit).sort({ createdAt: -1 }).lean();
+      return users as User[];
+    } catch (error) {
+      console.error('Error getting all users:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Get user counts by status and role for admin dashboard
+   */
+  async getCounts(): Promise<{ total: number; active: number; inactive: number; suspended: number; admins: number }> {
+    try {
+      await connect();
+      const [total, active, inactive, suspended, admins] = await Promise.all([
+        this.model.countDocuments({}),
+        this.model.countDocuments({ status: 'active' }),
+        this.model.countDocuments({ status: 'inactive' }),
+        this.model.countDocuments({ status: 'suspended' }),
+        this.model.countDocuments({ role: 'admin' }),
+      ]);
+      return { total, active, inactive, suspended, admins };
+    } catch (error) {
+      console.error('Error getting user counts:', error);
+      return { total: 0, active: 0, inactive: 0, suspended: 0, admins: 0 };
+    }
   }
 
   /**
@@ -280,12 +328,11 @@ export class UserRepository {
   async search(query: string, limit: number = 50): Promise<User[]> {
     try {
       await connect();
-      const users = await this.model.find({
-        $or: [
-          { email: { $regex: query, $options: 'i' } },
-          { name: { $regex: query, $options: 'i' } }
-        ]
-      })
+      const users = await this.model.find(
+        { $text: { $search: query } }
+      )
+      .select({ score: { $meta: 'textScore' } })
+      .sort({ score: { $meta: 'textScore' } })
       .limit(limit)
       .lean();
 
@@ -293,6 +340,33 @@ export class UserRepository {
     } catch (error) {
       console.error('Error searching users:', error);
       return [];
+    }
+  }
+
+  /**
+   * Atomically create or return existing user by Clerk ID (upsert).
+   * Eliminates the race condition between getById + create.
+   */
+  async upsertByClerkId(data: User): Promise<{ success: boolean; user?: User; error?: string }> {
+    try {
+      await connect();
+
+      const validation = userZodSchema.safeParse(data);
+      if (!validation.success) {
+        const errorMessages = validation.error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ');
+        return { success: false, error: `Validation failed: ${errorMessages}` };
+      }
+
+      const result = await this.model.findOneAndUpdate(
+        { _id: data._id },
+        { $setOnInsert: validation.data },
+        { upsert: true, returnDocument: 'after' }
+      );
+
+      return { success: true, user: result as User };
+    } catch (error) {
+      console.error('Error upserting user:', error);
+      return { success: false, error: 'Failed to create user' };
     }
   }
 

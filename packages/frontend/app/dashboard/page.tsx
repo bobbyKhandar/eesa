@@ -8,6 +8,25 @@ import { SignedOut, SignedIn, useUser } from "@clerk/nextjs"
 import { SignInButton } from "@clerk/nextjs"
 import { ArrowRight } from "lucide-react"
 
+async function fetchWithRetry(url: string, options: RequestInit, maxRetries = 3): Promise<Response> {
+  let lastError: Error | null = null
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    try {
+      const r = await fetch(url, options)
+      if (r.ok || (r.status >= 400 && r.status < 500 && r.status !== 404)) {
+        return r
+      }
+      lastError = new Error(`HTTP ${r.status}`)
+    } catch (e) {
+      lastError = e instanceof Error ? e : new Error(String(e))
+    }
+    if (attempt < maxRetries - 1) {
+      await new Promise(res => setTimeout(res, 1000 * Math.pow(2, attempt)))
+    }
+  }
+  throw lastError
+}
+
 export default function DashboardPage() {
   const [submissions, setSubmissions] = useState<any[]>([])
   const [allocatedExams, setAllocatedExams] = useState<any[]>([])
@@ -24,8 +43,8 @@ export default function DashboardPage() {
     setLoading(true)
     setError(null)
     
-    // First, create/ensure user exists
-    fetch(`/api/users/create`, {
+    // First, create/ensure user exists (with retry for transient 404s during HMR)
+    fetchWithRetry(`/api/users/create`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ user: user, role: "student" }),
@@ -40,24 +59,23 @@ export default function DashboardPage() {
         
         console.log('Setting allocatedExams:', exams, 'submissions:', subs)
         setAllocatedExams(exams)
-        const currentSubmissions = []
-        for(const submission of subs){
-          console.log(submission)
-          try {
-            const exam = await fetch(`api/users/submissions/${submission}/examDetails`)
-            if (exam.ok) {
-              const examData = await exam.json()
-              // Keep the submission ID for linking to results page
-              currentSubmissions.push({
+        const results = await Promise.all(
+          subs.map(async (submission) => {
+            try {
+              const res = await fetch(`api/users/submissions/${submission}/examDetails`)
+              if (!res.ok) return null
+              const examData = await res.json()
+              return {
                 ...examData.examSet,
-                submissionId: submission // Store the actual submission ID
-              })
+                submissionId: submission
+              }
+            } catch (error) {
+              console.error('Error fetching exam data:', error);
+              return null
             }
-          } catch (error) {
-            console.error('Error fetching exam data:', error);
-          }
-        }
-        setSubmissions(currentSubmissions)
+          })
+        )
+        setSubmissions(results.filter(Boolean))
       })
       .catch((e) => setError(e.message || String(e)))
       .finally(() => setLoading(false))
