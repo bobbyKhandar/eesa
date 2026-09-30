@@ -10,6 +10,12 @@
 - **API Route Handlers** (`app/api/.../route.ts`) are always server-side (no "use client"). These import backend code directly via the `@/` alias.
 - **Mutation pattern:** Pages call `fetch("/api/...", { method: "POST", body: ... })` from event handlers. No server actions or React Query.
 
+## Shared Pure Logic (`lib/`)
+- **Rules that a page and its API route both need live in `lib/<domain>.ts` as dependency-free functions** (no React, no mongoose, no `next/*`) so the same rule cannot drift between the client check and the server check. `lib/examCreation.ts` holds the exam-create helpers (question/settings validation, `resolveDuration`, `computeNegativeMarkingPercentage`, `computeNegativeMarks`, `normalizeAssignedUsers`, `parseScheduledAt`); `lib/dashboardMetrics.ts` holds the dashboard derivations.
+- **A page may import a `lib/` module; an API route may too** (`@/frontend/lib/<name>`). Server-only code must not be imported from a `lib/` module.
+- **These helpers are the tested surface.** Pure functions get unit tests in `tests/node/*.test.ts` (Node's built-in runner, `.ts` extension in the import specifier); the repo has no other JS test framework.
+- **Watch for falsy-zero defaults.** `value || 25` turns an explicit `0` into `25`; use `??` or a resolver function when `0` is a meaningful value.
+
 ## Import Paths
 - The `@/*` path alias (set in `tsconfig.json` as `"@/*": [".././*"]`) resolves to the **monorepo root** (`C:\project\miniproject/`). So:
   - `@/frontend/...` = frontend package (`packages/frontend/...`)

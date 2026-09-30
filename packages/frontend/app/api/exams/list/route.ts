@@ -19,9 +19,7 @@ export async function GET(req: Request) {
     }
 
     // Get user's allocated exam IDs using repository
-    console.log("Fetching allocated exams for user:", userId);
     const allocatedExamIds = await userRepo.getAllocatedExams(userId);
-    console.log("Allocated exam IDs:", allocatedExamIds);
     
     if (allocatedExamIds.length === 0) {
       return NextResponse.json(
@@ -33,20 +31,8 @@ export async function GET(req: Request) {
       );
     }
 
-    // Get exams by IDs using repository
-    console.log("Fetching exams by IDs...");
-    const exams = await Promise.all(
-      allocatedExamIds.map(async (id) => {
-        console.log("Fetching exam with ID:", id);
-        const exam = await examRepo.getById(id);
-        console.log("Exam fetched:", exam ? exam.examTitle : "null");
-        return exam;
-      })
-    );
-    
-    // Filter out null results (exams that weren't found)
-    const validExams = exams.filter(exam => exam !== null);
-    console.log("Valid exams count:", validExams.length);
+    // Get exams by IDs using repository (one query, request order preserved)
+    const validExams = await examRepo.getByIds(allocatedExamIds);
     
     if (validExams.length === 0) {
       return NextResponse.json(
@@ -56,7 +42,9 @@ export async function GET(req: Request) {
         },
         { status: 200 }
       );
-    }    // Transform exams to include calculated fields
+    }
+
+    // Transform exams to include calculated fields
     const transformedExams = validExams.map((exam: any) => ({
       id: exam._id?.toString(),
       title: exam.examTitle,
@@ -69,6 +57,7 @@ export async function GET(req: Request) {
       maxMarks: exam.examMaxMarks,
       passingPercentage: exam.passingPercentage,
       createdAt: exam.createdAt,
+      createdBy: exam.createdBy,
       scheduledAt: exam.scheduledAt,
       assignedUsers: exam.assignedUsers?.length || 0,
       instructions: exam.instructions,

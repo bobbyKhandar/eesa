@@ -31,7 +31,7 @@ export const examQuestionZodSchema = z.object({
   answer: z.any().optional(),
   
   marks: z.number(),
-  negativeMarking: z.number().optional(), // For MCQs
+  negativeMarks: z.number().optional(), // Marks deducted for a wrong answer, per question
   tags: z.array(z.string()).optional(),
 });
 

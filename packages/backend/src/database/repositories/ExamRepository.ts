@@ -221,6 +221,30 @@ export class ExamRepository {
   }
 
   /**
+   * Get exams by IDs in a single query, preserving the order of `examIds`.
+   * Ids without a matching exam are skipped.
+   */
+  async getByIds(examIds: string[]): Promise<Exam[]> {
+    try {
+      await connect();
+      const uniqueIds = Array.from(
+        new Set(examIds.filter((id) => typeof id === 'string' && id.length > 0))
+      );
+      if (uniqueIds.length === 0) return [];
+
+      const exams = await this.model.find({ _id: { $in: uniqueIds } }).lean();
+      const examsById = new Map<string, Exam>(exams.map((exam) => [String(exam._id), exam]));
+
+      return uniqueIds
+        .map((id) => examsById.get(id))
+        .filter((exam): exam is Exam => exam !== undefined);
+    } catch (error) {
+      console.error('Error getting exams by ids:', error);
+      return [];
+    }
+  }
+
+  /**
    * Get exams by subject
    */
   async getBySubject(subjectId: string, limit: number = 50): Promise<Exam[]> {
@@ -280,18 +304,35 @@ export class ExamRepository {
   }
 
   /**
-   * Delete exam
+   * Delete exam, its question instances, and every user allocation of it
    */
   async delete(examId: string): Promise<{ success: boolean; error?: string }> {
     try {
       await connect();
 
+      const existing = await this.model.findById(examId).select('questions').lean();
       const result = await this.model.deleteOne({ _id: examId });
 
       if (result.deletedCount === 0) {
         return { success: false, error: 'Exam not found' };
       }
 
+      // Both cleanups are best-effort: the exam is already gone, and reporting a
+      // failure here would tell the caller the delete failed when it did not.
+      const questionIds = Array.isArray(existing?.questions) ? existing.questions : [];
+      const removedQuestions = await this.examQuestionRepo.deleteManyByIds(questionIds);
+
+      try {
+        const UserModel = getUserModel();
+        await UserModel.updateMany(
+          { currentAllocatedExams: examId },
+          { $pull: { currentAllocatedExams: examId } }
+        );
+      } catch (userUpdateError) {
+        console.warn('Could not clear exam from user allocations:', userUpdateError);
+      }
+
+      console.log(`Exam ${examId} deleted (${removedQuestions} questions removed)`);
       return { success: true };
     } catch (error) {
       console.error('Error deleting exam:', error);

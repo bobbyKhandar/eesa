@@ -4,7 +4,8 @@
   "workspaces": ["packages/backend", "packages/frontend"],
   "scripts": {
     "test": "node --experimental-strip-types --import ./tests/node/register-hook.mjs --test tests/node/exam-evaluator-security.test.ts",
-    "test:auth-dashboard": "node --experimental-strip-types --test tests/node/dashboard-auth.test.ts"
+    "test:auth-dashboard": "node --experimental-strip-types --test tests/node/dashboard-auth.test.ts",
+    "test:exams-crud": "node --experimental-strip-types --test tests/node/exams-crud.test.ts"
   },
   "devDependencies": {
     "@eslint/js": "^9.30.1",

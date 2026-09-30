@@ -3,13 +3,14 @@
 import { useState } from "react"
 import Link from "next/link"
 import { Button } from "@/frontend/components/ui/button"
-import { Card, CardContent, CardHeader, CardTitle } from "@/frontend/components/ui/card"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/frontend/components/ui/card"
 import { Input } from "@/frontend/components/ui/input"
 import { Label } from "@/frontend/components/ui/label"
 import { Textarea } from "@/frontend/components/ui/textarea"
 import { ArrowLeft, Upload } from "lucide-react"
 import { ExamTypeSelector, SyllabusTypeSelector, SubjectSelector, QuestionEditor } from "@/frontend/components/features/exams"
 import type { Question } from "@/frontend/components/features/exams"
+import { findInvalidQuestion } from "@/frontend/lib/examCreation"
 
 export default function CreateExamPage() {
   const [examType, setExamType] = useState<string | null>(null)
@@ -54,6 +55,7 @@ export default function CreateExamPage() {
   const [instructions,setInstructions]=useState<string>("")
   const [negativeMarking,setNegativeMarking]=useState<boolean>(false)
   const [negativeMarkingPercentage,setNegativeMarkingPercentage]=useState<number>(25)
+  const [deadline,setDeadline]=useState<string>("")
   const [processingRequest,setProcessingRequest]=useState<boolean>(false)
   const [error,setError]=useState<string>("")
   const [success,setSuccess]=useState<string>("")
@@ -86,12 +88,10 @@ async function uploadExamSet(): Promise<ApiResponse> {
       return { success: false, error: "No questions added" }
     }
 
-    // Validate all questions have text and marks
-    for (const q of questions) {
-      if (!q.text || q.marks <= 0) {
-        setError("All questions must have text and positive marks")
-        return { success: false, error: "Invalid question data" }
-      }
+    const questionError = findInvalidQuestion(questions)
+    if (questionError) {
+      setError(questionError)
+      return { success: false, error: questionError }
     }
 
     setProcessingRequest(true)
@@ -109,6 +109,7 @@ async function uploadExamSet(): Promise<ApiResponse> {
       examType: examType || "assignment",
       passingPercentage,
       duration: examDuration,
+      scheduledAt: deadline ? new Date(deadline).toISOString() : undefined,
       instructions,
       negativeMarking,
       negativeMarkingPercentage: negativeMarking ? negativeMarkingPercentage : undefined,
@@ -359,7 +360,13 @@ async function uploadExamSet(): Promise<ApiResponse> {
           {examType === "teacher" && (
             <div className="grid gap-2">
               <Label htmlFor="deadline">Submission Deadline</Label>
-              <Input id="deadline" type="datetime-local" />
+              <Input
+                id="deadline"
+                type="datetime-local"
+                value={deadline}
+                readOnly={processingRequest}
+                onChange={e=>{setDeadline(e.target.value)}}
+              />
             </div>
           )}
         </CardContent>
