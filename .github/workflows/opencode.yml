@@ -30,6 +30,12 @@ jobs:
           fetch-depth: 1
           persist-credentials: false
 
+      # OpenCode commits fail without this (previous run: empty ident / Author identity unknown)
+      - name: Configure git identity
+        run: |
+          git config --global user.name "Bobby M Khandar"
+          git config --global user.email "bobbykhandar1904@gmail.com"
+
       - name: Run OpenCode
         if: github.event_name != 'workflow_dispatch'
         uses: anomalyco/opencode/github@latest
