@@ -1,6 +1,5 @@
 "use client"
-
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import Link from "next/link"
 import { Button } from "@/frontend/components/ui/button"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/frontend/components/ui/card"
@@ -8,104 +7,92 @@ import { Input } from "@/frontend/components/ui/input"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/frontend/components/ui/tabs"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/frontend/components/ui/select"
 import { Badge } from "@/frontend/components/ui/badge"
-import { Brain, Search, Plus, Clock, Users, BookOpen, ArrowRight } from "lucide-react"
+import { Search, Plus, Clock, Users, BookOpen, ArrowRight } from "lucide-react"
+import { useUser } from "@clerk/nextjs"
+
+interface ExamSummary {
+  id: string
+  title: string
+  description?: string
+  subject?: string
+  degree?: string
+  type?: string
+  duration?: number
+  questions: number
+  maxMarks?: number
+  createdAt?: string
+  status: string
+}
+
+function textOf(value: unknown): string {
+  return typeof value === "string" ? value : ""
+}
+
+function timeOf(value: unknown): number {
+  const time = new Date(textOf(value)).getTime()
+  return Number.isNaN(time) ? 0 : time
+}
 
 export default function ExamsPage() {
+  const { user, isLoaded } = useUser()
+  const [exams, setExams] = useState<ExamSummary[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
   const [searchQuery, setSearchQuery] = useState("")
   const [sortBy, setSortBy] = useState("recent")
   const [filterStatus, setFilterStatus] = useState("all")
 
-  // Mock exam data
-  const exams = [
-    {
-      id: "1",
-      title: "Introduction to AI",
-      description: "Learn the fundamentals of artificial intelligence and machine learning.",
-      duration: 60,
-      questions: 10,
-      status: "active",
-      createdAt: "June 10, 2025",
-      submissions: 24,
-      instructor: "Dr. Sarah Chen",
-      category: "Computer Science",
-      difficulty: "Intermediate",
-    },
-    {
-      id: "2",
-      title: "Data Structures Final",
-      description:
-        "Comprehensive exam covering arrays, linked lists, trees, graphs, and algorithm complexity analysis.",
-      duration: 90,
-      questions: 15,
-      status: "active",
-      createdAt: "June 8, 2025",
-      submissions: 42,
-      instructor: "Prof. Michael Johnson",
-      category: "Computer Science",
-      difficulty: "Advanced",
-    },
-    {
-      id: "3",
-      title: "Machine Learning Midterm",
-      description:
-        "Covers supervised and unsupervised learning techniques, model evaluation, and basic neural networks.",
-      duration: 75,
-      questions: 12,
-      status: "completed",
-      createdAt: "June 5, 2025",
-      submissions: 36,
-      instructor: "Dr. Emily Rodriguez",
-      category: "Data Science",
-      difficulty: "Advanced",
-    },
-    {
-      id: "4",
-      title: "Web Development Basics",
-      description: "Introduction to HTML, CSS, and JavaScript fundamentals.",
-      duration: 45,
-      questions: 8,
-      status: "active",
-      createdAt: "June 12, 2025",
-      submissions: 18,
-      instructor: "Alex Thompson",
-      category: "Web Development",
-      difficulty: "Beginner",
-    },
-    {
-      id: "5",
-      title: "Database Systems",
-      description: "Covers relational database concepts, SQL, and database design principles.",
-      duration: 60,
-      questions: 10,
-      status: "draft",
-      createdAt: "June 14, 2025",
-      submissions: 0,
-      instructor: "Dr. James Wilson",
-      category: "Computer Science",
-      difficulty: "Intermediate",
-    },
-    {
-      id: "6",
-      title: "Python Programming",
-      description: "Comprehensive assessment of Python programming skills including data structures and algorithms.",
-      duration: 90,
-      questions: 15,
-      status: "active",
-      createdAt: "June 7, 2025",
-      submissions: 56,
-      instructor: "Lisa Park",
-      category: "Programming",
-      difficulty: "Intermediate",
-    },
-  ]
+  useEffect(() => {
+    if (!isLoaded) return
+
+    if (!user?.id) {
+      setExams([])
+      setLoading(false)
+      return
+    }
+
+    const controller = new AbortController()
+    let active = true
+
+    const fetchExams = async () => {
+      try {
+        setLoading(true)
+        setError(null)
+        const response = await fetch("/api/exams/list", {
+          signal: controller.signal,
+          cache: "no-store",
+        })
+        const data = await response.json()
+
+        if (!response.ok || !data.success) {
+          throw new Error(data.error || "Failed to fetch exams")
+        }
+
+        if (active) setExams(Array.isArray(data.exams) ? data.exams : [])
+      } catch (err: any) {
+        if (!active || controller.signal.aborted) return
+        setError(err.message || "Failed to load exams")
+      } finally {
+        if (active) setLoading(false)
+      }
+    }
+
+    fetchExams()
+
+    return () => {
+      active = false
+      controller.abort()
+    }
+  }, [isLoaded, user?.id])
 
   // Filter exams based on search query and status
+  const query = searchQuery.toLowerCase()
   const filteredExams = exams.filter((exam) => {
     const matchesSearch =
-      exam.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      exam.description.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      exam.instructor.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      exam.category.toLowerCase().includes(searchQuery.toLowerCase())
+      textOf(exam.title).toLowerCase().includes(query) ||
+      textOf(exam.description).toLowerCase().includes(query) ||
+      textOf(exam.subject).toLowerCase().includes(query) ||
+      textOf(exam.degree).toLowerCase().includes(query)
 
     const matchesStatus = filterStatus === "all" || exam.status === filterStatus
 
@@ -115,15 +102,30 @@ export default function ExamsPage() {
   // Sort exams
   const sortedExams = [...filteredExams].sort((a, b) => {
     if (sortBy === "recent") {
-      return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-    } else if (sortBy === "popular") {
-      return b.submissions - a.submissions
+      return timeOf(b.createdAt) - timeOf(a.createdAt)
     } else if (sortBy === "duration") {
-      return a.duration - b.duration
+      return (a.duration || 0) - (b.duration || 0)
     } else {
-      return a.title.localeCompare(b.title)
+      return textOf(a.title).localeCompare(textOf(b.title))
     }
   })
+
+  const renderExams = (emptyMessage: string) => {
+    if (sortedExams.length > 0) {
+      return (
+        <div className="grid gap-4">
+          {sortedExams.map((exam) => (
+            <ExamCard key={exam.id} exam={exam} />
+          ))}
+        </div>
+      )
+    }
+    return (
+      <div className="text-center py-12">
+        <p className="text-gray-500 dark:text-gray-400">{loading ? "Loading exams..." : emptyMessage}</p>
+      </div>
+    )
+  }
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
@@ -133,7 +135,7 @@ export default function ExamsPage() {
         <div className="flex flex-col md:flex-row items-start md:items-center justify-between mb-8 gap-4">
           <div>
             <h1 className="text-3xl font-bold">Exams</h1>
-            <p className="text-gray-500 dark:text-gray-400">Browse, create, or take exams</p>
+            <p className="text-gray-500 dark:text-gray-400">Exams assigned to you, ready to take</p>
           </div>
           <Link href="/dashboard/exams/create">
             <Button className="gap-2">
@@ -142,6 +144,12 @@ export default function ExamsPage() {
           </Link>
         </div>
 
+        {error && (
+          <div className="mb-6 rounded-lg border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-950 p-4">
+            <p className="text-sm text-red-800 dark:text-red-200">{error}</p>
+          </div>
+        )}
+
         <div className="grid grid-cols-1 md:grid-cols-[1fr_250px] gap-6">
           <div className="space-y-6">
             <div className="flex flex-col sm:flex-row gap-4">
@@ -149,9 +157,9 @@ export default function ExamsPage() {
                 <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-gray-500 dark:text-gray-400" />
                 <Input
                   placeholder="Search exams..."
-                  className="pl-8"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
+                  className="pl-8"
                 />
               </div>
               <Select value={sortBy} onValueChange={setSortBy}>
@@ -160,7 +168,6 @@ export default function ExamsPage() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="recent">Most Recent</SelectItem>
-                  <SelectItem value="popular">Most Popular</SelectItem>
                   <SelectItem value="alphabetical">Alphabetical</SelectItem>
                   <SelectItem value="duration">Duration</SelectItem>
                 </SelectContent>
@@ -176,59 +183,19 @@ export default function ExamsPage() {
               </TabsList>
 
               <TabsContent value="all" className="mt-0">
-                {sortedExams.length > 0 ? (
-                  <div className="grid gap-4">
-                    {sortedExams.map((exam) => (
-                      <ExamCard key={exam.id} exam={exam} />
-                    ))}
-                  </div>
-                ) : (
-                  <div className="text-center py-12">
-                    <p className="text-gray-500 dark:text-gray-400">No exams found matching your criteria</p>
-                  </div>
-                )}
+                {renderExams("No exams found matching your criteria")}
               </TabsContent>
 
               <TabsContent value="active" className="mt-0">
-                {sortedExams.length > 0 ? (
-                  <div className="grid gap-4">
-                    {sortedExams.map((exam) => (
-                      <ExamCard key={exam.id} exam={exam} />
-                    ))}
-                  </div>
-                ) : (
-                  <div className="text-center py-12">
-                    <p className="text-gray-500 dark:text-gray-400">No active exams found</p>
-                  </div>
-                )}
+                {renderExams("No active exams found")}
               </TabsContent>
 
               <TabsContent value="completed" className="mt-0">
-                {sortedExams.length > 0 ? (
-                  <div className="grid gap-4">
-                    {sortedExams.map((exam) => (
-                      <ExamCard key={exam.id} exam={exam} />
-                    ))}
-                  </div>
-                ) : (
-                  <div className="text-center py-12">
-                    <p className="text-gray-500 dark:text-gray-400">No completed exams found</p>
-                  </div>
-                )}
+                {renderExams("No completed exams found")}
               </TabsContent>
 
               <TabsContent value="draft" className="mt-0">
-                {sortedExams.length > 0 ? (
-                  <div className="grid gap-4">
-                    {sortedExams.map((exam) => (
-                      <ExamCard key={exam.id} exam={exam} />
-                    ))}
-                  </div>
-                ) : (
-                  <div className="text-center py-12">
-                    <p className="text-gray-500 dark:text-gray-400">No draft exams found</p>
-                  </div>
-                )}
+                {renderExams("No draft exams found")}
               </TabsContent>
             </Tabs>
           </div>
@@ -304,8 +271,8 @@ export default function ExamsPage() {
   )
 }
 
-function ExamCard({ exam }) {
-  const getStatusBadge = (status) => {
+function ExamCard({ exam }: { exam: ExamSummary }) {
+  const getStatusBadge = (status: string) => {
     switch (status) {
       case "active":
         return <Badge className="bg-green-500">Active</Badge>
@@ -325,7 +292,9 @@ function ExamCard({ exam }) {
           <div>
             <CardTitle>{exam.title}</CardTitle>
             <CardDescription>
-              {exam.instructor} • {exam.category}
+              {exam.subject || "Unassigned subject"}
+              {exam.degree ? ` • ${exam.degree}` : ""}
+              {exam.type ? ` • ${exam.type}` : ""}
             </CardDescription>
           </div>
           {getStatusBadge(exam.status)}
@@ -336,18 +305,11 @@ function ExamCard({ exam }) {
         <div className="flex flex-wrap gap-4 text-sm">
           <div className="flex items-center gap-1">
             <Clock className="h-4 w-4 text-gray-500 dark:text-gray-400" />
-            <span>{exam.duration} minutes</span>
+            <span>{exam.duration || 60} minutes</span>
           </div>
           <div className="flex items-center gap-1">
             <BookOpen className="h-4 w-4 text-gray-500 dark:text-gray-400" />
-            <span>{exam.questions} questions</span>
-          </div>
-          <div className="flex items-center gap-1">
-            <Users className="h-4 w-4 text-gray-500 dark:text-gray-400" />
-            <span>{exam.submissions} submissions</span>
-          </div>
-          <div>
-            <Badge variant="outline">{exam.difficulty}</Badge>
+            <span>{exam.questions} questions • {exam.maxMarks} marks</span>
           </div>
         </div>
       </CardContent>

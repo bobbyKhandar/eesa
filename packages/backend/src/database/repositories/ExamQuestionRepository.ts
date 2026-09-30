@@ -225,4 +225,27 @@ export class ExamQuestionRepository {
       return { success: false, error: 'Failed to delete exam question' };
     }
   }
+
+  /**
+   * Delete many exam questions by ID, ignoring ids that are not ObjectIds.
+   * Returns how many documents were removed.
+   */
+  async deleteManyByIds(examQuestionIds: string[]): Promise<number> {
+    if (examQuestionIds.length === 0) return 0;
+
+    try {
+      await connect();
+      const objectIds = examQuestionIds
+        .map((id) => (Types.ObjectId.isValid(id) ? new Types.ObjectId(id) : null))
+        .filter((id): id is Types.ObjectId => id !== null);
+
+      if (objectIds.length === 0) return 0;
+
+      const result = await this.model.deleteMany({ _id: { $in: objectIds } });
+      return result.deletedCount ?? 0;
+    } catch (error) {
+      console.error('Error deleting exam questions:', error);
+      return 0;
+    }
+  }
 }

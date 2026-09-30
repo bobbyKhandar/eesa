@@ -295,6 +295,29 @@ Or use **VSCode** (`.vscode/launch.json`) — open Run & Debug (Ctrl+Shift+D), s
 | `reports/` | Report generation |
 | `unique-questions/` | Unique questions retrieval |
 
+### Exam CRUD & Assignment
+
+```
+/dashboard/exams/create   app/dashboard/exams/create/page.tsx
+                          pure helpers: lib/examCreation.ts
+  → POST /api/exams/create                        prompts → ExamQuestion → exam
+  → GET  /api/exams/list                          the caller's allocated exams
+  → GET  /api/exams/:id, DELETE /api/exams/:id    view / delete one exam
+  → POST /api/exams/display/allExams              the caller's allocated exam sets
+/exams                    app/exams/page.tsx — the caller's exams from /api/exams/list
+```
+
+Rules the code above depends on:
+
+- **`exam._id` and `user._id` are strings, not ObjectIds** (`examZodSchema`/`userZodSchema` declare `_id: z.string()`). A user `_id` is the Clerk user id; an exam `_id` is the hex string of the ObjectId that `ExamRepository` generates. Queries therefore compare strings — `getWithFullDetails` matches on `{ _id: examId }` and stringifies ids in its `$lookup`.
+- **The creator is always an assignee.** `normalizeAssignedUsers(examUsers, userId)` de-duplicates the requested assignees and appends the creator, and the route repeats `userRepo.assignExam` after the insert, because the allocation inside `createWithPrompts` skips user documents that do not exist yet. `/api/exams/list` reads only `currentAllocatedExams`, so a missing allocation means an empty dashboard.
+- **`exam.assignedUsers` is the source of truth for access**, `user.currentAllocatedExams` is the per-user index. Both are written on create/assign and both are cleaned up on delete.
+- **One query per list.** `ExamRepository.getByIds` resolves the whole allocation in a single `find({ _id: { $in: ids } })` and preserves the requested order, skipping ids with no exam.
+- **`ExamQuestion.negativeMarks` is the per-question deduction** (the field was previously named `negativeMarking`, which the zod schema stripped on write). `0%` is a valid value and is not replaced by the 25% default.
+- **Deleting an exam is not just `deleteOne`.** `ExamRepository.delete` also removes the exam's `ExamQuestion` documents and `$pull`s the exam id out of every user's `currentAllocatedExams`; both cleanups are best-effort and never turn a successful delete into a failure.
+- **`display/allExams` answers for the caller only.** It reads `userRepo.getAllocatedExams(userId)`; a body `email` is accepted solely when it is the caller's own address, so the endpoint cannot be used to enumerate another account's exam sets.
+- **All exams report `status: "active"`.** Draft/scheduled/completed is not modelled yet, so the status tabs on the exam pages are always empty except for "All"/"Active".
+
 ### AI Pipeline Routes
 
 All routes registered on the canonical server at `src/api/server.py`. See `packages/ai-pipeline/context.md` for full documentation.
@@ -336,6 +359,12 @@ All routes registered on the canonical server at `src/api/server.py`. See `packa
 | `npm run start` | Start production server |
 | `npm run lint` | ESLint check |
 
+### Root (`package.json`)
+
+| Script | Description |
+|--------|-------------|
+| `npm run test:exams-crud` | Node test runner over `tests/node/exams-crud.test.ts` (exams CRUD & assign area) |
+
 ---
 
 ## Testing
@@ -344,7 +373,7 @@ All routes registered on the canonical server at `src/api/server.py`. See `packa
 |----------|-----------|----------|
 | `packages/ai-pipeline/tests/` | Python unittest | 15 test files (server, OCR, pipeline, AWS, integration) |
 | `tests/python/` | Python unittest | 2 test files (experiment, image preprocessing) |
-| `tests/node/` | — | Empty (placeholder for future Node.js tests) |
+| `tests/node/` | Node.js built-in test runner | `exams-crud.test.ts` — exam creation helpers (negative marking, duration, question/settings validation, assigned users, scheduledAt) |
 
 ---
 

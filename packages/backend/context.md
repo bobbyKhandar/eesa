@@ -50,6 +50,9 @@
 - **Lean queries:** Use `.lean()` for read operations.
 - **insertMany:** Some methods use `insertMany` instead of `.save()` to bypass Mongoose pre-save hooks (e.g., `ExamRepository.createWithPrompts`, `ExamSubmissionRepository.create`).
 - **Validation:** Some repositories Zod-validate input before DB operations (PromptRepository, ExamQuestionRepository, UserRepository, JobMetadataRepository, UploadSessionRepository). Follow the caller's pattern.
+- **Zod strips unknown keys.** A field a repository writes must exist in the Zod schema under the *same* name, or it is silently dropped (this is how `ExamQuestion.negativeMarks` was lost while it was called `negativeMarking`).
+- **Referential cleanup belongs in the repository.** `ExamRepository.delete()` removes the exam's `ExamQuestion` documents and `$pull`s the exam id from every `user.currentAllocatedExams`; a delete that only removes the exam document leaves dangling ids that `getByIds` then has to skip.
+- **Best-effort side effects:** post-write updates to other collections (allocation on create, cleanup on delete) are wrapped in their own `try`/`catch` and logged. They must never turn a completed write into a reported failure.
 
 ### Repository Index (`repositories/index.ts`)
 - Exports all 12 classes by name.
@@ -61,9 +64,9 @@
 
 | Repository | Model Source | Key Methods |
 |---|---|---|
-| `ExamRepository` | `mongooseSchemas.ts` | `createWithPrompts()`, `getWithFullDetails()`, `assignToUsers()`, standard CRUD |
+| `ExamRepository` | `mongooseSchemas.ts` | `createWithPrompts()`, `getWithFullDetails()`, `getByIds()`, `assignToUsers()`, `delete()` (cascade), standard CRUD |
 | `ExamSubmissionRepository` | `mongooseSchemas.ts` | `create()`, `updateResponses()`, `getByExamAndUser()`, `getByScoreRange()` |
-| `ExamQuestionRepository` | `mongooseSchemas.ts` | `create()`, `createBulk()`, `getWithPrompt()`, `getExamsUsingPrompt()` |
+| `ExamQuestionRepository` | `mongooseSchemas.ts` | `create()`, `createBulk()`, `getWithPrompt()`, `getExamsUsingPrompt()`, `deleteManyByIds()` |
 | `ExamAnalysisRepository` | `newFeatureModels.ts` | `create()`, `getByUser()`, `publish()`, `getPublicAnalyses()` |
 | `AnalysisReportRepository` | `newFeatureModels.ts` | `create()`, `findBySubject()`, `getSubjectsSummary()`, `getRecentReports()` |
 | `SubjectRepository` | `newFeatureModels.ts` | `create()`, `getByCode()`, `getAll(filters)`, `getStatistics()` |
