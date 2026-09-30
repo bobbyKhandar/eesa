@@ -48,8 +48,11 @@ export async function GET(
       );
     }
 
-    // Increment view count
-    await analysisRepo.incrementViewCount(analysisId);
+    // Only count views for finished analyses. The report page polls this route
+    // every few seconds while processing, which would otherwise inflate viewCount.
+    if (analysis.status !== "pending" && analysis.status !== "processing") {
+      await analysisRepo.incrementViewCount(analysisId);
+    }
 
     return NextResponse.json({
       success: true,
@@ -67,7 +70,7 @@ export async function GET(
 
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  context: { params: Promise<{ id: string }> }
 ) {
   try {
     const { userId } = await auth();
@@ -79,11 +82,29 @@ export async function DELETE(
       );
     }
 
-    const analysisId = params.id;
+    // Establish database connection before touching the repository
+    const dbConnection = await connect();
+    if (dbConnection.successCode < 0 || dbConnection.successCode > 1) {
+      console.error("Database connection failed:", dbConnection.message);
+      return NextResponse.json(
+        { success: false, error: "Database connection failed" },
+        { status: 503 }
+      );
+    }
+
+    // Next.js 15 delivers route params as a Promise
+    const { id: analysisId } = await context.params;
 
     // Check ownership
     const analysis = await analysisRepo.getById(analysisId);
-    if (!analysis || analysis.analyzedBy !== userId) {
+    if (!analysis) {
+      return NextResponse.json(
+        { success: false, error: "Analysis not found" },
+        { status: 404 }
+      );
+    }
+
+    if (analysis.analyzedBy !== userId) {
       return NextResponse.json(
         { success: false, error: "Unauthorized" },
         { status: 403 }

@@ -11,6 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/frontend/components/ui/tabs"
 import { Input } from "@/frontend/components/ui/input"
 import { Loader2, ArrowLeft, FileText, Calendar, BarChart3, Eye, BookOpen, Sparkles, Search } from "lucide-react"
+import { toBloomRows } from "@/frontend/lib/bloomDistribution"
 
 interface AnalysisReport {
   _id: string
@@ -331,7 +332,7 @@ export default function SubjectReportsPage({ params }: { params: Promise<{ subje
                     <p className="text-sm font-medium">Bloom's Taxonomy Distribution</p>
                   </div>
                   <div className="space-y-2">
-                    {Object.entries(report.bloomDistribution).map(([level, percentage]) => (
+                    {toBloomRows(report.bloomDistribution).map(({ level, percentage }) => (
                       <div key={level} className="flex items-center gap-3">
                         <span className="text-xs w-24 text-muted-foreground font-medium">{level}</span>
                         <div className="flex-1 h-3 bg-gray-100 rounded-full overflow-hidden">
