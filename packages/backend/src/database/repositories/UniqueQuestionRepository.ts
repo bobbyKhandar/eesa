@@ -1,6 +1,25 @@
 import { getUniqueQuestionModel } from "../newFeatureModels";
 import type { UniqueQuestion, UniqueQuestionInsert } from "../schemas/index";
 
+/** Fields callers are allowed to sort by. */
+const SORTABLE_FIELDS = ["occurrenceCount", "firstSeenAt", "lastSeenAt"] as const;
+
+/**
+ * Escape user input so it matches literally inside a `$regex` query.
+ * Passing it raw makes "(", "*" or ".*" throw a BSONError or scan the whole
+ * collection.
+ */
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function toFiniteInt(value: unknown, min: number, max: number): number | undefined {
+  if (typeof value !== "number" || !Number.isFinite(value)) return undefined;
+  const rounded = Math.floor(value);
+  if (rounded < min || rounded > max) return undefined;
+  return rounded;
+}
+
 export class UniqueQuestionRepository {
   private model = getUniqueQuestionModel();
 
@@ -88,28 +107,25 @@ export class UniqueQuestionRepository {
       query.bloomsLevel = options.bloomsLevel;
     }
 
-    if (options?.minOccurrence) {
-      query.occurrenceCount = { $gte: options.minOccurrence };
+    // NaN here would make Mongo throw ("$gte: NaN"); non-positive values are a
+    // no-op filter instead.
+    const minOccurrence = toFiniteInt(options?.minOccurrence, 1, Number.MAX_SAFE_INTEGER);
+    if (minOccurrence !== undefined) {
+      query.occurrenceCount = { $gte: minOccurrence };
     }
 
-    const sortField = options?.sortBy || "occurrenceCount";
+    const requestedSort = options?.sortBy as string | undefined;
+    const sortField =
+      requestedSort && (SORTABLE_FIELDS as readonly string[]).includes(requestedSort)
+        ? requestedSort
+        : "occurrenceCount";
     const sortOrder = options?.sortOrder === "asc" ? 1 : -1;
     
-    console.log("Querying UniqueQuestions with:", query);
     const results = await this.model
       .find(query)
       .sort({ [sortField]: sortOrder })
       .lean();
     
-    console.log(`Found ${results.length} questions for subject "${subject}"`);
-    if (results.length > 0) {
-      console.log("Sample question:", {
-        text: results[0].text?.substring(0, 100),
-        subject: results[0].subject,
-        isActive: results[0].isActive
-      });
-    }
-
     return results;
   }
 
@@ -187,27 +203,36 @@ export class UniqueQuestionRepository {
    * Get most frequent questions
    */
   async getMostFrequent(subject: string, limit: number = 10) {
+    const safeLimit = toFiniteInt(limit, 1, 200) ?? 10;
+
     return this.model
       .find({ subject, isActive: true })
       .sort({ occurrenceCount: -1 })
-      .limit(limit)
+      .limit(safeLimit)
       .lean();
   }
 
   /**
    * Search questions by text
+   *
+   * The search term is escaped so it is matched literally: raw user input lets
+   * "(", "*" or ".*" throw a BSONError or turn into a full collection scan.
    */
   async searchByText(subject: string, searchText: string) {
+    const pattern = escapeRegExp(String(searchText ?? "").trim());
+    if (!pattern) return [];
+
     return this.model
       .find({
         subject,
         isActive: true,
         $or: [
-          { questionText: { $regex: searchText, $options: "i" } },
-          { normalizedText: { $regex: searchText, $options: "i" } },
+          { questionText: { $regex: pattern, $options: "i" } },
+          { normalizedText: { $regex: pattern, $options: "i" } },
         ],
       })
       .sort({ occurrenceCount: -1 })
+      .limit(200)
       .lean();
   }
 
@@ -253,20 +278,7 @@ export class UniqueQuestionRepository {
    * Get all unique subjects that have questions
    */
   async getAllSubjects() {
-    // Check both with and without isActive filter
-    const activeSubjects = await this.model.distinct("subject", { isActive: true });
-    const allSubjects = await this.model.distinct("subject");
-    const totalCount = await this.model.countDocuments();
-    const activeCount = await this.model.countDocuments({ isActive: true });
-    
-    console.log("UniqueQuestions stats:", {
-      totalQuestions: totalCount,
-      activeQuestions: activeCount,
-      allSubjects: allSubjects,
-      activeSubjects: activeSubjects
-    });
-    
-    return allSubjects; // Return all subjects to see what's there
+    return this.model.distinct("subject");
   }
 
   /**

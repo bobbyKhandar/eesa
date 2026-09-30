@@ -137,7 +137,7 @@ packages/frontend/
 │   ├── dashboard/                   # User dashboard, exam creation
 │   ├── exams/                       # Exam listing & taking
 │   ├── resources/                   # Resource library
-│   ├── subjects/                    # Subject explorer
+│   ├── subjects/                    # Subject explorer (canonical question bank URL)
 │   ├── take-exam/                   # Exam-taking interface
 │   ├── ai-analyze/                  # AI exam analysis
 │   ├── ai-helper/                   # Gemini exam helper
@@ -336,15 +336,35 @@ All routes registered on the canonical server at `src/api/server.py`. See `packa
 | `npm run start` | Start production server |
 | `npm run lint` | ESLint check |
 
+### Root (`package.json`)
+
+| Script | Description |
+|--------|-------------|
+| `npm test` | Node test runner over `tests/node/{backend,frontend}` |
+| `npm run test:python` | Python tests in `tests/python` |
+
 ---
 
 ## Testing
 
-| Location | Framework | Contents |
-|----------|-----------|----------|
-| `packages/ai-pipeline/tests/` | Python unittest | 15 test files (server, OCR, pipeline, AWS, integration) |
-| `tests/python/` | Python unittest | 2 test files (experiment, image preprocessing) |
-| `tests/node/` | — | Empty (placeholder for future Node.js tests) |
+| Location | Framework | Run with | Contents |
+|----------|-----------|----------|----------|
+| `packages/ai-pipeline/tests/` | Python unittest | `pytest` | 15 test files (server, OCR, pipeline, AWS, integration) |
+| `tests/python/` | Python unittest | `npm run test:python` | 2 test files (experiment, image preprocessing) |
+| `tests/node/backend/` | `node:test` | `npm test` | Backend pure helpers (repositories, normalisers) |
+| `tests/node/frontend/` | `node:test` | `npm test` | Frontend pure helpers (parsers, mappers, guards) |
+
+Node tests use the built-in test runner with type stripping, so they need no
+test framework dependency:
+
+```bash
+npm test          # tests/node/backend + tests/node/frontend
+npm run test:python
+```
+
+Known pre-existing issue: `tests/python/test_imagePreprocess.py` fails to import
+(leading indentation on its first line), so `test:python` errors on that module.
+`tests/python/test_exp2.py` passes.
 
 ---
 

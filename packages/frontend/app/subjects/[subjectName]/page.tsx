@@ -10,8 +10,13 @@ import { Badge } from "@/frontend/components/ui/badge"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/frontend/components/ui/select"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/frontend/components/ui/tabs"
 import { Input } from "@/frontend/components/ui/input"
-import { Loader2, ArrowLeft, FileText, Calendar, BarChart3, Eye, BookOpen, Sparkles, Search } from "lucide-react"
+import { Loader2, ArrowLeft, FileText, BarChart3, Eye, BookOpen, Sparkles, Search, X } from "lucide-react"
 import { toBloomRows } from "@/frontend/lib/bloomDistribution"
+import {
+  safeDecodeParam,
+  toUniqueQuestionList,
+  toUniqueQuestionStats,
+} from "@/frontend/lib/subjectQuestionBank"
 
 interface AnalysisReport {
   _id: string
@@ -23,18 +28,20 @@ interface AnalysisReport {
   examType: "main" | "kt"
   totalQuestions: number
   totalMarks?: number
-  bloomDistribution: {
-    Recall: number
-    Understand: number
-    Apply: number
-    Analyze: number
-    Evaluate: number
-    Create: number
-  }
+  bloomDistribution?: Record<string, number>
   overallAssessment?: string
   originalFileName: string
   publishedAt: string
   viewCount: number
+}
+
+// Legacy rows and prompt fallbacks can be missing dates; showing "Invalid Date"
+// on every card is worse than omitting them.
+function formatDate(value?: string): string | null {
+  if (!value) return null
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return null
+  return date.toLocaleDateString()
 }
 
 interface UniqueQuestion {
@@ -42,18 +49,18 @@ interface UniqueQuestion {
   questionText: string
   normalizedText: string
   subject: string
-  topics: string[]
+  topics?: string[]
   bloomsLevel?: string
-  occurrenceCount: number
-  firstSeenAt: string
-  lastSeenAt: string
-  appearances: Array<{
+  occurrenceCount?: number
+  firstSeenAt?: string
+  lastSeenAt?: string
+  appearances?: Array<{
     year: string
     semester: string
     examType: "main" | "kt"
-    analysisReportId: string
+    analysisReportId?: string
   }>
-  tags: string[]
+  tags?: string[]
 }
 
 interface UniqueQuestionStats {
@@ -65,7 +72,9 @@ interface UniqueQuestionStats {
 
 export default function SubjectReportsPage({ params }: { params: Promise<{ subjectName: string }> }) {
   const resolvedParams = use(params)
-  const subjectName = decodeURIComponent(resolvedParams.subjectName)
+  // Next.js already decodes route params; decoding again threw a URIError for
+  // subjects containing a literal "%" (e.g. "100% Java").
+  const subjectName = safeDecodeParam(resolvedParams.subjectName)
   const router = useRouter()
   
   const [reports, setReports] = useState<AnalysisReport[]>([])
@@ -79,16 +88,22 @@ export default function SubjectReportsPage({ params }: { params: Promise<{ subje
   const [uniqueStats, setUniqueStats] = useState<UniqueQuestionStats | null>(null)
   const [isLoadingUnique, setIsLoadingUnique] = useState(false)
   const [searchQuery, setSearchQuery] = useState("")
+  const [appliedSearchQuery, setAppliedSearchQuery] = useState("")
   const [bloomFilter, setBloomFilter] = useState<string>("all")
 
+  // Reports are filtered server-side, so a refetch is needed per filter change.
+  // subjectName is in the dependency list because the route param can change
+  // without remounting the client component.
   useEffect(() => {
     fetchReports()
-  }, [filterYear, filterSemester, filterExamType])
+  }, [subjectName, filterYear, filterSemester, filterExamType])
 
+  // Bloom filtering is server-side; a submitted search is tracked separately so
+  // typing does not refetch on every keystroke but clearing the box does reset.
   useEffect(() => {
     fetchUniqueQuestions()
     fetchUniqueStats()
-  }, [bloomFilter])
+  }, [subjectName, bloomFilter, appliedSearchQuery])
 
   const fetchReports = async () => {
     try {
@@ -99,8 +114,13 @@ export default function SubjectReportsPage({ params }: { params: Promise<{ subje
       if (filterExamType !== "all") params.append("examType", filterExamType)
       
       const response = await fetch(`/api/subjects?${params.toString()}`)
+      // A failed request returns { error }, not { reports }: storing that and
+      // later reading .length/.map on it crashed the whole page.
+      if (!response.ok) {
+        throw new Error(`Failed to load reports (${response.status})`)
+      }
       const data = await response.json()
-      setReports(data.reports || [])
+      setReports(Array.isArray(data?.reports) ? data.reports : [])
     } catch (error) {
       console.error("Error fetching reports:", error)
       setReports([])
@@ -114,13 +134,16 @@ export default function SubjectReportsPage({ params }: { params: Promise<{ subje
       setIsLoadingUnique(true)
       const params = new URLSearchParams({ subject: subjectName })
       if (bloomFilter !== "all") params.append("bloomsLevel", bloomFilter)
-      if (searchQuery) params.append("search", searchQuery)
+      if (appliedSearchQuery) params.append("search", appliedSearchQuery)
       params.append("sortBy", "occurrenceCount")
       params.append("sortOrder", "desc")
       
       const response = await fetch(`/api/unique-questions?${params.toString()}`)
+      if (!response.ok) {
+        throw new Error(`Failed to load unique questions (${response.status})`)
+      }
       const data = await response.json()
-      setUniqueQuestions(data)
+      setUniqueQuestions(toUniqueQuestionList(data))
     } catch (error) {
       console.error("Error fetching unique questions:", error)
       setUniqueQuestions([])
@@ -136,15 +159,25 @@ export default function SubjectReportsPage({ params }: { params: Promise<{ subje
         action: "stats"
       })
       const response = await fetch(`/api/unique-questions?${params.toString()}`)
+      if (!response.ok) {
+        throw new Error(`Failed to load stats (${response.status})`)
+      }
       const data = await response.json()
-      setUniqueStats(data)
+      setUniqueStats(toUniqueQuestionStats(data))
     } catch (error) {
       console.error("Error fetching stats:", error)
+      // Reset so a previous subject's numbers never linger after a failure.
+      setUniqueStats(null)
     }
   }
 
   const handleSearch = () => {
-    fetchUniqueQuestions()
+    setAppliedSearchQuery(searchQuery.trim())
+  }
+
+  const handleClearSearch = () => {
+    setSearchQuery("")
+    setAppliedSearchQuery("")
   }
 
   const getBloomColor = (level: string, percentage: number): string => {
@@ -179,9 +212,11 @@ export default function SubjectReportsPage({ params }: { params: Promise<{ subje
   return (
     <div className="mx-auto w-full max-w-7xl p-6">
       <div className="mb-6 space-y-4">
-        <Button variant="outline" onClick={() => router.push("/subjects-question-bank")}>
-          <ArrowLeft className="mr-2 h-4 w-4" />
-          Back to Subjects
+        <Button variant="outline" asChild>
+          <Link href="/subjects">
+            <ArrowLeft className="mr-2 h-4 w-4" />
+            Back to Subjects
+          </Link>
         </Button>
 
         <div>
@@ -383,7 +418,7 @@ export default function SubjectReportsPage({ params }: { params: Promise<{ subje
                   <CardTitle className="text-sm font-medium text-muted-foreground">Avg. Repetitions</CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <div className="text-3xl font-bold">{uniqueStats.avgOccurrence.toFixed(1)}</div>
+                  <div className="text-3xl font-bold">{(uniqueStats.avgOccurrence ?? 0).toFixed(1)}</div>
                 </CardContent>
               </Card>
             </div>
@@ -398,9 +433,19 @@ export default function SubjectReportsPage({ params }: { params: Promise<{ subje
                 onChange={(e) => setSearchQuery(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && handleSearch()}
               />
-              <Button onClick={handleSearch}>
+              <Button onClick={handleSearch} disabled={isLoadingUnique}>
                 <Search className="h-4 w-4" />
               </Button>
+              {searchQuery && (
+                <Button
+                  variant="outline"
+                  size="icon"
+                  onClick={handleClearSearch}
+                  aria-label="Clear search"
+                >
+                  <X className="h-4 w-4" />
+                </Button>
+              )}
             </div>
 
             <Select value={bloomFilter} onValueChange={setBloomFilter}>
@@ -451,7 +496,7 @@ export default function SubjectReportsPage({ params }: { params: Promise<{ subje
                             </Badge>
                           )}
                           <Badge variant="secondary">
-                            Appeared {question.occurrenceCount} time{question.occurrenceCount > 1 ? "s" : ""}
+                            Appeared {question.occurrenceCount ?? 1} time{(question.occurrenceCount ?? 1) > 1 ? "s" : ""}
                           </Badge>
                         </div>
                         <CardDescription className="text-base text-foreground whitespace-pre-wrap">
@@ -461,7 +506,7 @@ export default function SubjectReportsPage({ params }: { params: Promise<{ subje
                     </div>
                   </CardHeader>
                   <CardContent className="space-y-3">
-                    {question.topics.length > 0 && (
+                    {(question.topics?.length ?? 0) > 0 && (
                       <div className="flex items-center gap-2 flex-wrap">
                         <span className="text-sm text-muted-foreground">Topics:</span>
                         {question.topics.map((topic, i) => (
@@ -472,7 +517,7 @@ export default function SubjectReportsPage({ params }: { params: Promise<{ subje
                       </div>
                     )}
 
-                    {question.appearances.length > 0 && (
+                    {(question.appearances?.length ?? 0) > 0 && (
                       <div className="space-y-2">
                         <p className="text-sm font-medium text-muted-foreground">Appeared in:</p>
                         <div className="flex flex-wrap gap-2">
@@ -486,8 +531,8 @@ export default function SubjectReportsPage({ params }: { params: Promise<{ subje
                     )}
 
                     <div className="flex items-center justify-between text-xs text-muted-foreground pt-2 border-t">
-                      <span>First seen: {new Date(question.firstSeenAt).toLocaleDateString()}</span>
-                      <span>Last seen: {new Date(question.lastSeenAt).toLocaleDateString()}</span>
+                      <span>First seen: {formatDate(question.firstSeenAt)}</span>
+                      <span>Last seen: {formatDate(question.lastSeenAt)}</span>
                     </div>
                   </CardContent>
                 </Card>
