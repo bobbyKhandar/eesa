@@ -1,14 +1,28 @@
 import { NextRequest, NextResponse } from "next/server";
+import { auth } from "@clerk/nextjs/server";
 import { publishExamAnalysis, publishMultipleAnalyses } from "@/backend/dist/services/publishAnalysisService";
 
 /**
  * POST /api/exam-analysis/publish
  * Publish single or multiple exam analyses
+ *
+ * The publisher is always the authenticated Clerk user - a client-supplied
+ * `publishedBy` is ignored so callers cannot publish on someone else's behalf.
  */
 export async function POST(request: NextRequest) {
   try {
+    const { userId } = await auth();
+
+    if (!userId) {
+      return NextResponse.json(
+        { error: "Unauthorized - Please sign in" },
+        { status: 401 }
+      );
+    }
+
     const body = await request.json();
-    const { analysisIds, publishedBy } = body;
+    const { analysisIds } = body;
+    const publishedBy = userId;
 
     if (!analysisIds || !Array.isArray(analysisIds) || analysisIds.length === 0) {
       return NextResponse.json(
@@ -17,9 +31,12 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    if (!publishedBy) {
+    const invalidId = analysisIds.find(
+      (id: unknown) => typeof id !== "string" || id.length === 0
+    );
+    if (invalidId !== undefined) {
       return NextResponse.json(
-        { error: "publishedBy (user ID) is required" },
+        { error: "analysisIds must be an array of analysis ID strings" },
         { status: 400 }
       );
     }
@@ -27,7 +44,7 @@ export async function POST(request: NextRequest) {
     // Single analysis
     if (analysisIds.length === 1) {
       const result = await publishExamAnalysis(analysisIds[0], publishedBy);
-      
+
       if (!result.success) {
         return NextResponse.json(
           { error: result.error },
@@ -44,12 +61,17 @@ export async function POST(request: NextRequest) {
     // Multiple analyses
     const result = await publishMultipleAnalyses(analysisIds, publishedBy);
 
-    return NextResponse.json({
-      message: `Published ${result.published.length} of ${analysisIds.length} analyses`,
-      published: result.published,
-      failed: result.failed,
-      success: result.success,
-    });
+    // A partial publish still counts as handled, but a total failure must not
+    // be reported as a 200 - clients treat 2xx as "everything worked".
+    return NextResponse.json(
+      {
+        message: `Published ${result.published.length} of ${analysisIds.length} analyses`,
+        published: result.published,
+        failed: result.failed,
+        success: result.success,
+      },
+      { status: result.published.length > 0 ? 200 : 400 }
+    );
 
   } catch (error: any) {
     console.error("Error in publish API:", error);

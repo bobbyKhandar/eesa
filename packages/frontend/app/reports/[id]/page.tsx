@@ -9,6 +9,7 @@ import { Badge } from "@/frontend/components/ui/badge"
 import { Separator } from "@/frontend/components/ui/separator"
 import { Loader2, ArrowLeft, FileText, Calendar, BarChart3, BookOpen, Download, Share2 } from "lucide-react"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/frontend/components/ui/tabs"
+import { toBloomRows } from "@/frontend/lib/bloomDistribution"
 
 interface Question {
   _id: string
@@ -333,7 +334,7 @@ export default function ReportDetailPage({ params }: { params: Promise<{ id: str
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
-              {Object.entries(report.bloomDistribution).map(([level, percentage]) => (
+              {toBloomRows(report.bloomDistribution).map(({ level, percentage }) => (
                 <div key={level} className="space-y-2">
                   <div className="flex items-center justify-between">
                     <div className="space-y-1">

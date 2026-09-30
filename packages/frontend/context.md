@@ -42,11 +42,18 @@
 - **CSS variables** defined in `app/globals.css` for theme colors (`.dark` class). Dark mode via `class` strategy.
 - Use `cn()` from `@/frontend/lib/utils` for className merging (uses `clsx` + `tailwind-merge`).
 
+## Pure `lib/` Helpers
+- `lib/bloomDistribution.ts` — `toBloomRows()` / `sanitizeBloomDistribution()` coerce a possibly-missing `bloomDistribution` into six numeric rows. Use it instead of `Object.entries(report.bloomDistribution)` so legacy/partial reports cannot crash on `.toFixed()`.
+- `lib/bulkUploadStatus.ts` — pure status-array mutations (`markUploading`, `markSuccess`, `markError`, `mergeSplitSubjects`). Always address entries by **file** index, because a single PDF can be split into several subject entries.
+- Keep these modules dependency-free (no React, no DB) so they stay unit testable via `npm test` (`tests/node/frontend/`).
+
 ## Authentication
 - **Clerk** via `@clerk/nextjs`.
 - Server side: `import { auth } from "@clerk/nextjs/server"` in API routes. Returns `userId`.
 - Client side: `useUser()`, `<SignInButton/>`, `<SignUpButton/>`, `<UserButton/>`.
 - Middleware: `app/middleware.ts` — protects all routes via `clerkMiddleware()`.
+- **`clerkMiddleware()` does not require sign-in.** Every route handler that touches user data (including AI/paid endpoints such as `app/api/llm/route.ts`) must call `auth()` itself and return 401.
+- Never trust a client-supplied user id. Derive the actor from `userId` and verify ownership in the service layer (see `publishExamAnalysis`).
 
 ## AI Pipeline Communication
 - Frontend API routes call the Python Flask AI pipeline via `fetch(AI_PIPELINE_URL + "/endpoint")`.
