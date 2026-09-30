@@ -3,6 +3,7 @@ import { useRef, useState, useEffect } from "react"
 import { useUser } from "@clerk/nextjs"
 import { AlertCircle, RefreshCw, FileText, X, Eye, History } from "lucide-react"
 import { StatusMessage, StageDetails, getStatusColor, getStageStatusSummary } from "@/frontend/components/features/upload"
+import { shouldPollJobStatus } from "@/frontend/lib/jobStatus"
 
 type JobStatus = {
   job_id: string
@@ -116,8 +117,8 @@ export default function Page() {
     const interval = setInterval(async () => {
       const updatedJobs = await Promise.all(
         jobs.map(async (job) => {
-          if (job.status === 'success' || job.status === 'failed') {
-            return job // Don't poll completed jobs
+          if (!shouldPollJobStatus(job.status)) {
+            return job // Don't poll finished jobs (success/failed/partial_success)
           }
 
           try {
@@ -341,8 +342,9 @@ export default function Page() {
       
       if (res.ok && data.success) {
         setMessage(`✓ ${job.filename} retry initiated successfully`)
-        // Update job status to in_progress
-        setJobs(jobs.map(j => 
+        // Update job status to in_progress (functional update: the retry-all
+        // loop used a stale `jobs` snapshot and dropped earlier updates)
+        setJobs(prev => prev.map(j => 
           j.job_id === job.job_id 
             ? { 
                 ...j, 
@@ -356,7 +358,7 @@ export default function Page() {
       } else {
         setMessage(`✗ Retry failed for ${job.filename}: ${data.error}`)
         // Update job with the new error message from retry attempt
-        setJobs(jobs.map(j => 
+        setJobs(prev => prev.map(j => 
           j.job_id === job.job_id 
             ? { 
                 ...j, 
@@ -372,7 +374,7 @@ export default function Page() {
   }
 
   const handleRemoveJob = (jobId: string) => {
-    setJobs(jobs.filter(j => j.job_id !== jobId))
+    setJobs(prev => prev.filter(j => j.job_id !== jobId))
     setMessage(`✓ Removed job from list`)
   }
 
@@ -395,7 +397,9 @@ export default function Page() {
     setLoadingJobDetails(true)
     setQuestionsData(null)
     try {
-      const res = await fetch(`http://localhost:5000/job/${jobId}/status`)
+      // Go through the Next.js proxy: calling the pipeline from the browser
+      // (http://localhost:5000) only works on a developer machine.
+      const res = await fetch(`/api/jobs/${encodeURIComponent(jobId)}/status`)
       if (res.ok) {
         const data = await res.json()
         setSelectedJobDetails(data)
@@ -405,11 +409,11 @@ export default function Page() {
           fetchQuestions(jobId)
         }
       } else {
-        alert('Failed to load job details')
+        setMessage('Failed to load job details')
       }
     } catch (error) {
       console.error('Error loading job details:', error)
-      alert('Error loading job details')
+      setMessage('Error loading job details')
     } finally {
       setLoadingJobDetails(false)
     }
@@ -418,7 +422,7 @@ export default function Page() {
   const fetchQuestions = async (jobId: string) => {
     setLoadingQuestions(true)
     try {
-      const res = await fetch(`http://localhost:5000/job/${jobId}/questions`)
+      const res = await fetch(`/api/jobs/${encodeURIComponent(jobId)}/questions`)
       if (res.ok) {
         const data = await res.json()
         setQuestionsData(data)
@@ -907,7 +911,7 @@ export default function Page() {
             {/* Modal Footer */}
             <div className="p-6 border-t border-gray-200 dark:border-gray-700 flex justify-between items-center">
               <a
-                href={`http://localhost:5000/job/${selectedJobDetails.job_id}/status`}
+                href={`/api/jobs/${encodeURIComponent(selectedJobDetails.job_id)}/status`}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="text-sm text-blue-600 dark:text-blue-400 hover:underline"
