@@ -111,15 +111,15 @@ export default function UploadStatusPage({ params }: { params: Promise<{ session
       const response = await fetch("/api/exam-analysis/publish", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          analysisIds: successfulAnalyses,
-          publishedBy: "system", // TODO: Replace with actual user ID from auth
-        }),
+        // The publisher is derived from the authenticated Clerk session server-side.
+        body: JSON.stringify({ analysisIds: successfulAnalyses }),
       })
 
-      const data = await response.json()
+      const data = await response.json().catch(() => null)
 
-      if (response.ok) {
+      const failedCount = Array.isArray(data?.failed) ? data.failed.length : 0
+
+      if (response.ok && data?.success && failedCount === 0) {
         setPublishResult({
           success: true,
           message: data.message || "Successfully published all analyses",
@@ -129,10 +129,19 @@ export default function UploadStatusPage({ params }: { params: Promise<{ session
           setPublishResult(null)
           router.push("/subjects")
         }, 2000)
+      } else if (response.ok && Array.isArray(data?.published) && data.published.length > 0) {
+        // Partial publish: some analyses made it, so show what failed instead of
+        // claiming everything was published.
+        setPublishResult({
+          success: false,
+          message: `${data.published.length} published, ${failedCount} failed: ${data.failed
+            .map((f: { analysisId: string; error: string }) => `${f.analysisId} (${f.error})`)
+            .join("; ")}`,
+        })
       } else {
         setPublishResult({
           success: false,
-          message: data.error || "Failed to publish analyses",
+          message: data?.error || "Failed to publish analyses",
         })
       }
     } catch (error) {

@@ -10,19 +10,13 @@ import { Label } from "@/frontend/components/ui/label"
 import { Textarea } from "@/frontend/components/ui/textarea"
 import { Checkbox } from "@/frontend/components/ui/checkbox"
 import { Upload, FileArchive, FileText, Loader2 } from "lucide-react"
-
-interface UploadStatus {
-  fileName: string
-  status: "pending" | "uploading" | "processing" | "success" | "error"
-  analysisId?: string
-  error?: string
-  progress?: number
-  extractedMetadata?: {
-    subjectName?: string
-    year?: string
-    semester?: string
-  }
-}
+import {
+  markError,
+  markSuccess,
+  markUploading,
+  mergeSplitSubjects,
+} from "@/frontend/lib/bulkUploadStatus"
+import type { UploadStatus } from "@/frontend/lib/bulkUploadStatus"
 
 interface UploadSession {
   sessionId: string
@@ -68,16 +62,6 @@ export default function BulkUploadPage() {
     localStorage.setItem(`upload-session-${session.sessionId}`, JSON.stringify(session))
   }
 
-  // Update session in localStorage
-  function updateSession(sessionId: string, statuses: UploadStatus[]) {
-    const storedSession = localStorage.getItem(`upload-session-${sessionId}`)
-    if (storedSession) {
-      const session: UploadSession = JSON.parse(storedSession)
-      session.statuses = statuses
-      localStorage.setItem(`upload-session-${sessionId}`, JSON.stringify(session))
-    }
-  }
-
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault()
 
@@ -95,10 +79,10 @@ export default function BulkUploadPage() {
 
     // Create session
     const sessionId = generateSessionId()
-    const initialStatuses: UploadStatus[] = uploadMode === "multiple" 
+    const initialStatuses: UploadStatus[] = uploadMode === "multiple"
       ? files.map(file => ({ fileName: file.name, status: "pending" as const }))
       : [{ fileName: zipFile!.name, status: "pending" as const }]
-    
+
     const session: UploadSession = {
       sessionId,
       statuses: initialStatuses,
@@ -106,23 +90,32 @@ export default function BulkUploadPage() {
       uploadMode,
       totalFiles: uploadMode === "multiple" ? files.length : 1,
     }
-    
+
     saveSession(session)
 
     // Redirect to status page
     router.push(`/upload-status/${sessionId}`)
 
+    // Persist the current status list (and derived totals) to localStorage.
+    const persist = (statuses: UploadStatus[]) => {
+      session.statuses = statuses
+      session.totalFiles = statuses.length
+      saveSession(session)
+    }
+
     // Start upload process in background
     try {
       if (uploadMode === "multiple") {
-        // Upload files one by one
+        // Upload files one by one. `statusIndex` tracks where this file's
+        // entries start inside `session.statuses`, which shifts whenever a PDF
+        // is split into multiple subjects.
+        let statusIndex = 0
+
         for (let i = 0; i < files.length; i++) {
           const file = files[i]
-          
-          // Update status to uploading
-          session.statuses[i].status = "uploading"
-          session.statuses[i].progress = 0
-          updateSession(sessionId, session.statuses)
+          const startIndex = statusIndex
+
+          persist(markUploading(session.statuses, startIndex))
 
           try {
             const formData = new FormData()
@@ -136,74 +129,47 @@ export default function BulkUploadPage() {
               body: formData,
             })
 
-            const data = await response.json()
+            const data = await response.json().catch(() => null)
 
-            if (!data.success) {
-              throw new Error(data.error || "Upload failed")
+            if (!response.ok || !data?.success) {
+              throw new Error(data?.error || "Upload failed")
             }
 
-            // Check if multiple subjects were detected
-            if (data.multipleSubjects && data.analyses) {
-              // Multiple analyses created from one PDF
-              console.log(`PDF split into ${data.count} subjects`)
-              
-              // Update status for all split subjects
-              const newStatuses: UploadStatus[] = []
-              
-              for (let j = 0; j < session.statuses.length; j++) {
-                if (j < i) {
-                  // Keep previous files as-is
-                  newStatuses.push(session.statuses[j])
-                } else if (j === i) {
-                  // Replace current file with split subjects
-                  for (const analysis of data.analyses) {
-                    newStatuses.push({
-                      fileName: `${file.name} - ${analysis.subjectName}`,
-                      status: "success",
-                      analysisId: analysis.analysisId,
-                      progress: 100,
-                      extractedMetadata: {
-                        subjectName: analysis.extractedMetadata.subjectName,
-                        year: analysis.extractedMetadata.year,
-                        semester: analysis.extractedMetadata.semester,
-                      },
-                    })
-                  }
-                } else {
-                  // Keep remaining files
-                  newStatuses.push(session.statuses[j])
-                }
-              }
-              
-              session.statuses = newStatuses
-              session.totalFiles = newStatuses.length
-              updateSession(sessionId, session.statuses)
+            if (data.multipleSubjects && Array.isArray(data.analyses)) {
+              // One PDF produced several per-subject analyses.
+              session.statuses = mergeSplitSubjects(
+                session.statuses,
+                startIndex,
+                file.name,
+                data.analyses
+              )
+              // All of the split entries belong to this file.
+              statusIndex = startIndex + data.analyses.length
             } else {
-              // Single subject - update normally
-              session.statuses[i] = {
-                ...session.statuses[i],
-                status: "success",
-                analysisId: data.analysisId,
-                progress: 100,
-                extractedMetadata: data.extractedMetadata,
-              }
-              updateSession(sessionId, session.statuses)
+              session.statuses = markSuccess(
+                session.statuses,
+                startIndex,
+                data.analysisId,
+                data.extractedMetadata
+              )
+              statusIndex = startIndex + 1
             }
+
+            persist(session.statuses)
           } catch (error: any) {
-            // Update status to error
-            session.statuses[i] = {
-              ...session.statuses[i],
-              status: "error",
-              error: error.message || "Upload failed",
-            }
-            updateSession(sessionId, session.statuses)
+            session.statuses = markError(
+              session.statuses,
+              startIndex,
+              error?.message || "Upload failed"
+            )
+            statusIndex = startIndex + 1
+            persist(session.statuses)
           }
         }
       } else {
         // Handle ZIP upload
-        session.statuses[0].status = "uploading"
-        updateSession(sessionId, session.statuses)
-        
+        persist(markUploading(session.statuses, 0))
+
         const formData = new FormData()
         formData.append("zipFile", zipFile!)
         formData.append("autoExtractMetadata", String(autoExtractMetadata))
@@ -215,19 +181,31 @@ export default function BulkUploadPage() {
           body: formData,
         })
 
-        const data = await response.json()
+        const data = await response.json().catch(() => null)
 
-        if (!data.success) {
-          throw new Error(data.error || "ZIP upload failed")
+        if (!response.ok || !data?.success) {
+          throw new Error(data?.error || "ZIP upload failed")
         }
 
         // Set upload statuses from response
-        session.statuses = data.results || []
+        session.statuses = Array.isArray(data.results) && data.results.length > 0
+          ? data.results
+          : markError(session.statuses, 0, data?.error || "ZIP upload failed")
         session.totalFiles = session.statuses.length
-        updateSession(sessionId, session.statuses)
+        saveSession(session)
       }
     } catch (error: any) {
       console.error("Error uploading files:", error)
+      // Surface the failure in the status page instead of leaving the ZIP entry
+      // stuck on "uploading" forever.
+      if (uploadMode === "zip" && session.statuses[0]?.status === "uploading") {
+        session.statuses = markError(
+          session.statuses,
+          0,
+          error?.message || "ZIP upload failed"
+        )
+        saveSession(session)
+      }
     } finally {
       setIsSubmitting(false)
     }

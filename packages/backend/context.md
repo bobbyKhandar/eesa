@@ -78,6 +78,7 @@
 | Service | Role |
 |---|---|
 | `geminiAi.js` | Google Gemini AI integration (458 lines) — postAnswers, getBloomsAnatomy, refineSyllabus, sendEmail |
+| `analysisHelpers.ts` | Pure, dependency-free helpers: Bloom normalisation/distribution, question-text normalisation, Prompt payload building and prompt/question pairing (unit tested in `tests/node/backend/`) |
 | `examAnalysisService.ts` | Gemini-powered exam analysis — extracts questions, classifies Bloom's, maps to syllabus |
 | `ocrService.ts` | HTTP client for AI Pipeline OCR service (axios) |
 | `ec2OcrClient.ts` | Axios client for EC2-based AI Pipeline |

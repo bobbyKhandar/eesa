@@ -133,39 +133,55 @@ export default function AIHelperPage() {
   }, [messages])
 
   const handleSendMessage = async () => {
-    if (!inputMessage.trim()) return
+    const query = inputMessage.trim()
+    if (!query || isLoading) return
 
     const userMessage: Message = {
-      id: messages.length + 1,
+      id: Date.now(),
       type: "user",
-      content: inputMessage,
+      content: query,
       timestamp: new Date(),
     }
 
     setMessages((prev) => [...prev, userMessage])
     setInputMessage("")
     setIsLoading(true)
-    const resp= await fetch("/api/llm",{
-      method:"POST",
-      headers:{"content-type":"application/json"},
-      body:JSON.stringify(inputMessage)
-    })
-    // Simulate AI response
-    setTimeout(() => {
-      let aiResponse = ""
 
-     
+    try {
+      const resp = await fetch("/api/llm", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ inputMessage: query }),
+      })
+
+      const data = await resp.json().catch(() => null)
+
+      if (!resp.ok || !data?.success) {
+        throw new Error(data?.error || "AI helper failed")
+      }
 
       const aiMessage: Message = {
-        id: messages.length + 2,
+        id: Date.now() + 1,
         type: "ai",
-        content: aiResponse,
+        content: typeof data.result === "string" && data.result.length > 0
+          ? data.result
+          : "I couldn't generate a response. Please try rephrasing your question.",
         timestamp: new Date(),
       }
 
       setMessages((prev) => [...prev, aiMessage])
+    } catch (error: any) {
+      console.error("AI helper request failed:", error)
+      const aiMessage: Message = {
+        id: Date.now() + 1,
+        type: "ai",
+        content: error?.message || "Something went wrong. Please try again.",
+        timestamp: new Date(),
+      }
+      setMessages((prev) => [...prev, aiMessage])
+    } finally {
       setIsLoading(false)
-    }, 1500)
+    }
   }
 
   const handleKeyPress = (e: React.KeyboardEvent) => {

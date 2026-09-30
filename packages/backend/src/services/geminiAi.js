@@ -383,8 +383,9 @@ export async function aiExamHelper(data) {
     data;
 
   const result = await model.generateContent(prompt);
-  const jsonresponse=JSON.stringify(result)
-  return jsonresponse;
+  // Return only the assistant text. JSON.stringify(result) leaked the whole
+  // SDK response envelope (candidates/metadata) into the chat UI.
+  return result?.response?.text?.() ?? "";
 }
 
 

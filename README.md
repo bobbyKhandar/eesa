@@ -344,7 +344,19 @@ All routes registered on the canonical server at `src/api/server.py`. See `packa
 |----------|-----------|----------|
 | `packages/ai-pipeline/tests/` | Python unittest | 15 test files (server, OCR, pipeline, AWS, integration) |
 | `tests/python/` | Python unittest | 2 test files (experiment, image preprocessing) |
-| `tests/node/` | — | Empty (placeholder for future Node.js tests) |
+| `tests/node/backend/` | Node `node:test` | Pure backend helpers (Bloom distribution, prompt/question mapping) |
+| `tests/node/frontend/` | Node `node:test` | Pure frontend helpers (Bloom sanitising, bulk-upload status tracking) |
+
+### Running tests
+
+| Command | Covers |
+|---------|--------|
+| `npm test` | Node/TypeScript unit tests in `tests/node/` (no build step — uses Node's type stripping) |
+| `python3 -m pytest tests/python/test_exp2.py` | Python unit tests in `tests/python/` |
+| `python -m unittest discover -s tests` (from `packages/ai-pipeline/`) | AI pipeline tests |
+
+> `tests/python/test_imagePreprocess.py` contains only an indented fragment and
+> cannot be collected by pytest yet — it is left as-is until the test is written.
 
 ---
 

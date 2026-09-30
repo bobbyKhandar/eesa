@@ -5,14 +5,25 @@ import DistributionChart from "@/frontend/components/analysis/distribution-chart
 
 type SearchParams = { [key: string]: string | string[] | undefined }
 
-export default function AnalysisReportPage({ searchParams }: { searchParams: SearchParams }) {
+export default async function AnalysisReportPage({
+  searchParams,
+}: {
+  searchParams: Promise<SearchParams>;
+}) {
+  // Next.js 15 delivers searchParams as a Promise - reading it synchronously
+  // always yielded undefined and silently fell back to the placeholder values.
+  const resolvedSearchParams = await searchParams
+
+  const rawSubject = resolvedSearchParams?.subject
+  const rawDate = resolvedSearchParams?.date
+
   const subject =
-    typeof searchParams.subject === "string" && searchParams.subject.length > 0
-      ? searchParams.subject
+    typeof rawSubject === "string" && rawSubject.length > 0
+      ? rawSubject
       : "Physics — Mechanics"
   const dateStr =
-    typeof searchParams.date === "string" && searchParams.date.length > 0
-      ? searchParams.date
+    typeof rawDate === "string" && rawDate.length > 0
+      ? rawDate
       : new Date().toLocaleDateString(undefined, { month: "short", day: "2-digit", year: "numeric" })
 
   const chartData = [

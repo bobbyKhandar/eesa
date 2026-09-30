@@ -5,6 +5,20 @@ import { UniqueQuestionRepository } from "../database/repositories/UniqueQuestio
 import type { AnalysisReport } from "../database/schemas/index";
 import { getSubjectModel } from "../database/mongooseSchemas";
 import { connect } from "../database/connect";
+import {
+  appendCreatedPrompt,
+  buildPromptPayload,
+  mapBloomLevelToPromptFormat,
+  normalizeQuestionText,
+  sanitizeBloomDistribution,
+  type CreatedPrompt,
+  type PromptCreateResult,
+} from "./analysisHelpers";
+
+export {
+  mapBloomLevelToPromptFormat,
+  normalizeQuestionText,
+} from "./analysisHelpers";
 
 const analysisReportRepo = new AnalysisReportRepository();
 const examAnalysisRepo = new ExamAnalysisRepository();
@@ -53,27 +67,67 @@ export async function publishExamAnalysis(
       };
     }
 
-    // Upload questions to Prompt table and collect IDs
-    const questionIds: string[] = [];
-    const reportIdPlaceholder = "temp_" + Date.now(); // Temporary ID until report is created
-
-    for (const question of analysis.questions) {
-      // Create prompt from analyzed question
-      const promptData = {
-        questionText: question.questionText,
-        subject: analysis.subjectName,
-        topic: question.keywords.join(", ") || undefined,
-        generateVia: "ocr" as const,
-        source: analysis.originalFile.fileName,
-        ocrConfidence: question.confidence,
-        createdBy: publishedBy,
-        bloomsLevel: mapBloomLevelToPromptFormat(question.bloomLevel),
+    // Ownership check: a user may only publish analyses they own.
+    // Previously the route trusted a client-supplied user id, which allowed
+    // anyone signed in to publish someone else's analysis.
+    if (analysis.analyzedBy && analysis.analyzedBy !== publishedBy) {
+      return {
+        success: false,
+        error: "Unauthorized - you do not own this analysis",
       };
+    }
 
-      const result = await promptRepo.create(promptData);
-      if (result.success && result.promptId) {
-        questionIds.push(result.promptId);
+    const analysisQuestions = Array.isArray(analysis.questions) ? analysis.questions : [];
+
+    if (analysisQuestions.length === 0) {
+      return {
+        success: false,
+        error: "This analysis has no questions to publish",
+      };
+    }
+
+    // Upload questions to Prompt table.
+    // `publishedQuestions` keeps each prompt ID paired with the question it came from,
+    // so a failed prompt creation cannot shift the IDs of later questions.
+    let publishedQuestions: CreatedPrompt<any>[] = [];
+
+    for (const question of analysisQuestions) {
+      const promptData = buildPromptPayload(question, {
+        subject: analysis.subjectName,
+        source: analysis.originalFile?.fileName,
+      });
+
+      if (!promptData) {
+        console.warn(`Skipping question with empty text in analysis ${examAnalysisId}`);
+        continue;
       }
+
+      const result = await promptRepo.create({
+        ...promptData,
+        createdBy: publishedBy,
+      });
+
+      if (!result.success || !result.promptId) {
+        console.error(
+          `Failed to create prompt for a question in analysis ${examAnalysisId}: ${result.error}`
+        );
+        continue;
+      }
+
+      publishedQuestions = appendCreatedPrompt(
+        publishedQuestions,
+        question,
+        result as PromptCreateResult
+      );
+    }
+
+    const questionIds = publishedQuestions.map((entry) => entry.promptId);
+
+    if (publishedQuestions.length === 0) {
+      return {
+        success: false,
+        error: "No questions could be added to the question bank",
+      };
     }
 
     // Create analysis report
@@ -86,12 +140,13 @@ export async function publishExamAnalysis(
       semester: analysis.semester,
       examType: analysis.examType,
       questionIds,
-      totalQuestions: analysis.totalQuestions,
+      totalQuestions: publishedQuestions.length,
       totalMarks: analysis.totalMarks,
-      bloomDistribution: analysis.bloomDistribution,
+      // Guarded: a partial/failed analysis could otherwise fail schema validation.
+      bloomDistribution: sanitizeBloomDistribution(analysis.bloomDistribution),
       overallAssessment: analysis.overallAssessment,
-      originalFileName: analysis.originalFile.fileName,
-      originalFileUrl: analysis.originalFile.fileUrl,
+      originalFileName: analysis.originalFile?.fileName ?? analysis.subjectName,
+      originalFileUrl: analysis.originalFile?.fileUrl,
       publishedBy,
       publishedAt: new Date(),
       tags: analysis.tags || [],
@@ -101,22 +156,18 @@ export async function publishExamAnalysis(
 
     const report = await analysisReportRepo.create(reportData);
 
-    // Now add questions to unique questions table
-    for (let i = 0; i < analysis.questions.length; i++) {
-      const question = analysis.questions[i];
-      const promptId = questionIds[i];
-      
-      if (!promptId) continue;
-
+    // Now add questions to unique questions table, reusing the prompt/question pairing
+    for (const { question, promptId } of publishedQuestions) {
+      const questionText = String(question.questionText);
       // Normalize question text for deduplication
-      const normalizedText = normalizeQuestionText(question.questionText);
+      const normalizedText = normalizeQuestionText(questionText);
 
       await uniqueQuestionRepo.findOrCreate({
-        questionText: question.questionText,
+        questionText,
         normalizedText,
         subject: analysis.subjectName,
         subjectCode: analysis.subjectCode,
-        topics: question.keywords || [],
+        topics: Array.isArray(question.keywords) ? question.keywords : [],
         bloomsLevel: mapBloomLevelToPromptFormat(question.bloomLevel),
         promptIds: [promptId],
         tags: analysis.tags || [],
@@ -239,35 +290,8 @@ async function addReportToSubject(
   }
 }
 
-/**
- * Normalize question text for deduplication
- * Removes extra whitespace, punctuation, and converts to lowercase
- */
-function normalizeQuestionText(text: string): string {
-  return text
-    .toLowerCase()
-    .replace(/[^\w\s]/g, "") // Remove punctuation
-    .replace(/\s+/g, " ") // Normalize whitespace
-    .trim();
-}
-
-/**
- * Map Bloom level from analysis format to prompt format
- */
-function mapBloomLevelToPromptFormat(
-  bloomLevel: "Recall" | "Understand" | "Apply" | "Analyze" | "Evaluate" | "Create"
-): "remember" | "understand" | "apply" | "analyze" | "evaluate" | "create" {
-  const mapping: Record<string, any> = {
-    Recall: "remember",
-    Understand: "understand",
-    Apply: "apply",
-    Analyze: "analyze",
-    Evaluate: "evaluate",
-    Create: "create",
-  };
-
-  return mapping[bloomLevel] || "understand";
-}
+// normalizeQuestionText() and mapBloomLevelToPromptFormat() now live in
+// ./analysisHelpers and are re-exported above.
 
 /**
  * Get all published reports for a subject

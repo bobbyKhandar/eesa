@@ -1,6 +1,27 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import dotenv from "dotenv";
+import {
+  normalizeBloomLevel,
+  sanitizeBloomDistribution,
+} from "./analysisHelpers";
+import type { BloomDistribution } from "./analysisHelpers";
 dotenv.config();
+
+export {
+  calculateBloomDistribution,
+  emptyBloomDistribution,
+  normalizeBloomLevel,
+  mapBloomLevelToPromptFormat,
+  roundBloomDistribution,
+  sanitizeBloomDistribution,
+  BLOOM_LEVELS,
+} from "./analysisHelpers";
+export type { BloomDistribution, BloomLevel } from "./analysisHelpers";
+
+/** Falls back to "Understand" for unrecognisable AI labels in prompt text. */
+function safeLabel(level?: string | null): string {
+  return normalizeBloomLevel(level) ?? "Understand";
+}
 
 const genAI = new GoogleGenerativeAI(process.env.gemini_api_key || "");
 const model = genAI.getGenerativeModel({
@@ -284,34 +305,15 @@ CRITICAL:
   }
 }
 
-/**
- * Calculate Bloom's distribution from classified questions
- */
-export function calculateBloomDistribution(questions: BloomClassificationResult[]) {
-  const totalMarks = questions.reduce((sum, q) => sum + q.marks, 0);
-  const distribution = {
-    Recall: 0,
-    Understand: 0,
-    Apply: 0,
-    Analyze: 0,
-    Evaluate: 0,
-    Create: 0,
-  };
-
-  questions.forEach(q => {
-    const percentage = (q.marks / totalMarks) * 100;
-    distribution[q.bloomLevel] += percentage;
-  });
-
-  return distribution;
-}
+// Bloom distribution calculation now lives in ./analysisHelpers (guarded against
+// divide-by-zero and unknown Bloom levels) and is re-exported above.
 
 /**
  * Generate overall insights and recommendations
  */
 export async function generateAnalysisInsights(
   classifiedQuestions: BloomClassificationResult[],
-  bloomDistribution: any,
+  bloomDistribution: Partial<BloomDistribution> | null | undefined,
   subjectName: string
 ): Promise<{
   overallAssessment: string;
@@ -319,6 +321,7 @@ export async function generateAnalysisInsights(
   strengths: string[];
   improvements: string[];
 }> {
+  const safeDistribution = sanitizeBloomDistribution(bloomDistribution);
   try {
     const prompt = `You are an educational assessment expert. Analyze this exam and provide insights.
 
@@ -326,15 +329,15 @@ Subject: ${subjectName}
 Total Questions: ${classifiedQuestions.length}
 
 Bloom's Distribution:
-- Recall: ${bloomDistribution.Recall.toFixed(1)}%
-- Understand: ${bloomDistribution.Understand.toFixed(1)}%
-- Apply: ${bloomDistribution.Apply.toFixed(1)}%
-- Analyze: ${bloomDistribution.Analyze.toFixed(1)}%
-- Evaluate: ${bloomDistribution.Evaluate.toFixed(1)}%
-- Create: ${bloomDistribution.Create.toFixed(1)}%
+- Recall: ${safeDistribution.Recall.toFixed(1)}%
+- Understand: ${safeDistribution.Understand.toFixed(1)}%
+- Apply: ${safeDistribution.Apply.toFixed(1)}%
+- Analyze: ${safeDistribution.Analyze.toFixed(1)}%
+- Evaluate: ${safeDistribution.Evaluate.toFixed(1)}%
+- Create: ${safeDistribution.Create.toFixed(1)}%
 
 Questions:
-${classifiedQuestions.map((q, idx) => `${idx + 1}. [${q.bloomLevel}] ${q.questionText.substring(0, 100)}...`).join('\n')}
+${classifiedQuestions.map((q, idx) => `${idx + 1}. [${safeLabel(q.bloomLevel)}] ${String(q.questionText ?? "").substring(0, 100)}...`).join('\n')}
 
 Provide:
 1. Overall assessment (2-3 sentences summarizing the exam quality)

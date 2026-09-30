@@ -1,12 +1,13 @@
 "use client"
 
-import { use, useEffect, useState } from "react"
+import { use, useEffect, useRef, useState } from "react"
 import { useRouter } from "next/navigation"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/frontend/components/ui/card"
 import { Button } from "@/frontend/components/ui/button"
 import { Badge } from "@/frontend/components/ui/badge"
 import { Loader2, AlertCircle } from "lucide-react"
 import DistributionChart from "@/frontend/components/analysis/distribution-chart"
+import { toBloomRows } from "@/frontend/lib/bloomDistribution"
 
 export default function AnalysisReportPage({ params }: { params: Promise<{ id: string }> }) {
   const router = useRouter()
@@ -15,36 +16,54 @@ export default function AnalysisReportPage({ params }: { params: Promise<{ id: s
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
+  // Track the latest status in a ref so the polling interval never captures a
+  // stale `analysis` object, and stop polling once processing settles.
+  const statusRef = useRef<string | undefined>(undefined)
+
   useEffect(() => {
-    fetchAnalysis()
-    // Poll for updates if status is pending or processing
+    statusRef.current = analysis?.status
+  }, [analysis?.status])
+
+  useEffect(() => {
+    let cancelled = false
+
+    const poll = async () => {
+      try {
+        const response = await fetch(`/api/exam-analysis/${id}`)
+        const data = await response.json().catch(() => null)
+
+        if (cancelled) return
+
+        if (!response.ok || !data?.success) {
+          setError(data?.error || "Failed to load analysis")
+          setLoading(false)
+          return
+        }
+
+        setError(null)
+        setAnalysis(data.analysis)
+        setLoading(false)
+      } catch (err: any) {
+        if (cancelled) return
+        setError(err.message || "Failed to load analysis")
+        setLoading(false)
+      }
+    }
+
+    poll()
+
     const interval = setInterval(() => {
-      if (analysis?.status === "pending" || analysis?.status === "processing") {
-        fetchAnalysis()
+      const status = statusRef.current
+      if (status === undefined || status === "pending" || status === "processing") {
+        poll()
       }
     }, 3000) // Poll every 3 seconds
 
-    return () => clearInterval(interval)
-  }, [id, analysis?.status])
-
-  async function fetchAnalysis() {
-    try {
-      const response = await fetch(`/api/exam-analysis/${id}`)
-      const data = await response.json()
-
-      if (!data.success) {
-        setError(data.error || "Failed to load analysis")
-        setLoading(false)
-        return
-      }
-
-      setAnalysis(data.analysis)
-      setLoading(false)
-    } catch (err: any) {
-      setError(err.message || "Failed to load analysis")
-      setLoading(false)
+    return () => {
+      cancelled = true
+      clearInterval(interval)
     }
-  }
+  }, [id])
 
   async function handleDelete() {
     if (!confirm("Are you sure you want to delete this analysis?")) {
@@ -66,9 +85,32 @@ export default function AnalysisReportPage({ params }: { params: Promise<{ id: s
     }
   }
 
+  const [publishState, setPublishState] = useState<
+    { status: "idle" } | { status: "loading" } | { status: "done"; reportId?: string } | { status: "error"; message: string }
+  >({ status: "idle" })
+
   async function handlePublish() {
-    // TODO: Implement publish functionality
-    alert("Publish functionality coming soon!")
+    if (publishState.status === "loading") return
+
+    setPublishState({ status: "loading" })
+
+    try {
+      const response = await fetch("/api/exam-analysis/publish", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ analysisIds: [id] }),
+      })
+
+      const data = await response.json().catch(() => null)
+
+      if (!response.ok || !data?.reportId) {
+        throw new Error(data?.error || "Failed to publish analysis")
+      }
+
+      setPublishState({ status: "done", reportId: data.reportId })
+    } catch (err: any) {
+      setPublishState({ status: "error", message: err.message || "Failed to publish analysis" })
+    }
   }
 
   if (loading) {
@@ -180,15 +222,22 @@ export default function AnalysisReportPage({ params }: { params: Promise<{ id: s
     )
   }
 
-  // Transform data for chart
-  const chartData = [
-    { name: "Recall", value: analysis.bloomDistribution.Recall, color: "#0ea5e9" },
-    { name: "Understand", value: analysis.bloomDistribution.Understand, color: "#22c55e" },
-    { name: "Apply", value: analysis.bloomDistribution.Apply, color: "#f59e0b" },
-    { name: "Analyze", value: analysis.bloomDistribution.Analyze, color: "#a855f7" },
-    { name: "Evaluate", value: analysis.bloomDistribution.Evaluate, color: "#ef4444" },
-    { name: "Create", value: analysis.bloomDistribution.Create, color: "#6b7280" },
-  ]
+  // Transform data for chart. `analysis.bloomDistribution` can be missing or
+  // partially filled for legacy/failed analyses, so coerce it before rendering.
+  const chartColors: Record<string, string> = {
+    Recall: "#0ea5e9",
+    Understand: "#22c55e",
+    Apply: "#f59e0b",
+    Analyze: "#a855f7",
+    Evaluate: "#ef4444",
+    Create: "#6b7280",
+  }
+
+  const chartData = toBloomRows(analysis.bloomDistribution).map(({ level, percentage }) => ({
+    name: level,
+    value: percentage,
+    color: chartColors[level],
+  }))
 
   const getBloomLevelColor = (level: string) => {
     switch (level) {
@@ -222,8 +271,32 @@ export default function AnalysisReportPage({ params }: { params: Promise<{ id: s
         </div>
         <div className="flex items-center gap-2">
           <Button variant="destructive" onClick={handleDelete}>Delete</Button>
-          <Button onClick={handlePublish}>Publish</Button>
+          <Button onClick={handlePublish} disabled={publishState.status === "loading" || analysis.isPublished}>
+            {publishState.status === "loading"
+              ? "Publishing..."
+              : analysis.isPublished
+              ? "Published"
+              : "Publish"}
+          </Button>
         </div>
+
+        {publishState.status === "error" && (
+          <p className="mt-2 text-sm text-destructive">{publishState.message}</p>
+        )}
+        {publishState.status === "done" && (
+          <div className="mt-2 flex items-center gap-2 text-sm text-muted-foreground">
+            Published successfully.
+            {publishState.reportId && (
+              <button
+                type="button"
+                className="underline underline-offset-4"
+                onClick={() => router.push(`/reports/${publishState.reportId}`)}
+              >
+                View report
+              </button>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Top grid: chart + insight cards */}
