@@ -17,11 +17,16 @@ import {
   Upload,
 } from "lucide-react"
 import { cn } from "@/frontend/lib/utils"
+import { filterNavigation, type NavigationItem } from "@/frontend/lib/adminAccess"
+import type { LucideIcon } from "lucide-react"
 import { Button } from "@/frontend/components/ui/button"
 import { ScrollArea } from "@/frontend/components/ui/scroll-area"
 import { Separator } from "@/frontend/components/ui/separator"
 
-const navigationItems = [
+type SidebarItem = NavigationItem & { icon: LucideIcon }
+type SidebarSection = { title: string; items: SidebarItem[] }
+
+const navigationItems: SidebarSection[] = [
   {
     title: "Main",
     items: [
@@ -43,23 +48,23 @@ const navigationItems = [
   {
     title: "Admin",
     items: [
-      { name: "Admin Panel", href: "/admin", icon: Shield },
-      { name: "Upload Papers", href: "/admin/upload/question-papers", icon: Upload },
-      { name: "User Management", href: "/admin/users", icon: Users },
-      { name: "System Analytics", href: "/admin/analytics", icon: BarChart3 },
-      { name: "Database", href: "/admin/database", icon: Database },
+      { name: "Admin Panel", href: "/admin", icon: Shield, adminOnly: true },
+      { name: "Upload Papers", href: "/admin/upload/question-papers", icon: Upload, adminOnly: true },
+      { name: "User Management", href: "/admin/users", icon: Users, adminOnly: true },
+      { name: "System Analytics", href: "/admin/analytics", icon: BarChart3, adminOnly: true },
+      { name: "Database", href: "/admin/database", icon: Database, adminOnly: true },
     ],
   },
 ]
 
 // const recentResults = [
 //   { id: 1, exam: "Mathematics Quiz", score: 85, date: "2024-01-15" },
-//   { id: 2, exam: "Physics Test", score: 92, date: "2024-01-14" },
-//   { id: 3, exam: "Chemistry Lab", score: 78, date: "2024-01-13" },
+//   { id: 2, exam: "Physics Test", score: 92, date: "2024-01-13" },
 // ]
 
-export function PermanentSidebar() {
+export function PermanentSidebar({ isAdmin = false }: { isAdmin?: boolean } = {}) {
   const pathname = usePathname()
+  const sections = filterNavigation(navigationItems, isAdmin)
 
   return (
     <div className="fixed left-0 top-16 h-[calc(100vh-4rem)] w-64 bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 lg:block">
@@ -67,7 +72,7 @@ export function PermanentSidebar() {
         <div className="p-4 space-y-6">
           {/* Navigation */}
           <div className="space-y-6">
-            {navigationItems.map((section) => (
+            {sections.map((section) => (
               <div key={section.title}>
                 <h3 className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-3">
                   {section.title}

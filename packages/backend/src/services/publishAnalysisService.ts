@@ -289,6 +289,18 @@ export async function getAllSubjectsWithReports() {
 }
 
 /**
+ * Same as `getAllSubjectsWithReports()` but one row per subject *per semester*.
+ *
+ * The resource library drill-down is branch -> semester -> subject, and
+ * `getAllSubjectsWithReports()` collapses the semester away, so callers that
+ * need it had no way to tell which semesters a subject is actually offered in.
+ */
+export async function getAllSubjectsWithReportsBySemester() {
+  await connect();
+  return await analysisReportRepo.getSubjectsBySemesterSummary();
+}
+
+/**
  * Get report details with questions
  */
 export async function getReportWithQuestions(reportId: string) {

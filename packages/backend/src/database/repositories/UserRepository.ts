@@ -138,13 +138,19 @@ export class UserRepository {
 
   /**
    * Get user counts by status and role for admin dashboard
+   *
+   * Records written before `status` was added to `userZodSchema` have no such
+   * field, so matching `{ status: 'active' }` alone skipped every one of them
+   * and the dashboard showed 0 active / 0 inactive / 0 suspended. They are
+   * counted as active, the status they were created with
+   * (see IMPLICIT_USER_STATUS in userDocumentSpec.ts).
    */
   async getCounts(): Promise<{ total: number; active: number; inactive: number; suspended: number; admins: number }> {
     try {
       await connect();
       const [total, active, inactive, suspended, admins] = await Promise.all([
         this.model.countDocuments({}),
-        this.model.countDocuments({ status: 'active' }),
+        this.model.countDocuments({ $or: [{ status: 'active' }, { status: { $exists: false } }] }),
         this.model.countDocuments({ status: 'inactive' }),
         this.model.countDocuments({ status: 'suspended' }),
         this.model.countDocuments({ role: 'admin' }),

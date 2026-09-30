@@ -11,8 +11,11 @@ const inter = Inter({ subsets: ["latin"] })
 
 export default function ClientLayout({
   children,
+  isAdmin = false,
 }: {
   children: React.ReactNode
+  /** Resolved server-side in app/layout.tsx; hides the admin-only nav section. */
+  isAdmin?: boolean
 }) {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
 
@@ -33,7 +36,7 @@ export default function ClientLayout({
 
           {/* Desktop Sidebar */}
           <div className="hidden lg:block">
-            <PermanentSidebar />
+            <PermanentSidebar isAdmin={isAdmin} />
           </div>
 
           {/* Mobile Sidebar */}
