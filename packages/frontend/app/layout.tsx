@@ -8,6 +8,7 @@ import Link from "next/link"
 import { Button } from "@/frontend/components/ui/button"
 import { Brain } from "lucide-react"
 import ClientLayout from "./clientLayout"
+import { resolveIsAdmin } from "@/frontend/lib/resolveAdmin"
 const inter = Inter({ subsets: ["latin"] })
 
 export const metadata: Metadata = {
@@ -16,13 +17,16 @@ export const metadata: Metadata = {
     generator: 'v0.dev'
 }
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: {
   children: React.ReactNode
 }) {
+  // Sidebar only. The /admin segment is gated by app/admin/layout.tsx.
+  const isAdmin = await resolveIsAdmin()
+
   return<>
-  <ClerkProvider><ClientLayout>{children}</ClientLayout></ClerkProvider>
+  <ClerkProvider><ClientLayout isAdmin={isAdmin}>{children}</ClientLayout></ClerkProvider>
   </>
     
 }

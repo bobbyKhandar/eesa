@@ -165,6 +165,62 @@ export class AnalysisReportRepository {
   }
 
   /**
+   * Get subjects grouped by branch *and* semester.
+   *
+   * `getSubjectsSummary()` groups by (subjectName, subjectCode, branch) only, so
+   * a subject published for several semesters comes back as a single row with no
+   * semester on it. `/api/resources` then had to invent one, and bucketed every
+   * subject in the database under "Semester 1". This variant keeps the semester
+   * in the grouping key so the resource library can offer the real one.
+   *
+   * Kept separate from `getSubjectsSummary()` on purpose: `/api/subjects`
+   * reports `subjects.length` as its total and must keep counting one row per
+   * subject.
+   */
+  async getSubjectsBySemesterSummary(): Promise<Array<{
+    subjectName: string;
+    subjectCode?: string;
+    branch?: string;
+    semester?: string;
+    reportCount: number;
+    years: string[];
+    latestYear: string;
+  }>> {
+    await connect();
+    const results = await this.model.aggregate([
+      { $match: { isPublic: true } },
+      {
+        $group: {
+          _id: {
+            subjectName: "$subjectName",
+            subjectCode: "$subjectCode",
+            branch: "$branch",
+            semester: "$semester",
+          },
+          reportCount: { $sum: 1 },
+          years: { $addToSet: "$year" },
+          latestYear: { $max: "$year" },
+        },
+      },
+      {
+        $project: {
+          _id: 0,
+          subjectName: "$_id.subjectName",
+          subjectCode: "$_id.subjectCode",
+          branch: "$_id.branch",
+          semester: "$_id.semester",
+          reportCount: 1,
+          years: 1,
+          latestYear: 1,
+        },
+      },
+      { $sort: { subjectName: 1, semester: 1 } },
+    ]);
+
+    return results;
+  }
+
+  /**
    * Increment view count
    */
   async incrementViewCount(id: string): Promise<void> {

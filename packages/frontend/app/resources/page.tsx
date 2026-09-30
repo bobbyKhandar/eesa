@@ -8,13 +8,16 @@ import {
   getDifficultyColor,
 } from "@/frontend/components/features/resources"
 import type { PYQ, Note } from "@/frontend/components/features/resources"
+import {
+  EMPTY_SELECTION,
+  reconcileSelection,
+  selectBranch,
+  selectSemester,
+  type ResourceSelection,
+  type SubjectCatalog,
+} from "@/frontend/lib/resourceCatalog"
 
-interface ResourcesData {
-  subjects: { id: string; name: string; code?: string; branch: string; semester: string; reportCount: number; questionCount: number }[]
-  branches: string[]
-  semesters: string[]
-  grouped: Record<string, Record<string, string[]>>
-}
+interface ResourcesData extends SubjectCatalog {}
 
 interface PYQsData {
   pyqs: PYQ[]
@@ -29,9 +32,8 @@ interface PYQsData {
 }
 
 export default function ResourcesPage() {
-  const [selectedBranch, setSelectedBranch] = useState("")
-  const [selectedSemester, setSelectedSemester] = useState("")
-  const [selectedSubject, setSelectedSubject] = useState("")
+  const [selection, setSelection] = useState<ResourceSelection>(EMPTY_SELECTION)
+  const { branch: selectedBranch, semester: selectedSemester, subject: selectedSubject } = selection
   const [activeTab, setActiveTab] = useState("pyqs")
   const [searchQuery, setSearchQuery] = useState("")
   const [filterType, setFilterType] = useState("all")
@@ -57,8 +59,7 @@ export default function ResourcesPage() {
           throw new Error(json.error || "Failed to fetch resources")
         }
         
-        setResourcesData(json.data)
-      } catch (err: any) {
+        setResourcesData(json.data)      } catch (err: any) {
         setError(err.message || "Failed to load resources")
       } finally {
         setLoading(false)
@@ -67,6 +68,14 @@ export default function ResourcesPage() {
     
     fetchResourcesData()
   }, [])
+
+  // Drop any part of the selection the freshly loaded catalog does not offer.
+  useEffect(() => {
+    setSelection((current) => {
+      const next = reconcileSelection(current, resourcesData)
+      return next === current ? current : next
+    })
+  }, [resourcesData])
 
   // Fetch PYQs when subject is selected
   useEffect(() => {
@@ -82,18 +91,15 @@ export default function ResourcesPage() {
         const response = await fetch(`/api/resources?action=pyqs&subject=${encodeURIComponent(selectedSubject)}`)
         const json = await response.json()
         
-        console.log("PYQ API Response:", json)
-        
         if (!response.ok || !json.success) {
           throw new Error(json.error || "Failed to fetch questions")
         }
         
-        console.log("PYQs data:", json.data)
-        console.log("Number of PYQs:", json.data?.pyqs?.length || 0)
-        
         setPyqsData(json.data)
       } catch (err: any) {
         console.error("Error fetching PYQs:", err)
+        setPyqsData(null)
+        setError(err.message || "Failed to load questions")
       } finally {
         setPyqsLoading(false)
       }
@@ -102,16 +108,13 @@ export default function ResourcesPage() {
     fetchPYQs()
   }, [selectedSubject])
 
-  // Get branches and semesters from loaded data or use defaults
-  const branches = resourcesData?.branches?.length 
-    ? resourcesData.branches 
-    : ["Computer Science", "Electrical Engineering", "Mechanical Engineering", "Civil Engineering"]
+  // Only offer what the API returned. These used to fall back to four hardcoded
+  // branches and eight hardcoded semesters when the catalogue was empty, so a
+  // user could "select" a branch that had no subjects at all.
+  const branches = resourcesData?.branches ?? []
+  const semesters = resourcesData?.semesters ?? []
   
-  const semesters = resourcesData?.semesters?.length 
-    ? resourcesData.semesters 
-    : ["Semester 1", "Semester 2", "Semester 3", "Semester 4", "Semester 5", "Semester 6", "Semester 7", "Semester 8"]
-  
-  // Get subjects for selected branch/semester from API data or use empty array
+  // Get subjects for selected branch/semester from API data
   const getSubjectsForSelection = (): string[] => {
     if (resourcesData?.grouped && selectedBranch && selectedSemester) {
       return resourcesData.grouped[selectedBranch]?.[selectedSemester] || []
@@ -125,10 +128,6 @@ export default function ResourcesPage() {
     pyq.questionText?.toLowerCase().includes(searchQuery.toLowerCase()) ||
     pyq.topic?.toLowerCase().includes(searchQuery.toLowerCase())
   ) || []
-
-  console.log("Filtered PYQs count:", filteredPyqs.length)
-  console.log("Search query:", searchQuery)
-  console.log("PYQs data object:", pyqsData)
 
   // Mock data for faculty notes (keep until we have an API for notes)
   const facultyNotes = [
@@ -239,10 +238,10 @@ export default function ResourcesPage() {
       <StatsCards
         loading={loading}
         pyqsLoading={pyqsLoading}
-        totalSubjects={resourcesData?.subjects.length || 0}
-        totalQuestions={pyqsData?.stats?.totalQuestions || 0}
-        uniqueQuestions={pyqsData?.stats?.uniqueQuestions || pyqsData?.pyqs.length || 0}
-        subjectCount={pyqsData?.stats?.subjectCount || resourcesData?.subjects.length || 0}
+        totalSubjects={resourcesData?.uniqueSubjectCount ?? 0}
+        totalQuestions={pyqsData?.stats?.totalQuestions ?? 0}
+        uniqueQuestions={pyqsData?.stats?.uniqueQuestions ?? 0}
+        subjectCount={pyqsData?.stats?.subjectCount ?? 0}
       />
 
       <SubjectFilter
@@ -252,9 +251,11 @@ export default function ResourcesPage() {
         selectedSemester={selectedSemester}
         selectedSubject={selectedSubject}
         subjectsForSelection={getSubjectsForSelection()}
-        onBranchChange={setSelectedBranch}
-        onSemesterChange={setSelectedSemester}
-        onSubjectChange={setSelectedSubject}
+        onBranchChange={(value) => setSelection((current) => selectBranch(current, value))}
+        onSemesterChange={(value) => setSelection((current) => selectSemester(current, value))}
+        onSubjectChange={(value) =>
+          setSelection((current) => ({ ...current, subject: value }))
+        }
       />
 
       {selectedBranch && selectedSemester && selectedSubject && (
@@ -273,7 +274,7 @@ export default function ResourcesPage() {
             onFilterChange={setFilterType}
           />
 
-          <Tabs defaultValue="pyqs" onValueChange={setActiveTab}>
+          <Tabs value={activeTab} onValueChange={setActiveTab}>
             <TabsList className="grid grid-cols-3 w-full">
               <TabsTrigger value="pyqs">Previous Year Papers</TabsTrigger>
               <TabsTrigger value="faculty">Faculty Notes</TabsTrigger>
