@@ -2,6 +2,7 @@ import { Model } from "mongoose";
 import { getAnalysisReportModel } from "../newFeatureModels";
 import type { AnalysisReport, AnalysisReportWithId } from "../schemas/index";
 import { connect } from "../connect";
+import { normalizeSubjectSummaries } from "./subjectSummary";
 
 /**
  * Repository for Analysis Reports - Published Exam Analysis Question Banks
@@ -123,11 +124,18 @@ export class AnalysisReportRepository {
 
   /**
    * Get unique subjects with their report counts
+   *
+   * Reports are grouped by subject name only. Grouping by name + code + branch
+   * returned one row per (name, code, branch) combination, so the same subject
+   * appeared several times in the catalog with duplicate React keys and the
+   * "Total Subjects" count was inflated. `subjectCode` / `branch` now come from
+   * the most recent report, and `branches` lists every branch for the subject.
    */
   async getSubjectsSummary(): Promise<Array<{
     subjectName: string;
     subjectCode?: string;
     branch?: string;
+    branches: string[];
     reportCount: number;
     years: string[];
     latestYear: string;
@@ -135,33 +143,32 @@ export class AnalysisReportRepository {
     await connect();
     const results = await this.model.aggregate([
       { $match: { isPublic: true } },
+      // Newest report first so $first below picks the current code/branch.
+      { $sort: { subjectName: 1, year: -1, publishedAt: -1 } },
       {
         $group: {
-          _id: {
-            subjectName: "$subjectName",
-            subjectCode: "$subjectCode",
-            branch: "$branch",
-          },
+          _id: "$subjectName",
+          subjectCode: { $first: "$subjectCode" },
+          branch: { $first: "$branch" },
+          branches: { $addToSet: "$branch" },
           reportCount: { $sum: 1 },
           years: { $addToSet: "$year" },
-          latestYear: { $max: "$year" },
         },
       },
       {
         $project: {
           _id: 0,
-          subjectName: "$_id.subjectName",
-          subjectCode: "$_id.subjectCode",
-          branch: "$_id.branch",
+          subjectName: "$_id",
+          subjectCode: 1,
+          branch: 1,
+          branches: 1,
           reportCount: 1,
           years: 1,
-          latestYear: 1,
         },
       },
-      { $sort: { subjectName: 1 } },
     ]);
-    
-    return results;
+
+    return normalizeSubjectSummaries(results as any);
   }
 
   /**

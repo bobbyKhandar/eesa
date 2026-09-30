@@ -2,6 +2,10 @@
   "name": "eesa",
   "private": true,
   "workspaces": ["packages/backend", "packages/frontend"],
+  "scripts": {
+    "test": "node --test --experimental-strip-types tests/node/backend/*.test.ts tests/node/frontend/*.test.ts",
+    "test:python": "python3 -m pytest tests/python"
+  },
   "devDependencies": {
     "@eslint/js": "^9.30.1",
     "@types/node": "^24.0.14",

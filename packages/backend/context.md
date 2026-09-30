@@ -50,6 +50,11 @@
 - **Lean queries:** Use `.lean()` for read operations.
 - **insertMany:** Some methods use `insertMany` instead of `.save()` to bypass Mongoose pre-save hooks (e.g., `ExamRepository.createWithPrompts`, `ExamSubmissionRepository.create`).
 - **Validation:** Some repositories Zod-validate input before DB operations (PromptRepository, ExamQuestionRepository, UserRepository, JobMetadataRepository, UploadSessionRepository). Follow the caller's pattern.
+- **Query input must be sanitised before it reaches Mongo.** Never interpolate raw user input into `$regex` (escape metacharacters so it matches literally) or into numeric comparisons (`NaN` in a `$gte` throws a BSONError), and allowlist any field used in `.sort()`. `UniqueQuestionRepository.searchByText()`, `findBySubject()` and `getMostFrequent()` demonstrate the pattern.
+
+### Pure Repository Helpers
+- Aggregation output is post-processed by a dependency-free helper next to the repository (e.g. `repositories/subjectSummary.ts`), so the shape can be unit tested under `tests/node/backend/` with `node --test` and no database.
+- Helpers must not import Mongoose or connect; keep them pure functions over plain data.
 
 ### Repository Index (`repositories/index.ts`)
 - Exports all 12 classes by name.
