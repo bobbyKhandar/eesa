@@ -21,6 +21,9 @@ MongoDB is accessed via `packages/backend/src/database/connect.ts` using ready-s
 ### AI/Python Boundary
 The Next.js frontend NEVER talks to AWS Textract or Bedrock directly. It must send POST requests to the Flask AI Pipeline (`http://127.0.0.1:5000`). The AI pipeline owns all AWS integration.
 
+### Scores & Verdicts Come From the Exam
+Every pass/fail verdict, percentage, grade and duration in the submit → grade → results flow is derived by `packages/frontend/lib/examResults.ts`. Routes and pages import from it; they must not re-derive a percentage, hardcode a pass threshold, or keep a private copy of the grade table. The threshold is `exam.passingPercentage` (an exam field), the time window is `exam.duration`, and `exam.subject` is the subject — `examDegree` is the degree programme. See the "Results & Grading" section of `README.md`.
+
 ### Package-Specific Rules
 See the `context.md` file inside each package for domain-specific rules:
 - `packages/frontend/context.md` — React/TypeScript component and data-fetching patterns

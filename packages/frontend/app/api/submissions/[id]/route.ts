@@ -3,6 +3,7 @@ import { examRepo, submissionRepo } from "@/backend/dist/database/repositories/i
 import { auth } from "@clerk/nextjs/server";
 import { presentSubmissionQuestion } from "@/backend/src/services/mcqAlignment";
 import { requireSubmissionAccess } from "@/frontend/lib/requestAuth";
+import { resolvePassingPercentage, scorePercentage } from "@/frontend/lib/examResults";
 
 export async function GET(
   req: Request,
@@ -62,7 +63,8 @@ export async function GET(
       autoSubmitted: submission.autoSubmitted || false,
       maxMarks: submission.maxMarks,
       marksAchieved: submission.marksAchieved,
-      scorePercentage: ((submission.marksAchieved / submission.maxMarks) * 100).toFixed(2),
+      scorePercentage: scorePercentage(submission.marksAchieved, submission.maxMarks).toFixed(2),
+      passingPercentage: resolvePassingPercentage(examWithDetails),
       evaluatorObservations: submission.evaluatorObservations,
       questions: examWithDetails.questionDetails?.map((q: any) => {
         const response = submission.responses?.find((r: any) => r.questionId === q._id?.toString());

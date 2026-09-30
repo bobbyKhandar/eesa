@@ -1,56 +1,71 @@
-// app/api/exams/create/route.ts
+// app/api/users/submissions/[id]/examDetails/route.ts
 import { NextResponse } from "next/server";
-import { examRepo,submissionRepo} from "@/backend/dist/database/repositories/index";
+import { examRepo, submissionRepo } from "@/backend/dist/database/repositories/index";
+import { scorePercentage } from "@/frontend/lib/examResults";
 import { requireSubmissionAccess } from "@/frontend/lib/requestAuth";
 
-export async function GET(req: Request, context: { params: Promise<{ id: string }> }
+export async function GET(
+  req: Request,
+  context: { params: Promise<{ id: string }> }
 ) {
-    try {
-      const submissionId = (await context.params).id;
-      console.log("Received get full submission and exams details request:", submissionId);
+  try {
+    const submissionId = (await context.params).id;
 
-      if (!submissionId) {
-        return NextResponse.json(
-          { success: false, error: "Missing submission ID" },
-          { status: 400 }
-        );
-      }
-    const submissionDetails=await submissionRepo.getById(submissionId);
-    if (!submissionDetails) {   
+    if (!submissionId) {
+      return NextResponse.json(
+        { success: false, error: "Missing submission ID" },
+        { status: 400 }
+      );
+    }
+
+    const submissionDetails = await submissionRepo.getById(submissionId);
+    if (!submissionDetails) {
       return NextResponse.json(
         { success: false, error: "Submission not found" },
         { status: 404 }
       );
     }
+
     const denied = await requireSubmissionAccess(String(submissionDetails.userId));
     if (denied) return denied;
-    const examId = submissionDetails.examId;    
-    const results = await examRepo.getById(examId);
-    console.log(results);
-    if (!results) {
-        return NextResponse.json(
-            { success: false, error: "Exam not found" },
-            { status: 404 }
-        );
+
+    const exam = await examRepo.getById(submissionDetails.examId);
+    if (!exam) {
+      return NextResponse.json(
+        { success: false, error: "Exam not found" },
+        { status: 404 }
+      );
     }
-    const data={
-        examId: results.examId,
-        submissionId: submissionDetails._id,
-            title: results.examTitle,
-            description: results.examDescription,
-            totalMarks: results.examMaxMarks,
-            marksAchieved: submissionDetails.marksAchieved,
-            submittedAt: submissionDetails.submittedAt,
-        }
-    
+
+    // Marks come from the submission, which records the total the grader
+    // actually used. Reading `examMaxMarks` off the exam instead reported a
+    // percentage against a total that may since have changed, and produced
+    // `null` on the dashboard whenever the exam had no stored `examMaxMarks`.
+    const totalMarks = submissionDetails.maxMarks ?? exam.examMaxMarks;
+
     return NextResponse.json(
-      { success: true, examSet: data },
+      {
+        success: true,
+        examSet: {
+          // Exam documents carry `_id`; there is no `examId` field, so this used
+          // to serialise as `undefined` and broke every link built from it.
+          examId: String(exam._id),
+          submissionId: String(submissionDetails._id),
+          title: exam.examTitle,
+          description: exam.examDescription,
+          subject: exam.subject ?? "General",
+          totalMarks,
+          marksAchieved: submissionDetails.marksAchieved ?? 0,
+          percentage: scorePercentage(submissionDetails.marksAchieved, totalMarks).toFixed(2),
+          submittedAt: submissionDetails.submittedAt,
+        },
+      },
       { status: 200 }
     );
   } catch (err) {
-    console.error("Error creating exam:", err);
+    console.error("Error fetching exam details for submission:", err);
     return NextResponse.json(
-      { success: false, error: "Failed to create exam" },
+      { success: false, error: "Failed to fetch exam details" },
       { status: 500 }
     );
   }
