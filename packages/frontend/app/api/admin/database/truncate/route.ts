@@ -1,29 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
 import mongoose from 'mongoose';
 import { connect } from '@/backend/src/database/connect';
-import { 
-  getQuestionModel, 
-  getExamModel, 
-  getUserModel, 
-  getExamSubmissionModel,
-  getPromptModel,
-  getExamQuestionModel,
-  getSubjectModel,
-  getJobMetadataModel,
-  getUploadSessionModel
-} from '@/backend/src/database/mongooseSchemas';
-import {
-  getAnalysisReportModel,
-  getExamAnalysisModel,
-  getPastPaperModel,
-  getSyllabusModel,
-  getUniqueQuestionModel
-} from '@/backend/src/database/newFeatureModels';
+import { getManagedCollections } from '@/backend/src/database/managedCollectionModels';
+import { summarizeTruncation } from '@/backend/src/database/managedCollections';
+import type { TruncationResult } from '@/backend/src/database/managedCollections';
 
 /**
  * POST /api/admin/database/truncate
  * Truncates (deletes all data from) all collections in the database
- * 
+ *
  * This is a dangerous operation that should only be accessible to administrators
  * with proper authentication and authorization checks
  */
@@ -36,50 +21,19 @@ export async function POST(request: NextRequest) {
     // }
 
     console.log('🗑️ Starting database truncation...');
-    
+
     // Connect to database
     await connect();
-    
+
     console.log('✓ Connected to database');
 
-    // Get all models
-    const QuestionModel = getQuestionModel();
-    const ExamModel = getExamModel();
-    const UserModel = getUserModel();
-    const ExamSubmissionModel = getExamSubmissionModel();
-    const PromptModel = getPromptModel();
-    const ExamQuestionModel = getExamQuestionModel();
-    const SubjectModel = getSubjectModel();
-    const JobMetadataModel = getJobMetadataModel();
-    const UploadSessionModel = getUploadSessionModel();
-    
-    // New feature models
-    const AnalysisReportModel = getAnalysisReportModel();
-    const ExamAnalysisModel = getExamAnalysisModel();
-    const PastPaperModel = getPastPaperModel();
-    const SyllabusModel = getSyllabusModel();
-    const UniqueQuestionModel = getUniqueQuestionModel();
-
     // Track deletion results
-    const deletionResults: Record<string, { before: number; deleted: number; error?: string }> = {};
+    const deletionResults: Record<string, TruncationResult> = {};
 
-    // Delete all documents from each collection
-    const collections = [
-      { name: 'questions', model: QuestionModel },
-      { name: 'examSets', model: ExamModel },
-      { name: 'user', model: UserModel },
-      { name: 'ExamSubmission', model: ExamSubmissionModel },
-      { name: 'Prompt', model: PromptModel },
-      { name: 'ExamQuestion', model: ExamQuestionModel },
-      { name: 'subjects', model: SubjectModel },
-      { name: 'JobMetadata', model: JobMetadataModel },
-      { name: 'UploadSession', model: UploadSessionModel },
-      { name: 'AnalysisReport', model: AnalysisReportModel },
-      { name: 'ExamAnalysis', model: ExamAnalysisModel },
-      { name: 'PastPaper', model: PastPaperModel },
-      { name: 'Syllabus', model: SyllabusModel },
-      { name: 'UniqueQuestion', model: UniqueQuestionModel },
-    ];
+    // Every managed collection must be truncated. The registry keeps stats,
+    // backup and truncate in sync (the new `Subject` collection used to be
+    // skipped here, so truncate reported success while leaving subjects behind).
+    const collections = getManagedCollections();
 
     console.log(`📋 Processing ${collections.length} collections...`);
 
@@ -89,16 +43,20 @@ export async function POST(request: NextRequest) {
         // Count before deletion
         const countBefore = await model.countDocuments({});
         console.log(`  📊 ${name}: ${countBefore} documents`);
-        
+
         // Delete all documents
         const result = await model.deleteMany({});
         const deletedCount = result.deletedCount || 0;
-        
+
         deletionResults[name] = {
           before: countBefore,
           deleted: deletedCount
         };
-        
+
+        if (deletedCount < countBefore) {
+          console.warn(`  ⚠ ${name}: only deleted ${deletedCount}/${countBefore} documents`);
+        }
+
         console.log(`  ✓ ${name}: Deleted ${deletedCount} documents`);
       } catch (error) {
         console.error(`  ✗ Error deleting from ${name}:`, error);
@@ -111,8 +69,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Calculate totals
-    const totalDeleted = Object.values(deletionResults).reduce((sum, result) => sum + result.deleted, 0);
-    const hasErrors = Object.values(deletionResults).some(result => result.error);
+    const { totalDeleted, hasErrors } = summarizeTruncation(deletionResults);
 
     console.log(`✅ Truncation complete: ${totalDeleted} total documents deleted`);
 
@@ -128,6 +85,7 @@ export async function POST(request: NextRequest) {
     }
 
     return NextResponse.json({
+      success: true,
       message: `Database truncated successfully - ${totalDeleted} documents deleted`,
       deletedRecords: deletionResults,
       totalDeleted,

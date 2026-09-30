@@ -38,6 +38,12 @@ export async function markExpiredJobs(retentionDays: number = 90): Promise<{
   expired: number;
   errors: string[];
 }> {
+  // Defensive guard: a non-positive/invalid retention window would match every
+  // job in the collection and mark the whole job history as S3 expired.
+  if (!Number.isInteger(retentionDays) || retentionDays < 1) {
+    throw new Error(`Invalid retention window: ${retentionDays} days`);
+  }
+
   const errors: string[] = [];
   let checked = 0;
   let expired = 0;
@@ -82,7 +88,7 @@ export async function markExpiredJobs(retentionDays: number = 90): Promise<{
 /**
  * Get cleanup statistics
  */
-export async function getCleanupStats(): Promise<{
+export async function getCleanupStats(retentionDays: number = 90): Promise<{
   total_jobs: number;
   expired_jobs: number;
   retention_days: number;
@@ -92,6 +98,6 @@ export async function getCleanupStats(): Promise<{
   return {
     total_jobs: stats.total,
     expired_jobs: stats.expired,
-    retention_days: 90
+    retention_days: retentionDays
   };
 }

@@ -105,9 +105,14 @@ export function useTruncateDialogs(onTruncate: () => Promise<void>) {
 
   const handleConfirm = async () => {
     setIsTruncating(true)
-    await onTruncate()
-    setIsTruncating(false)
-    setShowSecond(false)
+    try {
+      await onTruncate()
+    } finally {
+      // Reset unconditionally: a rejected handler used to leave the dialog
+      // stuck on "Truncating..." with both buttons disabled.
+      setIsTruncating(false)
+      setShowSecond(false)
+    }
   }
 
   const dialogs = (
