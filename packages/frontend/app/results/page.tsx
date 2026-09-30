@@ -25,6 +25,7 @@ import {
   Pie,
   Cell,
 } from "recharts"
+import { isWithinDateWindow, type DateFilter } from "@/frontend/lib/examResults"
 import {
   Award,
   TrendingUp,
@@ -45,6 +46,7 @@ import {
 
 interface ExamResult {
   id: string
+  examId: string
   examName: string
   subject: string
   date: string
@@ -54,6 +56,7 @@ interface ExamResult {
   grade: string
   status: "passed" | "failed"
   duration: string
+  passingPercentage: number
   autoSubmitted?: boolean
   responsesCount?: number
 }
@@ -63,12 +66,13 @@ interface ResultsData {
   stats: {
     totalExams: number
     passedExams: number
+    failedExams: number
     avgScore: number
     highestScore: number
     passRate: number
   }
-  performanceData: { month: string; score: number }[]
-  subjectPerformance: { subject: string; score: number; color: string }[]
+  performanceData: { month: string; key: string; score: number; count: number }[]
+  subjectPerformance: { subject: string; score: number; count: number; color: string }[]
   gradeDistribution: { grade: string; count: number; color: string }[]
 }
 
@@ -77,7 +81,7 @@ export default function ResultsPage() {
   const [searchQuery, setSearchQuery] = useState("")
   const [subjectFilter, setSubjectFilter] = useState("all")
   const [statusFilter, setStatusFilter] = useState("all")
-  const [dateFilter, setDateFilter] = useState("all")
+  const [dateFilter, setDateFilter] = useState<DateFilter>("all")
   const [activeTab, setActiveTab] = useState("overview")
   
   const [loading, setLoading] = useState(true)
@@ -127,25 +131,7 @@ export default function ResultsPage() {
     const matchesSubject = subjectFilter === "all" || result.subject === subjectFilter
     const matchesStatus = statusFilter === "all" || result.status === statusFilter
 
-    let matchesDate = true
-    if (dateFilter !== "all") {
-      const resultDate = new Date(result.date)
-      const now = new Date()
-      const diffTime = Math.abs(now.getTime() - resultDate.getTime())
-      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24))
-
-      switch (dateFilter) {
-        case "week":
-          matchesDate = diffDays <= 7
-          break
-        case "month":
-          matchesDate = diffDays <= 30
-          break
-        case "semester":
-          matchesDate = diffDays <= 120
-          break
-      }
-    }
+    const matchesDate = isWithinDateWindow(result.date, dateFilter)
 
     return matchesSearch && matchesSubject && matchesStatus && matchesDate
   })
@@ -468,7 +454,7 @@ export default function ResultsPage() {
                   </SelectContent>
                 </Select>
 
-                <Select value={dateFilter} onValueChange={setDateFilter}>
+                <Select value={dateFilter} onValueChange={(value) => setDateFilter(value as DateFilter)}>
                   <SelectTrigger>
                     <SelectValue placeholder="All Time" />
                   </SelectTrigger>

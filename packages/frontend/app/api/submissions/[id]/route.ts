@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { examRepo, submissionRepo } from "@/backend/dist/database/repositories/index";
 import { auth } from "@clerk/nextjs/server";
+import { resolvePassingPercentage, scorePercentage } from "@/frontend/lib/examResults";
 
 export async function GET(
   req: Request,
@@ -44,7 +45,6 @@ export async function GET(
         { status: 404 }
       );
     }
-    console.log("Exam details found:", examWithDetails.questionDetails);
     // Combine submission and exam data
     const result = {
       id: submission._id?.toString(),
@@ -57,7 +57,12 @@ export async function GET(
       autoSubmitted: submission.autoSubmitted || false,
       maxMarks: submission.maxMarks,
       marksAchieved: submission.marksAchieved,
-      scorePercentage: ((submission.marksAchieved / submission.maxMarks) * 100).toFixed(2),
+      // `maxMarks` is 0 for a submission with no gradable questions, and the
+      // raw division produced the strings "NaN" / "Infinity" on the results page.
+      scorePercentage: scorePercentage(submission.marksAchieved, submission.maxMarks).toFixed(2),
+      // The verdict on the detail page used to be a literal 60 while the list
+      // page used a literal 40, so one submission could be both. Both read this.
+      passingPercentage: resolvePassingPercentage(examWithDetails),
       evaluatorObservations: submission.evaluatorObservations,
       questions: examWithDetails.questionDetails?.map((q: any) => ({
         id: q._id?.toString(),

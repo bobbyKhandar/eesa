@@ -7,6 +7,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/fro
 import { Badge } from "@/frontend/components/ui/badge"
 import { Progress } from "@/frontend/components/ui/progress"
 import { ArrowLeft, CheckCircle, XCircle, AlertCircle } from "lucide-react"
+import { DEFAULT_PASSING_PERCENTAGE } from "@/frontend/lib/examResults"
 
 export default function ResultsPage({ params }: { params: Promise<{ id: string }> }) {
   const { user } = useUser()
@@ -62,10 +63,15 @@ export default function ResultsPage({ params }: { params: Promise<{ id: string }
     )
   }
 
-  const totalScore = result.marksAchieved
-  const totalMaxScore = result.maxMarks
-  const scorePercentage = (totalScore / totalMaxScore) * 100
-  const passingScore = 60
+  const totalScore = result.marksAchieved ?? 0
+  const totalMaxScore = result.maxMarks ?? 0
+  // The API sends both the guarded percentage and the exam's own threshold.
+  // Recomputing the percentage here produced `NaN%` for a submission with no
+  // gradable questions, and the pass mark was a literal 60 while the results
+  // list used a literal 40 - so one submission could read as both passed and
+  // failed depending on which page you opened.
+  const scorePercentage = Math.min(100, Math.max(0, Number(result.scorePercentage ?? 0) || 0))
+  const passingScore = result.passingPercentage ?? DEFAULT_PASSING_PERCENTAGE
   const status = scorePercentage >= passingScore ? "Passed" : "Failed"
   const submittedDate = new Date(result.submittedAt).toLocaleString("en-US", {
     year: "numeric",
