@@ -1,7 +1,16 @@
 // app/api/exams/create/route.ts
 import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
-import { examRepo, promptRepo } from "@/backend/dist/database/repositories/index";
+import { examRepo, promptRepo, userRepo } from "@/backend/dist/database/repositories/index";
+import {
+  computeNegativeMarks,
+  findInvalidQuestion,
+  findInvalidSettings,
+  normalizeAssignedUsers,
+  parseScheduledAt,
+  resolveDuration,
+  resolveNegativeMarkingPercentage,
+} from "@/frontend/lib/examCreation";
 
 export async function POST(req: Request) {
   try {
@@ -25,6 +34,7 @@ export async function POST(req: Request) {
       passingPercentage,
       examDegree,
       duration,
+      scheduledAt,
       instructions,
       negativeMarking,
       negativeMarkingPercentage,
@@ -38,10 +48,7 @@ export async function POST(req: Request) {
       typeof examDescription !== "string" ||
       typeof subject !== "string" ||
       typeof examType !== "string" ||
-      typeof passingPercentage !== "number" ||
-      typeof examDegree !== "string" ||
-      !Array.isArray(questions) || 
-      questions.length === 0
+      typeof examDegree !== "string"
     ) {
       return NextResponse.json(
         { success: false, error: "Missing or invalid required fields" },
@@ -49,14 +56,28 @@ export async function POST(req: Request) {
       );
     }
 
-    /* Validate every question has text and marks */
-    for (const q of questions) {
-      if (typeof q.text !== "string" || typeof q.marks !== "number" || q.marks <= 0) {
-        return NextResponse.json(
-          { success: false, error: "Invalid question format - all questions must have text and positive marks" },
-          { status: 400 }
-        );
-      }
+    const questionError = findInvalidQuestion(questions);
+    if (questionError) {
+      return NextResponse.json(
+        { success: false, error: questionError },
+        { status: 400 }
+      );
+    }
+
+    const settingsError = findInvalidSettings({ passingPercentage, duration, negativeMarking, negativeMarkingPercentage });
+    if (settingsError) {
+      return NextResponse.json(
+        { success: false, error: settingsError },
+        { status: 400 }
+      );
+    }
+
+    const parsedScheduledAt = parseScheduledAt(scheduledAt);
+    if (scheduledAt && !parsedScheduledAt) {
+      return NextResponse.json(
+        { success: false, error: "scheduledAt must be a valid date" },
+        { status: 400 }
+      );
     }
 
     /* ------------- Step 1: Create Prompts (Central Question Library) ------------- */
@@ -82,7 +103,7 @@ export async function POST(req: Request) {
     const examQuestionsData = questions.map((q: any, index: number) => ({
       promptId: promptsResult.promptIds![index],
       marks: q.marks,
-      negativeMarks: negativeMarking ? (q.marks * (negativeMarkingPercentage || 25) / 100) : 0,
+      negativeMarks: computeNegativeMarks(q.marks, negativeMarking === true, negativeMarkingPercentage),
       questionType: q.type?.toUpperCase() || 'TEXT',
       answer: q.answer || '',
       options: q.options ? q.options.map((opt: string, i: number) => ({
@@ -122,10 +143,7 @@ export async function POST(req: Request) {
     }
 
     // Automatically assign the exam to the creator
-    const assignedUsersList = Array.isArray(examUsers) ? [...examUsers] : [];
-    if (!assignedUsersList.includes(userId)) {
-      assignedUsersList.push(userId);
-    }
+    const assignedUsersList = normalizeAssignedUsers(examUsers, userId);
 
     const examData = {
       examTitle,
@@ -134,30 +152,41 @@ export async function POST(req: Request) {
       examDegree,
       examType,
       passingPercentage,
-      duration: duration || 60,
-      scheduledAt: undefined,
+      duration: resolveDuration(duration),
+      scheduledAt: parsedScheduledAt,
       createdBy: userId,
       instructions: instructions || undefined,
       negativeMarking: negativeMarking || false,
-      negativeMarkingPercentage: negativeMarking ? (negativeMarkingPercentage || 25) : undefined,
+      negativeMarkingPercentage: negativeMarking ? resolveNegativeMarkingPercentage(negativeMarkingPercentage) : undefined,
       assignedUsers: assignedUsersList,
       questions: examQuestionsData
     };
 
     const examResult = await examRepo.createWithPrompts(examData);
 
-    if (!examResult.success) {
+    if (!examResult.success || !examResult.examId) {
       return NextResponse.json(
         { success: false, error: examResult.error || "Failed to create exam" },
         { status: 500 }
       );
     }
 
+    const examId = examResult.examId;
+
+    // The allocation inside `createWithPrompts` is best-effort and skips user
+    // documents that do not exist yet, so repeat it for the creator (#16):
+    // /api/exams/list only ever reads `currentAllocatedExams`.
+    const allocation = await userRepo.assignExam(userId, examId);
+    if (!allocation.success) {
+      console.error(`Exam ${examId} created but the creator was not allocated:`, allocation.error);
+    }
+
     return NextResponse.json(
       { 
         success: true, 
         message: "Exam created successfully!",
-        examId: examResult.examId 
+        examId,
+        creatorAssigned: allocation.success
       },
       { status: 200 }
     );
