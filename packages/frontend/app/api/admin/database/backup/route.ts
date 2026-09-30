@@ -24,7 +24,13 @@ export async function POST() {
     if (denied) return denied;
 
     const result = await createBackup();
-    return NextResponse.json({ success: true, data: result });
+    // A backup that could not read every collection is uploaded but flagged:
+    // restoring it would clear those collections without re-inserting anything.
+    return NextResponse.json({
+      success: true,
+      data: result,
+      warning: result.status === 'failed' ? result.error : undefined,
+    });
   } catch (error: any) {
     console.error('Error creating backup:', error);
     return NextResponse.json(

@@ -16,7 +16,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/frontend/components/ui/alert-dialog"
-import { Download, Upload, RefreshCw, CheckCircle, AlertCircle, Clock, Trash2, Database, FileText, HardDrive, Activity, Loader2 } from "lucide-react"
+import { Download, Upload, RefreshCw, CheckCircle, AlertCircle, Trash2, Database, FileText, HardDrive, Activity, Loader2 } from "lucide-react"
 import { DatabaseStatCard, SqlQueryEditor, useTruncateDialogs } from "@/frontend/components/features/admin"
 
 interface DbStats {
@@ -45,18 +45,25 @@ interface BackupItem {
   collectionCounts: Record<string, number>
   totalDocuments: number
   status: string
+  error?: string
 }
 
 function formatBytes(bytes: number): string {
-  if (bytes === 0) return "0 B"
+  if (!Number.isFinite(bytes) || bytes <= 0) return "0 B"
   const units = ["B", "KB", "MB", "GB", "TB"]
-  const i = Math.floor(Math.log(bytes) / Math.log(1024))
+  const i = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1)
   return (bytes / Math.pow(1024, i)).toFixed(1) + " " + units[i]
 }
 
 function formatTimestamp(ts: string): string {
   const d = new Date(ts)
+  if (Number.isNaN(d.getTime())) return "Unknown"
   return d.toLocaleString()
+}
+
+function formatStatus(status: string): string {
+  if (!status) return "Unknown"
+  return status.charAt(0).toUpperCase() + status.slice(1)
 }
 
 export default function AdminDatabase() {
@@ -75,28 +82,27 @@ export default function AdminDatabase() {
   const [truncateResult, setTruncateResult] = useState<{ success: boolean; message: string } | null>(null)
 
   const handleTruncate = async () => {
-    setIsTruncating(true)
     setTruncateResult(null)
     try {
       const response = await fetch("/api/admin/database/truncate", { method: "POST", headers: { "Content-Type": "application/json" } })
       const data = await response.json()
       if (response.ok) {
         setTruncateResult({ success: true, message: `${data.message || "Database truncated successfully"} (${data.totalDeleted || 0} records)` })
+        await fetchData({ silent: true })
       } else {
         setTruncateResult({ success: false, message: data.error || "Failed to truncate database" })
       }
     } catch (error) {
       setTruncateResult({ success: false, message: "Network error: " + (error instanceof Error ? error.message : "Unknown error") })
-    } finally {
-      setIsTruncating(false)
     }
   }
 
   const { setShowFirst: setShowTruncateDialog, dialogs: truncateDialogs, isTruncating } = useTruncateDialogs(handleTruncate)
 
-  const fetchData = async () => {
+  const fetchData = async (options: { silent?: boolean } = {}) => {
+    const { silent = false } = options
     try {
-      setLoading(true)
+      if (!silent) setLoading(true)
       setError(null)
 
       const [dbRes, backupRes] = await Promise.all([
@@ -110,14 +116,25 @@ export default function AdminDatabase() {
       }
       setDbData(dbJson.data)
 
-      const backupJson = await backupRes.json()
-      if (backupRes.ok && backupJson.success) {
-        setBackups(backupJson.data)
+      if (!backupRes.ok) {
+        const backupError = await backupRes.json().catch(() => null)
+        setBackupResult({ success: false, message: backupError?.error || "Failed to load backups" })
+      } else {
+        const backupJson = await backupRes.json()
+        if (backupJson.success) {
+          setBackups(backupJson.data)
+        } else {
+          setBackupResult({ success: false, message: backupJson.error || "Failed to load backups" })
+        }
       }
     } catch (err: any) {
-      setError(err.message || "Failed to load data")
+      if (silent) {
+        setBackupResult({ success: false, message: err.message || "Failed to load data" })
+      } else {
+        setError(err.message || "Failed to load data")
+      }
     } finally {
-      setLoading(false)
+      if (!silent) setLoading(false)
     }
   }
 
@@ -132,8 +149,14 @@ export default function AdminDatabase() {
       const response = await fetch("/api/admin/database/backup", { method: "POST", headers: { "Content-Type": "application/json" } })
       const data = await response.json()
       if (response.ok && data.success) {
-        setBackupResult({ success: true, message: `Backup created: ${data.data.id}` })
-        await fetchData()
+        // A backup that could not read every collection is still uploaded, but
+        // restoring it would clear those collections without re-inserting data.
+        if (data.data?.status === "failed") {
+          setBackupResult({ success: false, message: `Backup created but incomplete: ${data.warning || data.data.error || "some collections could not be read"}` })
+        } else {
+          setBackupResult({ success: true, message: `Backup created: ${data.data.id}` })
+        }
+        await fetchData({ silent: true })
       } else {
         setBackupResult({ success: false, message: data.error || "Failed to create backup" })
       }
@@ -147,17 +170,18 @@ export default function AdminDatabase() {
   const handleRestoreBackup = async (id: string) => {
     setRestoringId(id)
     setRestoreConfirm(null)
+    setBackupResult(null)
     try {
-      const response = await fetch(`/api/admin/database/backup/${id}/restore`, { method: "POST", headers: { "Content-Type": "application/json" } })
+      const response = await fetch(`/api/admin/database/backup/${encodeURIComponent(id)}/restore`, { method: "POST", headers: { "Content-Type": "application/json" } })
       const data = await response.json()
       if (response.ok && data.success) {
-        setTruncateResult({ success: true, message: data.data.message })
-        await fetchData()
+        setBackupResult({ success: true, message: data.data.message })
+        await fetchData({ silent: true })
       } else {
-        setTruncateResult({ success: false, message: data.error || "Failed to restore backup" })
+        setBackupResult({ success: false, message: data.error || "Failed to restore backup" })
       }
     } catch (err: any) {
-      setTruncateResult({ success: false, message: "Network error: " + err.message })
+      setBackupResult({ success: false, message: "Network error: " + err.message })
     } finally {
       setRestoringId(null)
     }
@@ -166,12 +190,15 @@ export default function AdminDatabase() {
   const handleDeleteBackup = async (id: string) => {
     setDeletingId(id)
     try {
-      const response = await fetch(`/api/admin/database/backup/${id}`, { method: "DELETE" })
+      const response = await fetch(`/api/admin/database/backup/${encodeURIComponent(id)}`, { method: "DELETE" })
       const data = await response.json()
       if (response.ok && data.success) {
         setBackups((prev) => prev.filter((b) => b.id !== id))
+      } else {
+        setBackupResult({ success: false, message: data.error || "Failed to delete backup" })
       }
     } catch {
+      setBackupResult({ success: false, message: "Network error: failed to delete backup" })
     } finally {
       setDeletingId(null)
     }
@@ -215,7 +242,7 @@ export default function AdminDatabase() {
           <AlertCircle className="h-12 w-12 text-destructive mb-4" />
           <p className="text-lg font-medium text-destructive">Error loading data</p>
           <p className="text-sm text-muted-foreground mt-2">{error}</p>
-          <Button variant="outline" className="mt-4" onClick={fetchData}>
+          <Button variant="outline" className="mt-4" onClick={() => fetchData()}>
             Retry
           </Button>
         </div>
@@ -231,7 +258,7 @@ export default function AdminDatabase() {
           <p className="text-muted-foreground">Monitor, backup, and manage your database</p>
         </div>
         <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" onClick={fetchData}>
+          <Button variant="outline" size="sm" onClick={() => fetchData()}>
             <RefreshCw className="h-4 w-4 mr-2" />
             Refresh
           </Button>
@@ -354,10 +381,10 @@ export default function AdminDatabase() {
                           <TableCell>{formatBytes(backup.size)}</TableCell>
                           <TableCell>{backup.totalDocuments.toLocaleString()}</TableCell>
                           <TableCell>
-                            <Badge variant={backup.status === "failed" ? "destructive" : "default"} className="flex items-center w-fit">
+                            <Badge variant={backup.status === "failed" ? "destructive" : "default"} className="flex items-center w-fit" title={backup.error}>
                               {backup.status === "completed" && <CheckCircle className="h-3 w-3 mr-1" />}
                               {backup.status === "failed" && <AlertCircle className="h-3 w-3 mr-1" />}
-                              {backup.status.charAt(0).toUpperCase() + backup.status.slice(1)}
+                              {formatStatus(backup.status)}
                             </Badge>
                           </TableCell>
                           <TableCell>

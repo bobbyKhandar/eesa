@@ -1,26 +1,16 @@
-import { S3Client, PutObjectCommand, GetObjectCommand, ListObjectsV2Command, DeleteObjectCommand, _Object } from "@aws-sdk/client-s3";
+import { S3Client, PutObjectCommand, GetObjectCommand, ListObjectsV2Command, DeleteObjectsCommand, _Object } from "@aws-sdk/client-s3";
 import { connect } from "../database/connect";
-import mongoose from "mongoose";
-
+import { getManagedCollections } from "../database/managedCollectionModels";
+import type { ManagedCollection } from "../database/managedCollectionModels";
+import { MANAGED_COLLECTION_NAMES } from "../database/managedCollections";
 import {
-  getQuestionModel,
-  getExamModel,
-  getUserModel,
-  getExamSubmissionModel,
-  getPromptModel,
-  getExamQuestionModel,
-  getSubjectModel as getLegacySubjectModel,
-  getJobMetadataModel,
-  getUploadSessionModel
-} from "../database/mongooseSchemas";
-import {
-  getAnalysisReportModel,
-  getExamAnalysisModel,
-  getPastPaperModel,
-  getSyllabusModel,
-  getUniqueQuestionModel,
-  getSubjectModel
-} from "../database/newFeatureModels";
+  chunkDocuments,
+  formatBackupErrors,
+  isValidBackupId,
+  planRestore,
+  RESTORE_BATCH_SIZE,
+  summarizeBackupReads,
+} from "./backupPlan";
 
 const S3_BACKUP_BUCKET = process.env.S3_BACKUP_BUCKET || process.env.S3_BUCKET || 'eesa-pipeline-storage';
 const S3_REGION = process.env.AWS_REGION || 'ap-south-1';
@@ -28,12 +18,7 @@ const BACKUP_PREFIX = 'database-backups';
 
 const s3Client = new S3Client({ region: S3_REGION });
 
-interface CollectionInfo {
-  name: string;
-  model: mongoose.Model<any>;
-}
-
-interface BackupMetadata {
+export interface BackupMetadata {
   id: string;
   timestamp: string;
   size: number;
@@ -43,24 +28,24 @@ interface BackupMetadata {
   error?: string;
 }
 
-function getAllCollections(): CollectionInfo[] {
-  return [
-    { name: 'questions', model: getQuestionModel() },
-    { name: 'examSets', model: getExamModel() },
-    { name: 'user', model: getUserModel() },
-    { name: 'ExamSubmission', model: getExamSubmissionModel() },
-    { name: 'Prompt', model: getPromptModel() },
-    { name: 'ExamQuestion', model: getExamQuestionModel() },
-    { name: 'subjects', model: getLegacySubjectModel() },
-    { name: 'JobMetadata', model: getJobMetadataModel() },
-    { name: 'UploadSession', model: getUploadSessionModel() },
-    { name: 'AnalysisReport', model: getAnalysisReportModel() },
-    { name: 'ExamAnalysis', model: getExamAnalysisModel() },
-    { name: 'PastPaper', model: getPastPaperModel() },
-    { name: 'Syllabus', model: getSyllabusModel() },
-    { name: 'UniqueQuestion', model: getUniqueQuestionModel() },
-    { name: 'Subject', model: getSubjectModel() },
-  ];
+/** Thrown when the requested backup id is not a backup id produced by this service. */
+export class InvalidBackupIdError extends Error {
+  constructor(id: string) {
+    super(`Invalid backup id: ${id}`);
+    this.name = 'InvalidBackupIdError';
+  }
+}
+
+/** Thrown when the requested backup (or its data payload) does not exist in S3. */
+export class BackupNotFoundError extends Error {
+  constructor(id: string) {
+    super(`Backup ${id} not found`);
+    this.name = 'BackupNotFoundError';
+  }
+}
+
+export function getAllCollections(): ManagedCollection[] {
+  return getManagedCollections();
 }
 
 export async function createBackup(): Promise<BackupMetadata> {
@@ -70,6 +55,7 @@ export async function createBackup(): Promise<BackupMetadata> {
   const backupId = `backup_${timestamp.replace(/[:.]/g, '-')}`;
   const collectionCounts: Record<string, number> = {};
   const backupData: Record<string, any[]> = {};
+  const readErrors: Record<string, string> = {};
 
   const collections = getAllCollections();
 
@@ -79,12 +65,18 @@ export async function createBackup(): Promise<BackupMetadata> {
       backupData[name] = docs;
       collectionCounts[name] = docs.length;
     } catch (err) {
+      // Never silently record a failed read as "0 documents": restoring that
+      // backup would wipe the collection and insert nothing.
+      const message = err instanceof Error ? err.message : 'Unknown error';
+      console.error(`[DatabaseBackupService] Failed to read ${name}:`, message);
       collectionCounts[name] = 0;
       backupData[name] = [];
+      readErrors[name] = message;
     }
   }
 
   const totalDocuments = Object.values(collectionCounts).reduce((a, b) => a + b, 0);
+  const reads = summarizeBackupReads(collectionCounts, backupData, readErrors);
 
   const metadata: BackupMetadata = {
     id: backupId,
@@ -92,8 +84,12 @@ export async function createBackup(): Promise<BackupMetadata> {
     size: 0,
     collectionCounts,
     totalDocuments,
-    status: 'completed',
+    status: reads.status,
   };
+
+  if (reads.status === 'failed') {
+    metadata.error = `Backup incomplete, failed to read: ${formatBackupErrors(readErrors)}`;
+  }
 
   const dataJson = JSON.stringify(backupData);
   const sizeBytes = Buffer.byteLength(dataJson, 'utf-8');
@@ -126,11 +122,12 @@ export async function listBackups(): Promise<BackupMetadata[]> {
   }));
 
   const backupMetadatas: BackupMetadata[] = [];
+  const contents = response.Contents || [];
 
   const prefixes = response.CommonPrefixes || [];
   for (const prefix of prefixes) {
     const folderPrefix = prefix.Prefix || '';
-    const id = folderPrefix.replace(BACKUP_PREFIX + '/', '').replace('/', '');
+    const id = folderPrefix.replace(BACKUP_PREFIX + '/', '').replace(/\/$/, '');
 
     if (!id) continue;
 
@@ -143,31 +140,50 @@ export async function listBackups(): Promise<BackupMetadata[]> {
       const body = await metaResponse.Body?.transformToString();
       if (body) {
         backupMetadatas.push(JSON.parse(body));
+        continue;
       }
     } catch {
-      const contents = response.Contents || [];
-      const folderObjects = contents.filter(
-        (obj: _Object) => obj.Key?.startsWith(`${BACKUP_PREFIX}/${id}/`)
-      );
-      const totalSize = folderObjects.reduce((sum: number, obj: _Object) => sum + (obj.Size || 0), 0);
-
-      backupMetadatas.push({
-        id,
-        timestamp: id.replace('backup_', '').replace(/-/g, ':'),
-        size: totalSize,
-        collectionCounts: {},
-        totalDocuments: 0,
-        status: 'completed',
-      });
+      // Metadata is missing/unreadable - fall back to the S3 object listing.
     }
+
+    // Fallback: derive what we can from S3 itself. The previous implementation
+    // rebuilt the timestamp from the backup id by replacing every "-" with ":",
+    // which produces an unparsable date ("2026:09:30T16:57:09:123Z") and made
+    // the row sort above every real backup.
+    const folderObjects = contents.filter(
+      (obj: _Object) => obj.Key?.startsWith(`${BACKUP_PREFIX}/${id}/`)
+    );
+    const totalSize = folderObjects.reduce((sum: number, obj: _Object) => sum + (obj.Size || 0), 0);
+    const lastModified = folderObjects
+      .map((obj: _Object) => obj.LastModified)
+      .filter((value): value is Date => value instanceof Date)
+      .sort((a, b) => b.getTime() - a.getTime())[0];
+
+    backupMetadatas.push({
+      id,
+      timestamp: lastModified ? lastModified.toISOString() : new Date(0).toISOString(),
+      size: totalSize,
+      collectionCounts: {},
+      totalDocuments: 0,
+      status: 'completed',
+      error: 'Backup metadata is missing, collection counts are unavailable',
+    });
   }
 
-  backupMetadatas.sort((a, b) => b.timestamp.localeCompare(a.timestamp));
+  backupMetadatas.sort((a, b) => {
+    const byTimestamp = (b.timestamp || '').localeCompare(a.timestamp || '');
+    if (byTimestamp !== 0) return byTimestamp;
+    return (b.id || '').localeCompare(a.id || '');
+  });
 
   return backupMetadatas;
 }
 
 export async function getBackup(id: string): Promise<BackupMetadata | null> {
+  if (!isValidBackupId(id)) {
+    throw new InvalidBackupIdError(id);
+  }
+
   try {
     const metaResponse = await s3Client.send(new GetObjectCommand({
       Bucket: S3_BACKUP_BUCKET,
@@ -176,58 +192,114 @@ export async function getBackup(id: string): Promise<BackupMetadata | null> {
 
     const body = await metaResponse.Body?.transformToString();
     return body ? JSON.parse(body) : null;
-  } catch {
-    return null;
+  } catch (err) {
+    if (isNotFoundError(err)) return null;
+    throw err;
   }
 }
 
-export async function restoreBackup(id: string): Promise<{ success: boolean; message: string; collectionCounts: Record<string, number> }> {
+export interface RestoreResult {
+  success: boolean;
+  message: string;
+  collectionCounts: Record<string, number>;
+  errors: Record<string, string>;
+}
+
+export async function restoreBackup(id: string): Promise<RestoreResult> {
+  if (!isValidBackupId(id)) {
+    throw new InvalidBackupIdError(id);
+  }
+
   await connect();
 
-  const metaResponse = await s3Client.send(new GetObjectCommand({
-    Bucket: S3_BACKUP_BUCKET,
-    Key: `${BACKUP_PREFIX}/${id}/data.json`,
-  }));
+  let body: string | undefined;
+  try {
+    const dataResponse = await s3Client.send(new GetObjectCommand({
+      Bucket: S3_BACKUP_BUCKET,
+      Key: `${BACKUP_PREFIX}/${id}/data.json`,
+    }));
+    body = await dataResponse.Body?.transformToString();
+  } catch (err) {
+    if (isNotFoundError(err)) throw new BackupNotFoundError(id);
+    throw err;
+  }
 
-  const body = await metaResponse.Body?.transformToString();
   if (!body) {
-    throw new Error('Backup data not found');
+    throw new BackupNotFoundError(id);
   }
 
   const backupData: Record<string, any[]> = JSON.parse(body);
-  const collections = getAllCollections();
-  const collectionCounts: Record<string, number> = {};
+  const plan = planRestore(backupData, MANAGED_COLLECTION_NAMES);
+  const models = new Map<string, ManagedCollection['model']>(
+    getAllCollections().map(({ name, model }) => [name, model])
+  );
 
-  for (const { name, model } of collections) {
-    const docs = backupData[name];
-    if (docs && Array.isArray(docs)) {
+  const collectionCounts: Record<string, number> = {};
+  const errors: Record<string, string> = {};
+
+  for (const { name, docs, presentInBackup } of plan) {
+    const model = models.get(name);
+    if (!model) {
+      errors[name] = 'No model registered for this collection';
+      continue;
+    }
+
+    try {
+      // Always clear first: a restore must leave the database in the exact
+      // state of the backup, including collections missing from the payload.
+      await model.deleteMany({});
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Unknown error';
+      console.error(`[DatabaseBackupService] Failed to clear ${name} during restore:`, message);
+      errors[name] = `Failed to clear collection: ${message}`;
+      continue;
+    }
+
+    if (!presentInBackup) {
+      collectionCounts[name] = 0;
+      continue;
+    }
+
+    if (docs.length === 0) {
+      collectionCounts[name] = 0;
+      continue;
+    }
+
+    let inserted = 0;
+    for (const batch of chunkDocuments(docs, RESTORE_BATCH_SIZE)) {
       try {
-        await model.deleteMany({});
-        if (docs.length > 0) {
-          await model.insertMany(docs);
-        }
-        collectionCounts[name] = docs.length;
-      } catch (err: any) {
-        const batchSize = 100;
-        let inserted = 0;
-        for (let i = 0; i < docs.length; i += batchSize) {
-          const batch = docs.slice(i, i + batchSize);
-          await model.insertMany(batch);
-          inserted += batch.length;
-        }
-        collectionCounts[name] = inserted;
+        // ordered: false keeps a single invalid document from aborting the whole
+        // batch (and from re-inserting documents the retry already wrote).
+        const result = await model.insertMany(batch, { ordered: false });
+        inserted += result?.insertedCount ?? batch.length;
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'Unknown error';
+        console.error(`[DatabaseBackupService] Restore batch failed for ${name}:`, message);
+        errors[name] = `Failed to insert documents: ${message}`;
       }
     }
+
+    collectionCounts[name] = inserted;
   }
 
+  const totalRestored = Object.values(collectionCounts).reduce((a, b) => a + b, 0);
+  const success = Object.keys(errors).length === 0;
+
   return {
-    success: true,
-    message: `Restored ${Object.values(collectionCounts).reduce((a, b) => a + b, 0)} documents across ${Object.keys(collectionCounts).length} collections`,
+    success,
+    message: success
+      ? `Restored ${totalRestored} documents across ${Object.keys(collectionCounts).length} collections`
+      : `Restored ${totalRestored} documents with errors in ${Object.keys(errors).length} collection(s)`,
     collectionCounts,
+    errors,
   };
 }
 
 export async function deleteBackup(id: string): Promise<{ success: boolean; deletedObjects: number }> {
+  if (!isValidBackupId(id)) {
+    throw new InvalidBackupIdError(id);
+  }
+
   const listResponse = await s3Client.send(new ListObjectsV2Command({
     Bucket: S3_BACKUP_BUCKET,
     Prefix: `${BACKUP_PREFIX}/${id}/`,
@@ -235,25 +307,32 @@ export async function deleteBackup(id: string): Promise<{ success: boolean; dele
 
   const objects = listResponse.Contents || [];
   if (objects.length === 0) {
-    throw new Error(`Backup ${id} not found`);
+    throw new BackupNotFoundError(id);
   }
 
-  await s3Client.send(new DeleteObjectCommand({
-    Bucket: S3_BACKUP_BUCKET,
-    Key: `${BACKUP_PREFIX}/${id}/metadata.json`,
-  }));
+  const keys = objects
+    .map((obj: _Object) => obj.Key)
+    .filter((key?: string): key is string => typeof key === 'string' && key.length > 0);
 
-  for (const obj of objects as _Object[]) {
-    if (obj.Key) {
-      await s3Client.send(new DeleteObjectCommand({
-        Bucket: S3_BACKUP_BUCKET,
-        Key: obj.Key,
-      }));
-    }
+  // S3 accepts up to 1000 keys per DeleteObjects call.
+  for (let i = 0; i < keys.length; i += 1000) {
+    const chunk = keys.slice(i, i + 1000);
+    await s3Client.send(new DeleteObjectsCommand({
+      Bucket: S3_BACKUP_BUCKET,
+      Delete: {
+        Objects: chunk.map((Key) => ({ Key })),
+        Quiet: true,
+      },
+    }));
   }
 
   return {
     success: true,
-    deletedObjects: objects.length,
+    deletedObjects: keys.length,
   };
+}
+
+function isNotFoundError(error: any): boolean {
+  const status = error?.$metadata?.httpStatusCode;
+  return error?.name === 'NoSuchKey' || error?.name === 'NotFound' || status === 404;
 }

@@ -1,6 +1,30 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getBackup, deleteBackup } from '@/backend/src/services/databaseBackupService';
+import {
+  getBackup,
+  deleteBackup,
+  BackupNotFoundError,
+  InvalidBackupIdError,
+} from '@/backend/src/services/databaseBackupService';
 import { requireAdmin } from '@/frontend/lib/requestAuth';
+
+function errorResponse(error: any, fallback: string) {
+  if (error instanceof InvalidBackupIdError) {
+    return NextResponse.json(
+      { success: false, error: 'Invalid backup id' },
+      { status: 400 }
+    );
+  }
+  if (error instanceof BackupNotFoundError) {
+    return NextResponse.json(
+      { success: false, error: 'Backup not found' },
+      { status: 404 }
+    );
+  }
+  return NextResponse.json(
+    { success: false, error: error?.message || fallback },
+    { status: 500 }
+  );
+}
 
 export async function GET(
   _request: NextRequest,
@@ -21,10 +45,7 @@ export async function GET(
     return NextResponse.json({ success: true, data: backup });
   } catch (error: any) {
     console.error('Error getting backup:', error);
-    return NextResponse.json(
-      { success: false, error: error.message || 'Failed to get backup' },
-      { status: 500 }
-    );
+    return errorResponse(error, 'Failed to get backup');
   }
 }
 
@@ -41,9 +62,6 @@ export async function DELETE(
     return NextResponse.json({ success: true, data: result });
   } catch (error: any) {
     console.error('Error deleting backup:', error);
-    return NextResponse.json(
-      { success: false, error: error.message || 'Failed to delete backup' },
-      { status: 500 }
-    );
+    return errorResponse(error, 'Failed to delete backup');
   }
 }

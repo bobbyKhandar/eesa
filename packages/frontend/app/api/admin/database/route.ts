@@ -2,25 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { requireAdmin } from '@/frontend/lib/requestAuth';
 import mongoose from 'mongoose';
 import { connect } from '@/backend/src/database/connect';
-import {
-  getQuestionModel,
-  getExamModel,
-  getUserModel,
-  getExamSubmissionModel,
-  getPromptModel,
-  getExamQuestionModel,
-  getSubjectModel as getLegacySubjectModel,
-  getJobMetadataModel,
-  getUploadSessionModel
-} from '@/backend/src/database/mongooseSchemas';
-import {
-  getAnalysisReportModel,
-  getExamAnalysisModel,
-  getPastPaperModel,
-  getSyllabusModel,
-  getUniqueQuestionModel,
-  getSubjectModel
-} from '@/backend/src/database/newFeatureModels';
+import { getManagedCollections } from '@/backend/src/database/managedCollectionModels';
 
 export async function GET() {
   try {
@@ -29,23 +11,9 @@ export async function GET() {
 
     await connect();
 
-    const collections = [
-      { name: 'questions', model: getQuestionModel() },
-      { name: 'examSets', model: getExamModel() },
-      { name: 'user', model: getUserModel() },
-      { name: 'ExamSubmission', model: getExamSubmissionModel() },
-      { name: 'Prompt', model: getPromptModel() },
-      { name: 'ExamQuestion', model: getExamQuestionModel() },
-      { name: 'subjects', model: getLegacySubjectModel() },
-      { name: 'JobMetadata', model: getJobMetadataModel() },
-      { name: 'UploadSession', model: getUploadSessionModel() },
-      { name: 'AnalysisReport', model: getAnalysisReportModel() },
-      { name: 'ExamAnalysis', model: getExamAnalysisModel() },
-      { name: 'PastPaper', model: getPastPaperModel() },
-      { name: 'Syllabus', model: getSyllabusModel() },
-      { name: 'UniqueQuestion', model: getUniqueQuestionModel() },
-      { name: 'Subject', model: getSubjectModel() },
-    ];
+    // Same registry that backs up/truncates the database, so the counts shown
+    // here always match the collections that are actually managed.
+    const collections = getManagedCollections();
 
     const collectionStats: Array<{ name: string; documents: number }> = [];
     let totalDocuments = 0;
