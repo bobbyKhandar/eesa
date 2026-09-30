@@ -114,10 +114,29 @@ export class UniqueQuestionRepository {
   }
 
   /**
-   * Get unique question by ID
+   * Get unique question id by ID
    */
   async findById(id: string) {
     return this.model.findById(id).lean();
+  }
+
+  /**
+   * Active question count per subject, keyed by subject name.
+   *
+ * Single aggregate so the resource library can report real question counts
+   * alongside the subjects list instead of one query per subject.
+   */
+  async getQuestionCountsBySubject(): Promise<Record<string, number>> {
+    const rows = await this.model.aggregate([
+      { $match: { isActive: true, subject: { $type: "string" } } },
+      { $group: { _id: "$subject", count: { $sum: 1 } } },
+    ]);
+
+    const counts: Record<string, number> = {};
+    for (const row of rows) {
+      counts[row._id] = row.count;
+    }
+    return counts;
   }
 
   /**
