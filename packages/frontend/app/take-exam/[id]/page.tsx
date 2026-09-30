@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, use } from "react"
+import { useCallback, useEffect, useRef, useState, use } from "react"
 import React from "react"
 import { Button } from "@/frontend/components/ui/button"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/frontend/components/ui/card"
@@ -10,19 +10,32 @@ import { Label } from "@/frontend/components/ui/label"
 import { Progress } from "@/frontend/components/ui/progress"
 import { ArrowLeft, ArrowRight, Clock, AlertCircle } from "lucide-react"
 import { useUser } from "@clerk/nextjs"
+import { examTimeLimitSeconds } from "@/frontend/lib/examResults"
 
 export default function TakeExamPage({ params }: { params: Promise<{ id: string }> }) {
   const resolvedParams = use(params)
   const examId = resolvedParams.id
   const { user } = useUser()
-  
+
   const [exam, setExam] = useState<any>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [currentQuestion, setCurrentQuestion] = useState(0)
   const [answers, setAnswers] = useState<Record<string, string>>({})
   const [timeLeft, setTimeLeft] = useState(0)
-  const [examStartTime, setExamStartTime] = useState<Date | null>(null)
+  const [submitting, setSubmitting] = useState(false)
+  const [submitError, setSubmitError] = useState<string | null>(null)
+
+  // The countdown and the answers are read by the timer and by the submit
+  // handler, both of which outlive a single render. Holding them in refs is
+  // what lets the interval be created once instead of being torn down and
+  // rebuilt every second, and what keeps a submit from sending an answer that
+  // was typed in the final second.
+  const examRef = useRef<any>(null)
+  const answersRef = useRef<Record<string, string>>({})
+  const timeLeftRef = useRef(0)
+  const startTimeRef = useRef<number | null>(null)
+  const submittingRef = useRef(false)
 
   useEffect(() => {
     // STEP 1: TEST API CALL WITH SIMPLE FETCH
@@ -30,7 +43,7 @@ export default function TakeExamPage({ params }: { params: Promise<{ id: string 
       try {
         setLoading(true)
         console.log('STEP 1: Fetching exam with ID:', examId)
-        const response = await fetch(`/api/exams/${examId}`)
+        const response = await fetch(`/api/exams/${encodeURIComponent(examId)}`)
         console.log('STEP 1: Response status:', response.status, response.ok)
         
         const data = await response.json()
@@ -42,8 +55,17 @@ export default function TakeExamPage({ params }: { params: Promise<{ id: string 
 
         console.log('STEP 1: Exam data received successfully')
         setExam(data.exam)
-        setTimeLeft((data.exam.duration || 60) * 60) // Convert minutes to seconds
-        setExamStartTime(new Date())
+        examRef.current = data.exam
+
+        // Same rule the submit route applies to `timeSpent`: the limit comes
+        // from the exam's duration, and only a missing/zero duration falls back
+        // to the default.
+        const limit = examTimeLimitSeconds(data.exam?.duration)
+        timeLeftRef.current = limit
+        setTimeLeft(limit)
+
+        const startedAt = Date.now()
+        startTimeRef.current = startedAt
       } catch (err: any) {
         console.error('STEP 1: Error fetching exam:', err)
         setError(err.message || 'Failed to load exam')
@@ -51,6 +73,17 @@ export default function TakeExamPage({ params }: { params: Promise<{ id: string 
         setLoading(false)
       }
     }
+
+    // A new exam id means a new attempt: drop the previous one completely.
+    examRef.current = null
+    answersRef.current = {}
+    startTimeRef.current = null
+    timeLeftRef.current = 0
+    submittingRef.current = false
+    setAnswers({})
+    setCurrentQuestion(0)
+    setSubmitting(false)
+    setSubmitError(null)
 
     if (examId) {
       fetchExam()
@@ -123,30 +156,112 @@ export default function TakeExamPage({ params }: { params: Promise<{ id: string 
     setLoading(true);
     setTimeout(() => {
       setExam(staticExamData);
-      setTimeLeft(staticExamData.duration * 60);
-      setExamStartTime(new Date());
+      examRef.current = staticExamData;
+      timeLeftRef.current = examTimeLimitSeconds(staticExamData.duration);
+      setTimeLeft(timeLeftRef.current);
+      startTimeRef.current = Date.now();
       setLoading(false);
     }, 500); // Small delay to simulate loading
     */
 
   }, [examId])
 
-  // Timer countdown
+  /**
+   * Send the attempt. `autoSubmitted` is decided by the caller - the countdown
+   * reaching zero - rather than by reading a countdown captured earlier, which
+   * is why timed-out attempts used to be stored as ordinary submissions.
+   */
+  const submitExam = useCallback(async (autoSubmitted: boolean) => {
+    const currentExam = examRef.current
+    if (!currentExam?.questions?.length) return
+    // A second click (or a click while the timer fires) must not grade twice.
+    if (submittingRef.current) return
+    if (!user?.id) {
+      setSubmitError('Your session is still loading. Try submitting again in a moment.')
+      return
+    }
+    if (startTimeRef.current === null) return
+
+    submittingRef.current = true
+    setSubmitting(true)
+    setSubmitError(null)
+
+    const timeSpent = Math.max(0, Math.floor((Date.now() - startTimeRef.current) / 1000))
+
+    try {
+      // Prepare responses in the format expected by the API
+      const responses = currentExam.questions.map((q: any) => {
+        const questionId = String(q._id ?? q.id ?? '')
+        return {
+          questionId: questionId,
+          userResponse: answersRef.current[questionId] || '',
+          allottedMarks: 0, // Will be filled by AI evaluation
+          maxMarks: q.marks,
+          feedback: '',
+          suggestions: []
+        }
+      })
+
+      const submissionData = {
+        examId: examId,
+        responses: responses,
+        timeSpent: timeSpent,
+        autoSubmit: autoSubmitted
+      }
+
+      const response = await fetch('/api/submissions/create', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(submissionData),
+      })
+
+      const data = await response.json().catch(() => null)
+
+      if (response.ok && data?.success) {
+        // Redirect to results page
+        window.location.href = `/results/${data.submissionId}`
+        return
+      }
+
+      // Already submitted: show the result that exists instead of a dead end.
+      if (response.status === 409 && data?.submissionId) {
+        window.location.href = `/results/${data.submissionId}`
+        return
+      }
+
+      setSubmitError(data?.error || 'Failed to submit exam')
+    } catch (err: any) {
+      console.error('Error submitting exam:', err)
+      setSubmitError('Failed to submit exam. Please try again.')
+    } finally {
+      submittingRef.current = false
+      setSubmitting(false)
+    }
+  }, [examId, user?.id])
+
+  // Timer countdown. One interval for the whole attempt: the previous version
+  // listed `timeLeft` in its dependencies, so the interval was cleared and
+  // recreated every second, and the auto-submit ran from inside a `setState`
+  // updater - a function React may invoke more than once.
   useEffect(() => {
-    if (timeLeft <= 0 || !exam) return
+    if (!exam) return
 
     const timer = setInterval(() => {
-      setTimeLeft((prev) => {
-        if (prev <= 1) {
-          handleSubmit() // Auto-submit when time runs out
-          return 0
-        }
-        return prev - 1
-      })
+      if (submittingRef.current) return
+
+      const remaining = Math.max(0, timeLeftRef.current - 1)
+      timeLeftRef.current = remaining
+      setTimeLeft(remaining)
+
+      if (remaining === 0) {
+        void submitExam(true)
+      }
     }, 1000)
 
     return () => clearInterval(timer)
-  }, [timeLeft, exam])
+  }, [exam, submitExam])
 
   if (loading) {
     return (
@@ -175,13 +290,34 @@ export default function TakeExamPage({ params }: { params: Promise<{ id: string 
       </div>
     )
   }
-  
+
+  // An exam whose questions all lost their prompt comes back with an empty
+  // list; the question card below indexed into it unconditionally and threw.
+  if (!exam.questions?.length) {
+    return (
+      <div className="min-h-screen bg-gray-50 dark:bg-gray-900 py-8 px-4">
+        <div className="max-w-4xl mx-auto">
+          <Card>
+            <CardContent className="py-12 text-center space-y-2">
+              <p className="text-gray-500 dark:text-gray-400">
+                This exam has no questions available.
+              </p>
+              <Button variant="outline" onClick={() => { window.location.href = '/dashboard' }}>
+                Back to Dashboard
+              </Button>
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+    )
+  }
+
+  const currentQuestionData = exam.questions[currentQuestion]
+  const currentQuestionId = String(currentQuestionData?._id ?? currentQuestionData?.id ?? '')
+
   const handleAnswerChange = (value: string) => {
-    const questionId = exam.questions[currentQuestion]._id || exam.questions[currentQuestion].id
-    setAnswers({
-      ...answers,
-      [questionId]: value,
-    })
+    answersRef.current = { ...answersRef.current, [currentQuestionId]: value }
+    setAnswers(answersRef.current)
   }
 
   const handleNext = () => {
@@ -196,56 +332,8 @@ export default function TakeExamPage({ params }: { params: Promise<{ id: string 
     }
   }
 
-  const handleSubmit = async () => {
-    if (!user?.id || !examStartTime) return
-
-    const timeSpent = Math.floor((new Date().getTime() - examStartTime.getTime()) / 1000)
-    const wasAutoSubmitted = timeLeft <= 0
-
-    try {
-      // Prepare responses in the format expected by the API
-      const responses = exam.questions.map((q: any) => {
-        const questionId = q._id || q.id
-        const userAnswer = answers[questionId] || ''
-        
-        return {
-          questionId: questionId,
-          userResponse: userAnswer,
-          allottedMarks: 0, // Will be filled by AI evaluation
-          maxMarks: q.marks,
-          feedback: '',
-          suggestions: []
-        }
-      })
-
-      const submissionData = {
-        examId: examId,
-        userId: user.id,
-        responses: responses,
-        timeSpent: timeSpent,
-        autoSubmit: wasAutoSubmitted
-      }
-
-      const response = await fetch('/api/submissions/create', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(submissionData),
-      })
-
-      const data = await response.json()
-
-      if (response.ok && data.success) {
-        // Redirect to results page
-        window.location.href = `/results/${data.submissionId}`
-      } else {
-        alert(`Error: ${data.error || 'Failed to submit exam'}`)
-      }
-    } catch (err: any) {
-      console.error('Error submitting exam:', err)
-      alert('Failed to submit exam. Please try again.')
-    }
+  const handleSubmit = () => {
+    void submitExam(false)
   }
 
   const formatTime = (seconds: number) => {
@@ -254,8 +342,6 @@ export default function TakeExamPage({ params }: { params: Promise<{ id: string 
     return `${minutes}:${remainingSeconds < 10 ? "0" : ""}${remainingSeconds}`
   }
 
-  const currentQuestionData = exam.questions[currentQuestion]
-  const currentQuestionId = currentQuestionData._id || currentQuestionData.id
   const progress = ((currentQuestion + 1) / exam.questions.length) * 100
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900 py-8 px-4">
@@ -335,14 +421,24 @@ export default function TakeExamPage({ params }: { params: Promise<{ id: string 
                 Next <ArrowRight className="ml-2 h-4 w-4" />
               </Button>
             ) : (
-              <Button onClick={handleSubmit}>Submit Exam</Button>
+              <Button onClick={handleSubmit} disabled={submitting}>
+                {submitting ? 'Submitting…' : 'Submit Exam'}
+              </Button>
             )}
           </CardFooter>
         </Card>
 
+        {submitError && (
+          <Card className="border-red-300 dark:border-red-800">
+            <CardContent className="py-4 text-sm text-red-600 dark:text-red-400">
+              {submitError}
+            </CardContent>
+          </Card>
+        )}
+
         <div className="grid grid-cols-5 sm:grid-cols-10 gap-2">
           {exam.questions.map((q: any, index: number) => {
-            const qId = q._id || q.id
+            const qId = String(q._id ?? q.id ?? '')
             return (
               <Button
                 key={index}
