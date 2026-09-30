@@ -10,9 +10,9 @@
     "test:auth-dashboard": "node --experimental-strip-types --test tests/node/dashboard-auth.test.ts",
     "test:exams-crud": "node --experimental-strip-types --test tests/node/exams-crud.test.ts tests/node/admin-exams.test.ts",
     "test:node": "node --experimental-strip-types --import ./tests/node/register-hook.mjs --test \"tests/node/*.test.ts\"",
-    "test:submissions": "node --experimental-strip-types --test tests/node/submission-results.test.ts"
- ,
-    "test:admin-users-resources": "node --experimental-strip-types --test tests/node/admin-users-resources.test.ts tests/node/admin-user-list.test.ts"
+    "test:submissions": "node --experimental-strip-types --test tests/node/submission-results.test.ts",
+    "test:admin-users-resources": "node --experimental-strip-types --test tests/node/admin-users-resources.test.ts tests/node/admin-user-list.test.ts",
+    "test:admin-database-jobs": "node --experimental-strip-types --test tests/node/admin-database-jobs.test.ts"
   },
   "devDependencies": {
     "@eslint/js": "^9.30.1",

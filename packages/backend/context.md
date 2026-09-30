@@ -24,6 +24,7 @@
   ```
 - All Mongoose schemas are generated from Zod via `@zodyac/zod-mongoose`'s `zodSchema(zodSchemaObject)`.
 - **Never define raw Mongoose schemas** — always go through Zod + `zodSchema()`.
+- **Managed collections are declared once** in `src/database/managedCollections.ts` (dependency-free list) and resolved to models in `src/database/managedCollectionModels.ts` via `getManagedCollections()`. Admin stats, S3 backup/restore and `POST /api/admin/database/truncate` all iterate that registry — never re-declare a collection list inline (drift previously made truncate skip the `Subject` collection).
 
 ## Database Connection (`src/database/connect.ts`)
 - **Exports:** `connect()` and `disconnect()`.
@@ -83,7 +84,8 @@
 | `ec2OcrClient.ts` | Axios client for EC2-based AI Pipeline |
 | `publishAnalysisService.ts` | Orchestrates AnalysisReport, Prompt, UniqueQuestion creation |
 | `questionSimilarityService.ts` | Bidirectional similarity linking between prompts (MongoDB) |
-| `s3CleanupService.ts` | Validates S3 files, marks expired jobs in MongoDB |
+| `s3CleanupService.ts` | Validates S3 files, marks expired jobs in MongoDB (rejects retention windows < 1 day) |
+| `databaseBackupService.ts` | S3 database backup/list/get/restore/delete. `backupPlan.ts` holds the pure, unit-tested planning helpers (restore plan covers **every** managed collection, backups with unreadable collections are marked `failed`) |
 | `examOcrService.ts` | EC2 OCR + exam analysis workflow |
 | `generateBloomsAnatomy.ts` | Bloom's taxonomy classification (mostly commented out) |
 
