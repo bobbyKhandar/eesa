@@ -6,10 +6,16 @@ import { AnalysisReportRepository } from "@/backend/dist/database/repositories/A
 import { UniqueQuestionRepository } from "@/backend/src/database/repositories/UniqueQuestionRepository";
 import { JobMetadataRepository } from "@/backend/src/database/repositories/JobMetadataRepository";
 import { connect } from "@/backend/dist/database/connect";
-import { 
+import {
   updateSimilarityRelationships,
   findAndLinkSimilarQuestions 
 } from "@/backend/src/services/questionSimilarityService";
+import {
+  buildAutoSubjectDocument,
+  normalizeExamType,
+  toBloomPercentages,
+  type BloomDistribution,
+} from "@/frontend/lib/subjectQuestionBank";
 
 // Import types directly from source since backend has compile errors
 type BloomLevel = "Recall" | "Understand" | "Apply" | "Analyze" | "Evaluate" | "Create";
@@ -239,14 +245,25 @@ export async function POST(request: NextRequest) {
     for (const exam of enrichedData.exams) {
       try {
         const {
-          subject,
-          subjectCode,
+          subject: rawSubject,
+          subjectCode: rawSubjectCode,
           year,
           semester,
           branch,
           examType,
           questions,
         } = exam;
+
+        // These are reassigned below when a similar subject is matched, so they
+        // cannot be destructured with `const`.
+        let subject: string = typeof rawSubject === "string" ? rawSubject.trim() : "";
+        let subjectCode: string | undefined = typeof rawSubjectCode === "string" ? rawSubjectCode.trim() : undefined;
+        const normalizedExamType = normalizeExamType(examType);
+        const examYear = year || new Date().getFullYear().toString();
+
+        if (!subject) {
+          throw new Error("Exam is missing a subject name");
+        }
 
         // Auto-create subject if it doesn't exist
         if (subjectCode) {
@@ -260,7 +277,8 @@ export async function POST(request: NextRequest) {
               
               if (existingSubject) {
                 console.log(`[Subjects Upload] Using existing similar subject: ${existingSubject.name} (${existingSubject.code}) for "${subject}" (${subjectCode})`);
-                // Update the subject name and code for consistency
+                // Reuse the canonical name/code so one subject does not split
+                // into several near-duplicate catalog entries.
                 subject = existingSubject.name;
                 subjectCode = existingSubject.code;
               }
@@ -268,39 +286,34 @@ export async function POST(request: NextRequest) {
             
             if (!existingSubject) {
               console.log(`[Subjects Upload] Creating new subject: ${subject} (${subjectCode})`);
-              
-              // Map year/semester to expected format
-              const yearMap: Record<string, "FY" | "SY" | "TY" | "LY"> = {
-                "2021": "FY", "2022": "SY", "2023": "TY", "2024": "LY",
-                "2025": "FY", "2026": "SY", "2027": "TY", "2028": "LY"
-              };
-              
-              const subjectData = {
-                name: subject,
-                code: subjectCode,
-                branch: branch || "CSE",
-                year: yearMap[year] || "SY",
-                semester: `Semester ${semester || "1"}`,
-                credits: 4,
-                type: "Core" as const,
-                description: `Auto-generated from OCR pipeline - ${subject}`,
-                duration: "16 weeks",
-                isActive: true,
-                topics: [],
-                learningOutcomes: [],
-                assessmentStructure: [],
-                textbooks: [],
-                references: [],
-                metadata: {
-                  autoCreated: true,
-                  source: "ai-pipeline-ocr",
-                  createdFrom: job_id,
-                  createdAt: new Date().toISOString()
+
+              // The schema requires `code` in XX### format and a `createdBy`;
+              // the raw pipeline values failed validation on both counts.
+              const subjectData = buildAutoSubjectDocument({
+                subjectName: subject,
+                subjectCode,
+                branch,
+                year,
+                semester,
+                jobId: job_id,
+                createdBy: "ai-pipeline",
+              });
+
+              if (!subjectData) {
+                console.warn(`[Subjects Upload] Skipping subject creation for "${subject}" (${subjectCode}): no valid subject code could be derived`);
+              } else {
+                subjectCode = subjectData.code;
+
+                // create() returns { success, error } instead of throwing, so
+                // the success log below was printed even when the write failed.
+                const createResult = await subjectRepo.create(subjectData as any);
+
+                if (createResult?.success) {
+                  console.log(`[Subjects Upload] ✓ Subject created: ${subjectData.code}`);
+                } else {
+                  console.error(`[Subjects Upload] ✗ Subject creation failed for ${subjectData.code}: ${createResult?.error}`);
                 }
-              };
-              
-              await subjectRepo.create(subjectData as any);
-              console.log(`[Subjects Upload] ✓ Subject created: ${subjectCode}`);
+              }
             } else {
               console.log(`[Subjects Upload] ✓ Using existing subject: ${existingSubject.code}`);
             }
@@ -312,9 +325,13 @@ export async function POST(request: NextRequest) {
 
         // Convert questions to AnalyzedQuestion format
         const analyzedQuestions: AnalyzedQuestion[] = [];
-        const promptIds: string[] = [];
+        // Paired with analyzedQuestions by index. Appending only on success
+        // (while still pushing the question) previously shifted every prompt id
+        // after a failed insert, so reports pointed at the wrong questions.
+        const questionPromptIds: Array<string | undefined> = [];
+        const batchPromptIds: string[] = [];
 
-        for (const q of questions) {
+        for (const q of Array.isArray(questions) ? questions : []) {
           // Create prompt for each question with all available fields
           const promptData: any = {
             questionText: q.questionText,
@@ -354,7 +371,7 @@ export async function POST(request: NextRequest) {
           const promptResult = await promptRepo.create(promptData);
           
           if (promptResult.success && promptResult.promptId) {
-            promptIds.push(promptResult.promptId);
+            batchPromptIds.push(promptResult.promptId);
             
             // Find and link similar questions using text-based similarity
             // This runs for EVERY prompt to find similar questions in the database
@@ -363,7 +380,7 @@ export async function POST(request: NextRequest) {
                 promptResult.promptId,
                 q.questionText,
                 subject,
-                promptIds // Exclude prompts we just created in this batch
+                batchPromptIds // Exclude prompts we just created in this batch
               );
               
               if (similarityResult.linkedCount > 0) {
@@ -409,26 +426,31 @@ export async function POST(request: NextRequest) {
           }
           
           analyzedQuestions.push(analyzedQuestion);
+          questionPromptIds.push(promptResult?.success && promptResult.promptId ? promptResult.promptId : undefined);
         }
 
-        // Calculate Bloom's distribution
-        const bloomDistribution = {
-          Recall: analyzedQuestions.filter(q => q.bloomLevel === "Recall").length,
-          Understand: analyzedQuestions.filter(q => q.bloomLevel === "Understand").length,
-          Apply: analyzedQuestions.filter(q => q.bloomLevel === "Apply").length,
-          Analyze: analyzedQuestions.filter(q => q.bloomLevel === "Analyze").length,
-          Evaluate: analyzedQuestions.filter(q => q.bloomLevel === "Evaluate").length,
-          Create: analyzedQuestions.filter(q => q.bloomLevel === "Create").length,
-        };
+        // Only questions whose prompt was stored can be referenced by the report.
+        const promptIds = questionPromptIds.filter((id): id is string => Boolean(id));
+        const skippedQuestions = analyzedQuestions.length - promptIds.length;
+
+        if (skippedQuestions > 0) {
+          console.warn(`[Subjects Upload] ${skippedQuestions}/${analyzedQuestions.length} question(s) had no prompt stored and are excluded from the report`);
+        }
+
+        // AnalysisReport.bloomDistribution holds percentages, not raw counts;
+        // counts rendered as "8.0%" and failed validation past 100 questions.
+        const bloomDistribution: BloomDistribution = toBloomPercentages(
+          analyzedQuestions.map((q) => q.bloomLevel)
+        );
 
         // Create exam analysis
         const examAnalysisData: Partial<ExamAnalysis> = {
           subjectCode: subjectCode || "UNKNOWN",
           subjectName: subject,
           branch: branch || "CSE",
-          year: year || new Date().getFullYear().toString(),
+          year: examYear,
           semester: semester || "1",
-          examType: (examType?.toLowerCase() as "main" | "kt") || "main",
+          examType: normalizedExamType,
           questions: analyzedQuestions,
           totalQuestions: analyzedQuestions.length,
           totalMarks: analyzedQuestions.reduce((sum, q) => sum + q.marks, 0),
@@ -466,11 +488,11 @@ export async function POST(request: NextRequest) {
               subjectCode: subjectCode || "UNKNOWN",
               subjectName: subject,
               branch: branch || "CSE",
-              year: year || new Date().getFullYear().toString(),
+              year: examYear,
               semester: semester || "1",
-              examType: (examType?.toLowerCase() as "main" | "kt") || "main",
-              questionIds: promptIds, // Use the prompts we already created
-              totalQuestions: analyzedQuestions.length,
+              examType: normalizedExamType,
+              questionIds: promptIds, // Only prompts that were actually stored
+              totalQuestions: promptIds.length,
               totalMarks: analyzedQuestions.reduce((sum, q) => sum + q.marks, 0),
               bloomDistribution,
               overallAssessment: `Analyzed ${analyzedQuestions.length} questions from ${subject}`,
@@ -495,7 +517,7 @@ export async function POST(request: NextRequest) {
             
             for (let i = 0; i < analyzedQuestions.length; i++) {
               const q = analyzedQuestions[i];
-              const promptId = promptIds[i];
+              const promptId = questionPromptIds[i];
               
               if (!promptId) continue;
               
@@ -525,9 +547,9 @@ export async function POST(request: NextRequest) {
                   lastSeenAt: new Date(),
                   appearances: [],
                   analysisReportId: reportId!,
-                  year: year || new Date().getFullYear().toString(),
+                  year: examYear,
                   semester: semester || "1",
-                  examType: (examType?.toLowerCase() as "main" | "kt") || "main",
+                  examType: normalizedExamType,
                   estimatedMarks: q.marks,
                 };
                 

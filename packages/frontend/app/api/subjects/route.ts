@@ -9,10 +9,15 @@ import { getAllSubjectsWithReports, getPublishedReportsForSubject } from "@/back
 export async function GET(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams;
-    const subjectName = searchParams.get("subjectName");
-    const year = searchParams.get("year") || undefined;
-    const semester = searchParams.get("semester") || undefined;
-    const examType = searchParams.get("examType") as "main" | "kt" | undefined;
+    // Trim values: a stray space meant to return no reports at all.
+    const subjectName = searchParams.get("subjectName")?.trim() || undefined;
+    const year = searchParams.get("year")?.trim() || undefined;
+    const semester = searchParams.get("semester")?.trim() || undefined;
+
+    // An unknown examType (e.g. "MAIN " or "quiz") silently returned zero
+    // reports; ignore anything that is not a real exam type instead.
+    const examTypeParam = searchParams.get("examType")?.trim().toLowerCase();
+    const examType = examTypeParam === "main" || examTypeParam === "kt" ? examTypeParam : undefined;
 
     // Get reports for specific subject
     if (subjectName) {

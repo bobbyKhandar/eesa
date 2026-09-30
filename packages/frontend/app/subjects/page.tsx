@@ -13,6 +13,7 @@ interface SubjectSummary {
   subjectName: string
   subjectCode?: string
   branch?: string
+  branches?: string[]
   reportCount: number
   years: string[]
   latestYear: string
@@ -34,13 +35,17 @@ export default function SubjectsQuestionBankPage() {
     try {
       setLoading(true)
       const response = await fetch("/api/subjects")
+      // Errors come back as { error }, so an unchecked response used to render
+      // an empty page with no indication anything went wrong.
+      if (!response.ok) {
+        throw new Error(`Failed to load subjects (${response.status})`)
+      }
       const data = await response.json()
       
-      if (data.subjects) {
-        setSubjects(data.subjects)
-      }
+      setSubjects(Array.isArray(data?.subjects) ? data.subjects : [])
     } catch (error) {
       console.error("Error fetching subjects:", error)
+      setSubjects([])
     } finally {
       setLoading(false)
     }
@@ -48,20 +53,26 @@ export default function SubjectsQuestionBankPage() {
 
   // Filter subjects based on search and filters
   const filteredSubjects = subjects.filter((subject) => {
+    const query = searchQuery.trim().toLowerCase()
     const matchesSearch =
-      subject.subjectName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      subject.subjectCode?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      false
+      query.length === 0 ||
+      subject.subjectName.toLowerCase().includes(query) ||
+      (subject.subjectCode?.toLowerCase().includes(query) ?? false)
 
-    const matchesBranch = branchFilter === "all" || subject.branch === branchFilter
-    const matchesYear = yearFilter === "all" || subject.years.includes(yearFilter)
+    // A subject can appear under several branches; filtering used to compare only
+// the single representative branch, so multi-branch subjects went missing.
+    const matchesBranch =
+      branchFilter === "all" || (subject.branches ?? [subject.branch]).includes(branchFilter)
+    const matchesYear = yearFilter === "all" || (subject.years ?? []).includes(yearFilter)
 
     return matchesSearch && matchesBranch && matchesYear
   })
 
   // Get unique branches and years for filters
-  const uniqueBranches = Array.from(new Set(subjects.map(s => s.branch).filter(Boolean)))
-  const uniqueYears = Array.from(new Set(subjects.flatMap(s => s.years))).sort().reverse()
+  const uniqueBranches = Array.from(
+    new Set(subjects.flatMap(s => s.branches ?? (s.branch ? [s.branch] : [])))
+  ).sort()
+  const uniqueYears = Array.from(new Set(subjects.flatMap(s => s.years ?? []))).sort().reverse()
 
   const totalReports = subjects.reduce((sum, s) => sum + s.reportCount, 0)
 
@@ -210,14 +221,22 @@ export default function SubjectsQuestionBankPage() {
       {/* Subjects Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {filteredSubjects.map((subject) => (
-          <Card key={subject.subjectName} className="hover:shadow-lg transition-shadow">
+            // Keyed by name + code: names are now unique per row, but a legacy
+            // row without a code would still collide with itself.
+            <Card
+              key={`${subject.subjectName}-${subject.subjectCode ?? "unknown"}`}
+              className="hover:shadow-lg transition-shadow"
+            >
             <CardHeader>
               <div className="flex items-start justify-between">
                 <div className="flex-1">
                   <CardTitle className="text-lg">{subject.subjectName}</CardTitle>
                   <CardDescription className="mt-1">
                     {subject.subjectCode && <span className="font-mono">{subject.subjectCode}</span>}
-                    {subject.branch && (
+                    {(subject.branches?.length ?? 0) > 1 && (
+                      <span className="ml-2">{subject.branches?.join(", ")}</span>
+                    )}
+                    {subject.branch && (subject.branches?.length ?? 0) <= 1 && (
                       <>
                         {subject.subjectCode && " • "}
                         {subject.branch}
@@ -237,14 +256,14 @@ export default function SubjectsQuestionBankPage() {
                   <span className="font-medium">Years Available:</span>
                 </div>
                 <div className="flex flex-wrap gap-1">
-                  {subject.years.slice(0, 5).map((year) => (
+                  {(subject.years ?? []).slice(0, 5).map((year) => (
                     <Badge key={year} variant="secondary" className="text-xs">
                       {year}
                     </Badge>
                   ))}
-                  {subject.years.length > 5 && (
+                  {(subject.years?.length ?? 0) > 5 && (
                     <Badge variant="secondary" className="text-xs">
-                      +{subject.years.length - 5} more
+                      +{(subject.years?.length ?? 0) - 5} more
                     </Badge>
                   )}
                 </div>
@@ -252,7 +271,7 @@ export default function SubjectsQuestionBankPage() {
 
               <div className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400">
                 <TrendingUp className="h-4 w-4" />
-                <span>Latest: {subject.latestYear}</span>
+                <span>Latest: {subject.latestYear ?? "—"}</span>
               </div>
 
               <Button asChild size="sm" className="w-full">
