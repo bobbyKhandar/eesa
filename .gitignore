@@ -87,3 +87,7 @@ __pycache__/
 *.png
 *.jpg
 *.jpeg
+
+# Workspace dependency manifests must be tracked for a correct dep graph
+!packages/backend/package.json
+!packages/frontend/package.json
