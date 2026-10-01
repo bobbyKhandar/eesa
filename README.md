@@ -10,10 +10,10 @@ A modular monolith for end-to-end exam processing: upload scanned question paper
 - **Question Clustering** — FAISS + HDBSCAN similarity-based clustering of extracted questions
 - **Exam Management** — Create exams from enriched question banks, organize by subject/syllabus, publish for students
 - **Student Submissions** — Take exams, auto-grading, result analysis
-- **Resource Library** — Browse previous-year questions per branch → semester → subject, plus notes and study materials
+- **Resource Library** — Upload and browse notes, PYQs, and study materials with subject filtering
 - **Admin Tools** — Database stats, S3 backup/restore, collection truncation, query editor, performance monitoring, job status monitoring, failed job retry
 - **AI Analysis** — Bloom's taxonomy classification, exam analysis reports, Gemini-powered exam helper
-- **Clerk Authentication** — Secure login via email, Google, or GitHub; the whole `/admin` segment is gated on the stored `role: "admin"`
+- **Clerk Authentication** — Secure login via email, Google, or GitHub
 
 ---
 
@@ -133,10 +133,10 @@ packages/frontend/
 │   │   ├── results/                 # Results retrieval
 │   │   ├── reports/                 # Report generation
 │   │   └── unique-questions/        # Unique questions retrieval
-│   ├── admin/                       # Admin pages (database, upload, analytics, etc.) — role-gated by admin/layout.tsx
+│   ├── admin/                       # Admin pages (database, upload, analytics, etc.)
 │   ├── dashboard/                   # User dashboard, exam creation
 │   ├── exams/                       # Exam listing & taking
-│   ├── resources/                   # Resource library (PYQs by branch/semester/subject)
+│   ├── resources/                   # Resource library
 │   ├── subjects/                    # Subject explorer
 │   ├── take-exam/                   # Exam-taking interface
 │   ├── ai-analyze/                  # AI exam analysis
@@ -154,11 +154,7 @@ packages/frontend/
 │   ├── theme-provider.tsx
 │   └── notification-system.tsx
 ├── hooks/                           # use-mobile, use-toast
-├── lib/
-│   ├── utils.ts                     # cn() utility (clsx + tailwind-merge)
-│   ├── adminAccess.ts               # Role predicates + admin-only nav filtering
-│   ├── resolveAdmin.ts              # Server-only: session + role -> isAdmin
-│   └── resourceCatalog.ts           # Subject catalogue, natural label sort, selection rules
+├── lib/utils.ts                     # cn() utility (clsx + tailwind-merge)
 ├── middleware.ts                    # Clerk auth middleware
 └── package.json
 ```
@@ -289,7 +285,7 @@ Or use **VSCode** (`.vscode/launch.json`) — open Run & Debug (Ctrl+Shift+D), s
 | `jobs/` | Status, cleanup |
 | `failed-jobs/` | Failed job details, bulk retry |
 | `submissions/` | Submit & get results |
-| `resources/` | Branch → semester → subject catalogue (`action=subjects`), PYQ rows (`action=pyqs`) |
+| `resources/` | Resource CRUD |
 | `admin/database/` | DB stats, S3 backup/restore, truncation |
 | `exam-analysis/` | Publish, upload, upload-bulk |
 | `llm/` | Gemini AI exam helper |
@@ -348,15 +344,7 @@ All routes registered on the canonical server at `src/api/server.py`. See `packa
 |----------|-----------|----------|
 | `packages/ai-pipeline/tests/` | Python unittest | 15 test files (server, OCR, pipeline, AWS, integration) |
 | `tests/python/` | Python unittest | 2 test files (experiment, image preprocessing) |
-| `tests/node/` | `node --test` | Auth/dashboard, exams CRUD, results derivations, admin users/resources/settings |
-
-Node suites are dependency-free — they import the pure helpers under
-`packages/frontend/lib/` and `packages/backend/src/` directly, so they run with
-`node --test` and no install step:
-
-```bash
-npm run test:admin-users-resources
-```
+| `tests/node/` | — | Empty (placeholder for future Node.js tests) |
 
 ---
 

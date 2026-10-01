@@ -3,12 +3,10 @@
 ## Component Hierarchy
 - **UI primitives** live in `components/ui/` (45 shadcn/ui components — button, card, dialog, etc.). Import from `@/frontend/components/ui/<name>`.
 - **Feature components** live in `components/features/<domain>/`. Always use barrel exports via `index.ts`. Existing domains: `admin/`, `exams/`, `resources/`, `upload/`.
-- **Layout shell** is split: `app/layout.tsx` (Server Component — wraps ClerkProvider + ClientLayout, resolves `isAdmin`) and `app/clientLayout.tsx` ("use client" — sidebar, top nav, mobile toggle).
-- **Route guards are server layouts.** `app/dashboard/layout.tsx` and `app/admin/layout.tsx` are the only two exceptions to the "pages are Client Components" rule below: they call `auth()` and `redirect()`. `app/admin/layout.tsx` additionally requires `role === "admin"` on the user record — a new `/admin/**` page is covered by it automatically.
-- **Admin-only navigation** is declared with `adminOnly: true` in `components/permanent-sidebar.tsx` and filtered by `filterNavigation()` from `lib/adminAccess.ts`. `lib/resolveAdmin.ts` is server-only (Clerk + repository); never import it from a Client Component.
+- **Layout shell** is split: `app/layout.tsx` (Server Component — wraps ClerkProvider + ClientLayout) and `app/clientLayout.tsx` ("use client" — sidebar, top nav, mobile toggle).
 
 ## Pages & Data Fetching
-- **All pages are Client Components ("use client")** except the root `app/page.tsx` (landing page), `app/layout.tsx`, and the two auth-guard layouts. The entire app uses `useEffect` + `fetch()` for data fetching. **Do not write React Server Components with `async function`** for anything other than those layouts.
+- **All pages are Client Components ("use client")** except the root `app/page.tsx` (landing page) and `app/layout.tsx`. The entire app uses `useEffect` + `fetch()` for data fetching. **Do not write React Server Components with `async function`** — that pattern is not used here.
 - **API Route Handlers** (`app/api/.../route.ts`) are always server-side (no "use client"). These import backend code directly via the `@/` alias.
 - **Mutation pattern:** Pages call `fetch("/api/...", { method: "POST", body: ... })` from event handlers. No server actions or React Query.
 

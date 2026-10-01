@@ -11,8 +11,6 @@
 - Each schema exports a Zod schema object (e.g., `examZodSchema`) and a TypeScript type (e.g., `Exam`).
 - Schemas define all domain models: exam, question, subject, user, prompt, examQuestion, examSubmission, jobMetadata, uploadSession, uniqueQuestion, analysisReport, examAnalysis, pastPaper, syllabus.
 - Barrel file `schemas/index.ts` re-exports all types and Zod schemas.
-- **Zod strips undeclared keys**, so a field missing from a schema is a silently discarded write, not a type error. `userSchemaZod.ts` keeps its field inventory, role/status enums and defaults in `userDocumentSpec.ts` (no `zod` import, so the logic stays unit-testable) and `USER_DOCUMENT_FIELDS` there must match the keys the schema declares.
-- **`userZodSchema` is the whole user document:** `profilePic`, `status`, `branch` and `settings` are declared with defaults. `UserRepository.getCounts()` buckets on `status` and counts status-less legacy records as active; `update()` runs `userZodSchema.partial()`, which is why every nested settings group needs its own `.default({})`.
 
 ## Mongoose Models (`src/database/mongooseSchemas.ts` and `src/database/newFeatureModels.ts`)
 - **Two model source files:**
