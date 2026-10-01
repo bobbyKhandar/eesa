@@ -32,7 +32,9 @@ npm install
 cp .env.example .env.local
 \`\`\`
 
-4. Add your API keys to `.env.local` (see `.env.example` for the full list)
+4. Add your API keys to `.env.local`:
+   - `OPENAI_API_KEY` - Required for AI evaluation features
+   - Other API keys are optional based on your needs
 
 5. Run the development server:
 
@@ -71,11 +73,12 @@ npm start
 - **TypeScript** - Type safety
 - **Tailwind CSS** - Styling
 - **shadcn/ui** - UI components
+- **AI SDK** - AI integration
 - **Lucide React** - Icons
 
 ## Environment Variables
 
-See `.env.example` for all available environment variables. Clerk keys are required for authentication; AI features are served by the backend/pipeline.
+See `.env.example` for all available environment variables. Only `OPENAI_API_KEY` is required for basic functionality.
 
 ## License
 

@@ -143,7 +143,7 @@ packages/frontend/
 │   ├── ai-helper/                   # Gemini exam helper
 │   └── upload-status/               # Upload session tracking
 ├── components/
-│   ├── ui/                          # shadcn/ui components (kept: in-use primitives)
+│   ├── ui/                          # 50 shadcn/ui components
 │   ├── features/                    # Domain-organized feature components
 │   │   ├── admin/                   # DatabaseStatCard, ConfirmTruncateDialog, SqlQueryEditor
 │   │   ├── exams/                   # ExamTypeSelector, QuestionEditor, SubjectSelector

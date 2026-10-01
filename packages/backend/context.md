@@ -100,7 +100,8 @@
 
 ## Dependencies
 - **Core:** `mongoose` ^8.19.1, `zod` ^3.25.76, `@zodyac/zod-mongoose` ^4.1.0
-- **AWS:** `@aws-sdk/client-bedrock-runtime` ^3.1022.0, `@aws-sdk/client-s3` ^3.1061.0
+- **AWS:** `@aws-sdk/client-bedrock-runtime` ^3.1022.0, `aws4` ^1.13.2
 - **AI:** `@google/generative-ai` ^0.24.1
 - **HTTP:** `axios` ^1.12.2
 - **Dev:** `typescript` ^5.9.2, `tsx` ^4.20.6, `ts-node` ^10.9.2
+- **Note:** `express` and `@types/express` are still in dependencies but **must not be used** — Express has been removed from the codebase.
