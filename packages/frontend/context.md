@@ -49,15 +49,9 @@
 - Middleware: `app/middleware.ts` — protects all routes via `clerkMiddleware()`.
 
 ## AI Pipeline Communication
-- Frontend API routes call the Python Flask AI pipeline via `fetchFromAiPipeline()` from `@/frontend/lib/aiPipeline` (or `fetch(AI_PIPELINE_URL + "/endpoint")`).
-- `AI_PIPELINE_URL` defaults to `http://127.0.0.1:5000` (set in `.env.local`). **Never hardcode a LAN address or `localhost:5000`** — hardcoded `http://localhost:5000` / `http://192.168.1.105:5000` defaults only worked on one developer machine.
-- `fetchFromAiPipeline()` applies a request timeout and returns `null` when the pipeline is unreachable, so routes can serve cached MongoDB data instead of failing.
-- **Browser code must never call the pipeline directly** — always go through an `/api` proxy route.
+- Frontend API routes call the Python Flask AI pipeline via `fetch(AI_PIPELINE_URL + "/endpoint")`.
+- `AI_PIPELINE_URL` defaults to `http://127.0.0.1:5000` (set in `.env.local`). Also seen as `http://192.168.1.105:5000` or `http://localhost:5000`.
 - **Never call AWS Textract/Bedrock directly from the frontend** — always go through the AI pipeline.
-
-## Pure Logic Helpers
-- Non-React logic shared by routes and pages lives in `packages/frontend/lib/*.ts` (e.g. `aiPipeline.ts`, `jobStatus.ts`, `jobCleanup.ts`) so it can be unit tested with `node --test tests/node/*.test.ts` (no DOM/server imports allowed in those files).
-- Validate every request-controlled numeric input (e.g. `retention_days`) before forwarding it to the backend — `0`, negatives and non-numeric values must be rejected, not silently defaulted.
 
 ## Key Packages
 - `next` 15.2.4, `react` 18.3.1, `react-dom` 18.3.1
