@@ -1,4 +1,3 @@
-import nodemailer from "nodemailer";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import dotenv from "dotenv";
 import fs from "fs";
@@ -105,31 +104,6 @@ export async function refinePyqs(data) {
   console.log(result);
   console.log(result.response);
   return jsonresponse;
-}
-
-async function mailToUser(response, email) {
-  var transporter = nodemailer.createTransport({
-    service: "gmail",
-    auth: {
-      user: process.env.user_email,
-      pass: process.env.user_password,
-    },
-  });
-
-  var mailOptions = {
-    from: process.env.user_email,
-    to: email,
-    subject: "Graded Marks Of user",
-    text: response,
-  };
-
-  transporter.sendMail(mailOptions, function (error, info) {
-    if (error) {
-      console.log(error);
-    } else {
-      console.log("Email sent: " + info.response);
-    }
-  });
 }
 
 console.log(process.env.user_email);

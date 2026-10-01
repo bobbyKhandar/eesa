@@ -61,6 +61,4 @@
 - `lucide-react` ^0.454.0 (icons)
 - `recharts` (charts)
 - `zod` ^3.25.76 (validation in API routes)
-- `react-hook-form` + `@hookform/resolvers` (forms)
-- `sonner` (toasts)
 - `pdf-lib`, `jszip` (utilities)
