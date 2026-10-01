@@ -141,6 +141,8 @@ packages/frontend/
 │   ├── take-exam/                   # Exam-taking interface
 │   ├── ai-analyze/                  # AI exam analysis
 │   ├── ai-helper/                   # Gemini exam helper
+│   ├── sign-in/                     # Clerk path-based sign-in (target of the auth guard)
+│   ├── sign-up/                     # Clerk path-based sign-up
 │   └── upload-status/               # Upload session tracking
 ├── components/
 │   ├── ui/                          # 50 shadcn/ui components
@@ -154,8 +156,10 @@ packages/frontend/
 │   ├── theme-provider.tsx
 │   └── notification-system.tsx
 ├── hooks/                           # use-mobile, use-toast
-├── lib/utils.ts                     # cn() utility (clsx + tailwind-merge)
-├── middleware.ts                    # Clerk auth middleware
+├── lib/
+│   ├── utils.ts                     # cn() utility (clsx + tailwind-merge)
+│   └── dashboardMetrics.ts          # Pure dashboard derivations (dedupe, averages, recency, search)
+├── middleware.ts                    # Clerk auth middleware (protects /dashboard and /api/users)
 └── package.json
 ```
 
@@ -289,7 +293,7 @@ Or use **VSCode** (`.vscode/launch.json`) — open Run & Debug (Ctrl+Shift+D), s
 | `admin/database/` | DB stats, S3 backup/restore, truncation |
 | `exam-analysis/` | Publish, upload, upload-bulk |
 | `llm/` | Gemini AI exam helper |
-| `users/` | User CRUD, submissions, metadata |
+| `users/` | User CRUD, submissions, metadata. Requires a session; identity is taken from the Clerk session, not the request body. |
 | `upload-sessions/` | Upload session management |
 | `results/` | Results retrieval |
 | `reports/` | Report generation |
@@ -318,6 +322,34 @@ All routes registered on the canonical server at `src/api/server.py`. See `packa
 
 ---
 
+## Auth Flow (auth, session & dashboard)
+
+```
+/                                app/page.tsx — "Get Started" CTA
+                                 <SignedOut> Clerk modal, forceRedirectUrl=/dashboard
+                                 <SignedIn>  plain <Link href="/dashboard">
+/sign-in, /sign-up               Clerk catch-all routes (routing="path") — guard target
+/dashboard(.*)                   middleware.ts   createRouteMatcher + auth() -> 302 /sign-in
+                                 app/dashboard/layout.tsx  server-side re-check
+  → GET  /api/users/userInfo                 session identity, 404 when unprovisioned
+  → POST /api/users/create                  only called on that 404
+  → GET  /api/users/submissions/:id/examDetails
+  → GET  /api/exams/list, /api/exams/:id
+/api/users(.*)                   middleware.ts   auth() -> 401 JSON (never a redirect)
+```
+
+Rules that the code above depends on:
+
+- **Identity comes from the session, never the request body.** `auth()` / `currentUser()` are the only sources of "who is calling". A route that takes an `email` or a `user.id` from the body must verify it resolves to the caller.
+- **Roles are assigned server-side.** Self-service provisioning always yields `student`; an existing role is preserved so an admin promotion is not reset on the next dashboard load.
+- **One provisioning path.** `packages/backend/src/services/userProvisioning.ts` builds the insert document; `UserRepository.upsertByClerkId` is the only writer. Clerk-owned fields (`email`, `name`, `lastLogin`) go in `$set`; `role`, the exam arrays and `createdAt` go in `$setOnInsert`.
+- **API URLs are absolute.** `"/api/..."`, never `"api/..."` — a relative path resolves against the current route segment.
+- **Reset client state on session change.** Effects wait for Clerk's `isLoaded`, clear state when the user is gone, and abort in-flight requests so a slow reply for one account cannot overwrite another.
+- **Route params in Client Components come from `useParams()`.** Next 15 exposes `params` as a promise; reading it synchronously yields `undefined`.
+- **`GET /api/users/userInfo` 404 means "not provisioned yet"** and is the dashboard's signal to call `POST /api/users/create`. It is not an error path.
+
+---
+
 ## Scripts
 
 ### Backend (`packages/backend/package.json`)
@@ -336,6 +368,12 @@ All routes registered on the canonical server at `src/api/server.py`. See `packa
 | `npm run start` | Start production server |
 | `npm run lint` | ESLint check |
 
+### Root (`package.json`)
+
+| Script | Description |
+|--------|-------------|
+| `npm run test:auth-dashboard` | Node test runner over `tests/node/dashboard-auth.test.ts` (auth/session/dashboard area) |
+
 ---
 
 ## Testing
@@ -344,7 +382,7 @@ All routes registered on the canonical server at `src/api/server.py`. See `packa
 |----------|-----------|----------|
 | `packages/ai-pipeline/tests/` | Python unittest | 15 test files (server, OCR, pipeline, AWS, integration) |
 | `tests/python/` | Python unittest | 2 test files (experiment, image preprocessing) |
-| `tests/node/` | — | Empty (placeholder for future Node.js tests) |
+| `tests/node/` | Node.js built-in test runner | `dashboard-auth.test.ts` — auth guards, session identity, provisioning, dashboard derivations |
 
 ---
 

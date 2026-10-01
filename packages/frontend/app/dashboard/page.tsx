@@ -1,130 +1,177 @@
 "use client"
 import Link from "next/link"
-import { useState, useEffect, use } from "react"
+import { useCallback, useEffect, useState } from "react"
 import { Button } from "@/frontend/components/ui/button"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/frontend/components/ui/card"
+import {
+  averageScore,
+  formatPercentage,
+  isRetryableStatus,
+  readUserInfo,
+  recentSubmissions,
+  submissionKey,
+  submissionStatus,
+  uniqueExamCount,
+  type SubmissionView,
+} from "@/frontend/lib/dashboardMetrics"
 import { BookOpen, FileText, BarChart3, Plus } from "lucide-react"
 import { SignedOut, SignedIn, useUser } from "@clerk/nextjs"
 import { SignInButton } from "@clerk/nextjs"
 import { ArrowRight } from "lucide-react"
 
-async function fetchWithRetry(url: string, options: RequestInit, maxRetries = 3): Promise<Response> {
+const MAX_RETRIES = 3
+
+/**
+ * Retry only transport faults and 5xx. A 4xx - including the 404 that triggers
+ * provisioning - is the server's final answer, so it is returned immediately
+ * instead of adding ~3s of backoff to a real error.
+ */
+async function fetchWithRetry(
+  url: string,
+  options: RequestInit,
+  maxRetries = MAX_RETRIES
+): Promise<Response> {
   let lastError: Error | null = null
   for (let attempt = 0; attempt < maxRetries; attempt++) {
     try {
-      const r = await fetch(url, options)
-      if (r.ok || (r.status >= 400 && r.status < 500 && r.status !== 404)) {
-        return r
-      }
-      lastError = new Error(`HTTP ${r.status}`)
-    } catch (e) {
-      lastError = e instanceof Error ? e : new Error(String(e))
+      const response = await fetch(url, options)
+      if (response.ok || !isRetryableStatus(response.status)) return response
+      lastError = new Error(`HTTP ${response.status}`)
+    } catch (error) {
+      if (error instanceof DOMException && error.name === "AbortError") throw error
+      lastError = error instanceof Error ? error : new Error(String(error))
     }
     if (attempt < maxRetries - 1) {
-      await new Promise(res => setTimeout(res, 1000 * Math.pow(2, attempt)))
+      await new Promise((resolve) => setTimeout(resolve, 1000 * Math.pow(2, attempt)))
     }
   }
   throw lastError
 }
 
+/** Read the caller's record. Absolute URL: a relative path resolves against the route. */
+async function loadUserInfo(signal: AbortSignal) {
+  return fetchWithRetry("/api/users/userInfo", { signal, cache: "no-store" })
+}
+
+async function loadExamSet(submissionId: string, signal: AbortSignal) {
+  const response = await fetchWithRetry(
+    `/api/users/submissions/${encodeURIComponent(submissionId)}/examDetails`,
+    { signal, cache: "no-store" }
+  )
+  if (!response.ok) return null
+  const body = await response.json().catch(() => null)
+  const examSet = body?.examSet
+  if (!examSet || typeof examSet !== "object") return null
+  return { ...examSet, submissionId }
+}
+
 export default function DashboardPage() {
-  const [submissions, setSubmissions] = useState<any[]>([])
-  const [allocatedExams, setAllocatedExams] = useState<any[]>([])
-  const [loading, setLoading] = useState(false)
+  const [submissions, setSubmissions] = useState<SubmissionView[]>([])
+  const [allocatedExams, setAllocatedExams] = useState<Record<string, unknown>[]>([])
+  const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [avgScore, setAvgScore] = useState<number | string>("loading..")
-  const [recentExams, setRecentExams] = useState<any[]>([])
-  const { user } = useUser()
-  
-  useEffect(() => {
-    console.log('User effect triggered', user)
-    if (!user?.id) return
-    
+  const { user, isLoaded } = useUser()
+
+  const load = useCallback(async (clerkUser: NonNullable<typeof user>, signal: AbortSignal) => {
+    const userId = clerkUser.id
     setLoading(true)
     setError(null)
-    
-    // First, create/ensure user exists (with retry for transient 404s during HMR)
-    fetchWithRetry(`/api/users/create`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ user: user, role: "student" }),
-    })
-      .then(async (r) => {
-        const resp = await r.json().catch(() => ({ success: false }))
-        console.log('Create user response:', r.ok, resp)
-        if (!r.ok || !resp?.success) throw new Error(resp?.error || "Failed to create user")
 
-        const exams = Array.isArray(resp.user?.currentAllocatedExams) ? resp.user.currentAllocatedExams : []
-        const subs = Array.isArray(resp.user?.submissionHistory) ? resp.user.submissionHistory : []
-        
-        console.log('Setting allocatedExams:', exams, 'submissions:', subs)
-        setAllocatedExams(exams)
-        const results = await Promise.all(
-          subs.map(async (submission) => {
-            try {
-              const res = await fetch(`api/users/submissions/${submission}/examDetails`)
-              if (!res.ok) return null
-              const examData = await res.json()
-              return {
-                ...examData.examSet,
-                submissionId: submission
-              }
-            } catch (error) {
-              console.error('Error fetching exam data:', error);
-              return null
-            }
-          })
-        )
-        setSubmissions(results.filter(Boolean))
-      })
-      .catch((e) => setError(e.message || String(e)))
-      .finally(() => setLoading(false))
-  }, [user?.id])
-  
-  // Derived metrics from submissions
-  const [totalExams, setTotalExams] = useState(0)
-  
-  // Update totalExams whenever allocatedExams or submissions change
+    // Read first. The page used to POST to /api/users/create on every visit just
+    // to read state, which made every render a write and hid provisioning bugs.
+    let infoResponse = await loadUserInfo(signal)
+
+    if (infoResponse.status === 404) {
+      const created = await fetchWithRetry(
+        "/api/users/create",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          // Only the Clerk-owned identity. The role is the server's decision -
+          // sending `role` let the client pick it.
+          body: JSON.stringify({
+            user: {
+              id: userId,
+              emailAddresses: clerkUser.emailAddresses,
+              fullName: clerkUser.fullName,
+              imageUrl: clerkUser.imageUrl,
+            },
+          }),
+          signal,
+        }
+      )
+      const createdBody = await created.json().catch(() => null)
+      if (!created.ok || !createdBody?.success) {
+        throw new Error(createdBody?.error || "Failed to load dashboard data")
+      }
+      infoResponse = await loadUserInfo(signal)
+    }
+
+    if (!infoResponse.ok) {
+      const body = await infoResponse.json().catch(() => null)
+      throw new Error(body?.error || `Failed to load dashboard data (HTTP ${infoResponse.status})`)
+    }
+
+    const info = readUserInfo(await infoResponse.json())
+    if (!info?.data) throw new Error("Dashboard data was not in the expected shape")
+
+    setAllocatedExams(
+      (info.data.currentAllocatedExams ?? []).map((examId) => ({ examId }))
+    )
+
+    const results = await Promise.all(
+      (info.data.submissionHistory ?? []).map((submissionId) =>
+        loadExamSet(submissionId, signal)
+      )
+    )
+    setSubmissions(results.filter((entry): entry is SubmissionView => entry !== null))
+  }, [])
+
   useEffect(() => {
-    setTotalExams(allocatedExams.length + submissions.length)
-  }, [allocatedExams, submissions])
+    // Wait for Clerk to resolve. Returning early on a missing user left the
+    // previous account's data on screen after a sign-out or account switch.
+    if (!isLoaded) return
 
-
-   useEffect(() => {
-    const vals = submissions.map((s) => {
-
-        if (s.totalMarks != null && s.marksAchieved != null) return (s.marksAchieved / s.totalMarks) * 100
-        return undefined
-      })
-      .filter((v): v is number => typeof v === "number" && !Number.isNaN(v))
-    
-    if (vals.length === 0) {
-      setAvgScore(0)
+    if (!user?.id) {
+      setSubmissions([])
+      setAllocatedExams([])
+      setError(null)
+      setLoading(false)
       return
     }
-    
-    const avgScore = Math.round((vals.reduce((a, b) => a + b, 0) / vals.length) * 10) / 10
-    setAvgScore(avgScore)
-  }, [submissions])
 
-  // Recent: newest first (just take first 6 from submissions - they're already fetched)
-  useEffect(() => {
-    if (submissions.length === 0) {
-      setRecentExams([])
-      return
+    const controller = new AbortController()
+    let active = true
+
+    load(user, controller.signal)
+      .catch((cause: unknown) => {
+        if (!active || controller.signal.aborted) return
+        setError(cause instanceof Error ? cause.message : String(cause))
+      })
+      .finally(() => {
+        if (active) setLoading(false)
+      })
+
+    // An aborted request is not a failure to report, and a slow reply for one
+    // account must never overwrite the next one's.
+    return () => {
+      active = false
+      controller.abort()
     }
-    
-    // Take the 6 most recent submissions (already sorted)
-    const recent = submissions.slice(0, 6)
-    setRecentExams(recent)
-  }, [submissions])
+  }, [isLoaded, user?.id, load])
+
+  const totalExams = uniqueExamCount(allocatedExams, submissions)
+  const recentExams = recentSubmissions(submissions)
+  // Derived, not stored: the old avgScore state held a placeholder string until
+  // the first result arrived, which leaked into the rendered percentage.
+  const avgScore = averageScore(submissions)
 
   return (
     <div className="space-y-6">
       <SignedOut>
         <div className="flex flex-col items-center justify-center h-screen">
           <h1 className="text-2xl font-bold mb-4">Please sign in to access the dashboard</h1>
-          <SignInButton>
+          <SignInButton mode="modal" forceRedirectUrl="/dashboard">
             <Button size="lg" className="gap-1">
               Sign in <ArrowRight className="h-4 w-4" />
             </Button>
@@ -153,7 +200,7 @@ export default function DashboardPage() {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">{totalExams}</div>
-              <p className="text-xs text-gray-500 dark:text-gray-400">Total submissions recorded</p>
+              <p className="text-xs text-gray-500 dark:text-gray-400">Allocated and submitted exams</p>
             </CardContent>
           </Card>
 
@@ -164,7 +211,7 @@ export default function DashboardPage() {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">{submissions.length}</div>
-              <p className="text-xs text-gray-500 dark:text-gray-400">Evaluated with results</p>
+              <p className="text-xs text-gray-500 dark:text-gray-400">Exam attempts recorded</p>
             </CardContent>
           </Card>
 
@@ -174,8 +221,13 @@ export default function DashboardPage() {
               <BarChart3 className="h-4 w-4 text-gray-500 dark:text-gray-400" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">{avgScore}%</div>
-              <p className="text-xs text-gray-500 dark:text-gray-400">Across completed exams</p>
+              {/* Derived, not stored: the old avgScore state was seeded with a
+                  placeholder string, which rendered as a literal percentage and
+                  then as 0% once the list emptied. */}
+              <div className="text-2xl font-bold">
+                {avgScore === null ? "—" : `${avgScore}%`}
+              </div>
+              <p className="text-xs text-gray-500 dark:text-gray-400">Across graded exams</p>
             </CardContent>
           </Card>
         </div>
@@ -191,36 +243,47 @@ export default function DashboardPage() {
             </Card>
           )}
 
-          {recentExams.map((s,i) => {
-            console.log(s)
-            const date = new Date(s.submittedAt || 0)
-            const dateStr = date.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" })
-            const status = s.evaluatedAt ? "Completed" : "Submitted"
-            const score = s.marksAchieved && s.totalMarks ? `${((s.marksAchieved / s.totalMarks) * 100).toFixed(2)}%` : "N/A"
-            
-            const examSet = s.title 
+          {recentExams.map((s, i) => {
+            const dateStr = s.submittedAt
+              ? new Date(s.submittedAt).toLocaleDateString(undefined, {
+                  year: "numeric",
+                  month: "short",
+                  day: "numeric",
+                })
+              : "Unknown date"
+            // `evaluatedAt` and `grade` are not on the submission document, so
+            // every card used to read "Submitted" and never showed a grade.
+            const status = submissionStatus(s)
+            const score = formatPercentage(s)
+
             return (
-              <Card key={""+s.examId+" "+i}>
-                <CardHeader>  
-                  <CardTitle>{examSet}</CardTitle>
-                  <CardDescription>{status} on {dateStr}</CardDescription>
+              <Card key={submissionKey(s, i)}>
+                <CardHeader>
+                  <CardTitle>{s.title || "Untitled exam"}</CardTitle>
+                  <CardDescription>
+                    {status} on {dateStr}
+                  </CardDescription>
                 </CardHeader>
                 <CardContent>
                   <div className="text-sm">
-                    <p>Score: {score}{s.grade ? ` (${s.grade})` : ""}</p>
+                    <p>Score: {score}</p>
                     <p>
                       Status:{" "}
-                      <span className={status === "Completed" ? "text-blue-500" : "text-yellow-600"}>{status}</span>
+                      <span className={status === "Completed" ? "text-blue-500" : "text-yellow-600"}>
+                        {status}
+                      </span>
                     </p>
                   </div>
                 </CardContent>
-                <CardFooter>
-                  <Link href={`/results/${s.submissionId}`} className="w-full">
-                    <Button variant="outline" className="w-full">
-                      View Result
-                    </Button>
-                  </Link>
-                </CardFooter>
+                {s.submissionId && (
+                  <CardFooter>
+                    <Link href={`/results/${s.submissionId}`} className="w-full">
+                      <Button variant="outline" className="w-full">
+                        View Result
+                      </Button>
+                    </Link>
+                  </CardFooter>
+                )}
               </Card>
             )
           })}
