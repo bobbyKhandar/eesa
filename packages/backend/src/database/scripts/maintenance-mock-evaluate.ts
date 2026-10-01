@@ -8,7 +8,7 @@
  *   1. Fetches the exam with question + prompt details
  *   2. Sends ALL questions + target score to Gemini in one prompt
  *   3. Gemini generates plausible student answers at the target quality
- *   4. Answers sent to evaluateExamResponses() for AI grading
+ *   4. Answers sent to evaluateExamResponses() for grading
  *   5. Creates a submission record with AI-evaluated scores
  *   6. Auto-moves the exam from currentAllocatedExams → submissionHistory
  *
@@ -33,7 +33,7 @@ import { connect, disconnect } from '../connect.js';
 import { UserRepository } from '../repositories/UserRepository.js';
 import { ExamRepository } from '../repositories/ExamRepository.js';
 import { ExamSubmissionRepository } from '../repositories/ExamSubmissionRepository.js';
-import { evaluateExamResponses } from '../../dist/services/examEvaluationService.js';
+import { evaluateExamResponses } from '../../services/examEvaluationService.js';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 
 const WARNING = `
@@ -137,6 +137,9 @@ async function submitExam(
     questionType: qd.questionType || 'TEXT',
     userResponse: answerMap.get(qd._id.toString()) || '[Answer not generated]',
     maxMarks: qd.marks || Math.floor(maxTotalMarks / questionDetails.length),
+    options: qd.options,
+    answer: qd.answer,
+    negativeMarks: qd.negativeMarks,
   }));
 
   // Step 3: Call the real AI evaluator (Bedrock DeepSeek-R1)

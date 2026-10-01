@@ -2,6 +2,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { examRepo, promptRepo } from "@/backend/dist/database/repositories/index";
+import { buildStoredQuestionOptions } from "@/backend/src/services/mcqAlignment";
 
 export async function POST(req: Request) {
   try {
@@ -79,17 +80,21 @@ export async function POST(req: Request) {
     }
 
     /* ------------- Step 2: Create Exam with ExamQuestions ------------- */
-    const examQuestionsData = questions.map((q: any, index: number) => ({
-      promptId: promptsResult.promptIds![index],
-      marks: q.marks,
-      negativeMarks: negativeMarking ? (q.marks * (negativeMarkingPercentage || 25) / 100) : 0,
-      questionType: q.type?.toUpperCase() || 'TEXT',
-      answer: q.answer || '',
-      options: q.options ? q.options.map((opt: string, i: number) => ({
-        text: opt,
-        isCorrect: i === q.correctOption
-      })) : undefined
-    }));
+    const examQuestionsData = questions.map((q: any, index: number) => {
+      const stored = buildStoredQuestionOptions({
+        options: Array.isArray(q.options) ? q.options : undefined,
+        correctOption: typeof q.correctOption === "number" ? q.correctOption : undefined,
+        answer: q.answer,
+      });
+      return {
+        promptId: promptsResult.promptIds![index],
+        marks: q.marks,
+        negativeMarks: negativeMarking ? (q.marks * (negativeMarkingPercentage || 25) / 100) : 0,
+        questionType: q.type?.toUpperCase() || 'TEXT',
+        answer: stored.answer ?? '',
+        options: stored.options,
+      };
+    });
 
     /* ------------- Step 3: Ensure user exists in database ------------- */
     // Ensure database connection

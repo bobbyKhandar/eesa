@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 // STEP 2: Import repository directly (not through index)
 import { ExamRepository } from "@/backend/dist/database/repositories/ExamRepository";
+import { toExamineeExam } from "@/backend/src/services/examAccess";
+import { requireExamContentAccess } from "@/frontend/lib/requestAuth";
 
 const examRepo = new ExamRepository();
 
@@ -44,27 +46,11 @@ export async function GET(
       console.log("STEP 2: Found exam:", exam.examTitle);
       console.log("STEP 2: Question details:", exam.questionDetails?.length || 0, "questions");
 
-      // Check if user is assigned
-      if (!exam.assignedUsers?.includes(userId)) {
-        return NextResponse.json(
-          { success: false, error: "You are not assigned to this exam" },
-          { status: 403 }
-        );
-      }
+      const access = await requireExamContentAccess(exam);
+      if (access.denied) return access.denied;
 
-      // Transform questionDetails
-      const transformedExam = {
-        ...exam,
-        questions: exam.questionDetails?.map((q: any) => ({
-          _id: q._id?.toString(),
-          questionText: q.promptData?.questionText || '',
-          questionType: q.questionType,
-          marks: q.marks,
-          negativeMarks: q.negativeMarks,
-          options: q.options,
-          answer: q.answer
-        })) || []
-      };
+      // Examinee payload never includes answer keys, even for the creator.
+      const transformedExam = toExamineeExam(exam);
 
       console.log("STEP 2: Successfully transformed exam data");
       return NextResponse.json(

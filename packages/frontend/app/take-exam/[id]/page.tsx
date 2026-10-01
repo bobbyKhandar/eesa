@@ -311,17 +311,21 @@ export default function TakeExamPage({ params }: { params: Promise<{ id: string 
               />
             ) : (
               <RadioGroup value={answers[currentQuestionId] || ""} onValueChange={handleAnswerChange}>
-                {currentQuestionData.options?.map((option: any, index: number) => (
+                {currentQuestionData.options?.map((option: any, index: number) => {
+                  const optionLabel = typeof option === "string" ? option : (option.text || "")
+                  const optionValue = optionLabel || index.toString()
+                  return (
                   <div
                     key={index}
                     className="flex items-center space-x-2 p-2 rounded-md hover:bg-gray-100 dark:hover:bg-gray-800"
                   >
-                    <RadioGroupItem value={index.toString()} id={`option-${index}`} />
+                    <RadioGroupItem value={optionValue} id={`option-${index}`} />
                     <Label htmlFor={`option-${index}`} className="flex-1 cursor-pointer">
-                      {option.text || option}
+                      {optionLabel || option}
                     </Label>
                   </div>
-                ))}
+                  )
+                })}
               </RadioGroup>
             )}
           </CardContent>

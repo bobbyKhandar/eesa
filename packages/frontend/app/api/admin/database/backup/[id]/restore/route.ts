@@ -1,11 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { restoreBackup } from '@/backend/src/services/databaseBackupService';
+import { requireAdmin } from '@/frontend/lib/requestAuth';
 
 export async function POST(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const denied = await requireAdmin();
+    if (denied) return denied;
+
     const { id } = await params;
     const result = await restoreBackup(id);
     return NextResponse.json({ success: true, data: result });

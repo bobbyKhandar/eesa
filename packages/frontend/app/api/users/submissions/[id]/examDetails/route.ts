@@ -1,7 +1,7 @@
 // app/api/exams/create/route.ts
 import { NextResponse } from "next/server";
-import { auth } from "@clerk/nextjs/server";
 import { examRepo,submissionRepo} from "@/backend/dist/database/repositories/index";
+import { requireSubmissionAccess } from "@/frontend/lib/requestAuth";
 
 export async function GET(req: Request, context: { params: Promise<{ id: string }> }
 ) {
@@ -13,8 +13,8 @@ export async function GET(req: Request, context: { params: Promise<{ id: string 
         return NextResponse.json(
           { success: false, error: "Missing submission ID" },
           { status: 400 }
-      );
-    }
+        );
+      }
     const submissionDetails=await submissionRepo.getById(submissionId);
     if (!submissionDetails) {   
       return NextResponse.json(
@@ -22,6 +22,8 @@ export async function GET(req: Request, context: { params: Promise<{ id: string 
         { status: 404 }
       );
     }
+    const denied = await requireSubmissionAccess(String(submissionDetails.userId));
+    if (denied) return denied;
     const examId = submissionDetails.examId;    
     const results = await examRepo.getById(examId);
     console.log(results);
