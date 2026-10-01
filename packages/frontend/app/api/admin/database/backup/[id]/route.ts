@@ -1,11 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getBackup, deleteBackup } from '@/backend/src/services/databaseBackupService';
+import { requireAdmin } from '@/frontend/lib/requestAuth';
 
 export async function GET(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const denied = await requireAdmin();
+    if (denied) return denied;
+
     const { id } = await params;
     const backup = await getBackup(id);
     if (!backup) {
@@ -29,6 +33,9 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const denied = await requireAdmin();
+    if (denied) return denied;
+
     const { id } = await params;
     const result = await deleteBackup(id);
     return NextResponse.json({ success: true, data: result });

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import mongoose from 'mongoose';
 import { connect } from '@/backend/src/database/connect';
+import { requireAdmin } from '@/frontend/lib/requestAuth';
 import { 
   getQuestionModel, 
   getExamModel, 
@@ -24,16 +25,12 @@ import {
  * POST /api/admin/database/truncate
  * Truncates (deletes all data from) all collections in the database
  * 
- * This is a dangerous operation that should only be accessible to administrators
- * with proper authentication and authorization checks
+ * This is a dangerous operation. Callers must be signed in with the admin role.
  */
 export async function POST(request: NextRequest) {
   try {
-    // TODO: Add authentication check here
-    // const session = await getServerSession(authOptions);
-    // if (!session || session.user.role !== 'admin') {
-    //   return NextResponse.json({ error: 'Unauthorized' }, { status: 403 });
-    // }
+    const denied = await requireAdmin();
+    if (denied) return denied;
 
     console.log('🗑️ Starting database truncation...');
     

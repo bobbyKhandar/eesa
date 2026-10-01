@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { examRepo, submissionRepo } from "@/backend/dist/database/repositories/index";
 import { auth } from "@clerk/nextjs/server";
+import { presentSubmissionQuestion } from "@/backend/src/services/mcqAlignment";
+import { requireSubmissionAccess } from "@/frontend/lib/requestAuth";
 
 export async function GET(
   req: Request,
@@ -36,6 +38,9 @@ export async function GET(
       );
     }
     console.log("Submission found:", submission);
+    const denied = await requireSubmissionAccess(String(submission.userId));
+    if (denied) return denied;
+
     // Get exam with full details (questions + prompts)
     const examWithDetails = await examRepo.getWithFullDetails(submission.examId);
     if (!examWithDetails) {
@@ -59,19 +64,20 @@ export async function GET(
       marksAchieved: submission.marksAchieved,
       scorePercentage: ((submission.marksAchieved / submission.maxMarks) * 100).toFixed(2),
       evaluatorObservations: submission.evaluatorObservations,
-      questions: examWithDetails.questionDetails?.map((q: any) => ({
-        id: q._id?.toString(),
-        questionId: q._id?.toString(),
-        text: q.promptData?.questionText || '',
-        type: q.questionType || 'essay',
-        options:  q.options || [],
-        correctAnswer: q.correctAnswer || '',
-        feedback: submission.responses?.find((r: any) => r.questionId === q._id?.toString())?.feedback || '',
-        maxScore: q.maxMarks || 10,
-        // Match with user's response
-        userResponse: submission.responses?.find((r: any) => r.questionId === q._id?.toString()),
-      })) || [],
-      responses: submission.responses || [],
+      questions: examWithDetails.questionDetails?.map((q: any) => {
+        const response = submission.responses?.find((r: any) => r.questionId === q._id?.toString());
+        return presentSubmissionQuestion(q, response);
+      }) || [],
+      responses: (submission.responses || []).map((response: any) => {
+        const question = examWithDetails.questionDetails?.find((q: any) => q._id?.toString() === response.questionId);
+        if (!question) return response;
+        const presented = presentSubmissionQuestion(question, response);
+        return {
+          ...response,
+          userResponse: presented.userResponse?.userResponse ?? response.userResponse,
+          maxMarks: presented.maxScore,
+        };
+      }),
     };
     console.log(result)
     return NextResponse.json(

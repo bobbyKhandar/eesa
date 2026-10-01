@@ -284,9 +284,9 @@ Or use **VSCode** (`.vscode/launch.json`) — open Run & Debug (Ctrl+Shift+D), s
 | `upload/` | Question paper upload & split |
 | `jobs/` | Status, cleanup |
 | `failed-jobs/` | Failed job details, bulk retry |
-| `submissions/` | Submit & get results |
+| `submissions/` | Submit & get results. Reads require the submission owner or an admin. Scoring uses server-side question marks. |
 | `resources/` | Resource CRUD |
-| `admin/database/` | DB stats, S3 backup/restore, truncation |
+| `admin/database/` | DB stats, S3 backup/restore, truncation. Every handler requires an authenticated admin. |
 | `exam-analysis/` | Publish, upload, upload-bulk |
 | `llm/` | Gemini AI exam helper |
 | `users/` | User CRUD, submissions, metadata |
@@ -344,7 +344,7 @@ All routes registered on the canonical server at `src/api/server.py`. See `packa
 |----------|-----------|----------|
 | `packages/ai-pipeline/tests/` | Python unittest | 15 test files (server, OCR, pipeline, AWS, integration) |
 | `tests/python/` | Python unittest | 2 test files (experiment, image preprocessing) |
-| `tests/node/` | — | Empty (placeholder for future Node.js tests) |
+| `tests/node/` | Node.js built-in test runner | Exam auth, answer-key redaction, scoring, and MCQ alignment |
 
 ---
 

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { markExpiredJobs, getCleanupStats } from "@/backend/src/services/s3CleanupService";
 import { connect } from "@/backend/src/database/connect";
+import { requireAdmin } from "@/frontend/lib/requestAuth";
 
 /**
  * GET /api/jobs/cleanup
@@ -40,7 +41,7 @@ export async function GET(request: NextRequest) {
  * Trigger S3 cleanup - mark expired jobs
  * Body: { retention_days?: number } (default: 90)
  * 
- * Note: Admin only - add role check in production
+ * Admin only.
  */
 export async function POST(request: NextRequest) {
   try {
@@ -53,9 +54,8 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // TODO: Add admin role check
-    // const user = await getUserById(userId)
-    // if (user.role !== 'admin') return 403
+    const denied = await requireAdmin();
+    if (denied) return denied;
 
     await connect();
 

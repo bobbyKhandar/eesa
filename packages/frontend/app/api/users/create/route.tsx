@@ -1,22 +1,30 @@
 import { NextResponse } from "next/server";
 import { userRepo } from "@/backend/dist/database/repositories/index.js";
+import { resolveSelfServiceRole, selfUserWriteDecision } from "@/backend/src/services/examAccess";
+import { deny } from "@/frontend/lib/requestAuth";
+import { auth } from "@clerk/nextjs/server";
 
 export async function POST(req: Request) {
   try {
+    const { userId } = await auth();
     const body = await req.json();
     const { user, role } = body;
-    if (!user.id) {
+    if (!user?.id) {
       return NextResponse.json(
         { success: false, error: "Missing user.id" },
         { status: 400 }
       );
     }
 
+    const writeDecision = selfUserWriteDecision(userId, user.id);
+    const denied = deny(writeDecision);
+    if (denied) return denied;
+
     const userMeta = {
         _id: user.id,
         email: user.emailAddresses?.[0]?.emailAddress || "",
         name: user.fullName || "",
-        role: role,
+        role: resolveSelfServiceRole(role),
         profilePic: user.imageUrl || "",
         status: "active",
         branch: "",

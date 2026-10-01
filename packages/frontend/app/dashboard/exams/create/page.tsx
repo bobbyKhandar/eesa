@@ -117,7 +117,10 @@ async function uploadExamSet(): Promise<ApiResponse> {
       questions: questions.map(q => ({
         text: q.text,
         marks: q.marks,
-        type: q.questionType || "TEXT"
+        type: q.questionType || "TEXT",
+        options: q.options,
+        correctOption: q.correctOption,
+        answer: q.answer,
       }))
     }
 

@@ -1,8 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createBackup, listBackups } from '@/backend/src/services/databaseBackupService';
+import { requireAdmin } from '@/frontend/lib/requestAuth';
 
 export async function GET() {
   try {
+    const denied = await requireAdmin();
+    if (denied) return denied;
+
     const backups = await listBackups();
     return NextResponse.json({ success: true, data: backups });
   } catch (error: any) {
@@ -16,6 +20,9 @@ export async function GET() {
 
 export async function POST() {
   try {
+    const denied = await requireAdmin();
+    if (denied) return denied;
+
     const result = await createBackup();
     return NextResponse.json({ success: true, data: result });
   } catch (error: any) {
