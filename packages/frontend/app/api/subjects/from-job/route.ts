@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
+import { auth } from "@clerk/nextjs/server";
+import { userRepo } from "@/backend/dist/database/repositories/index.js";
 import { ExamAnalysisRepository } from "@/backend/dist/database/repositories/ExamAnalysisRepository";
 import { PromptRepository } from "@/backend/dist/database/repositories/PromptRepository";
 import { SubjectRepository } from "@/backend/dist/database/repositories/SubjectRepository";
@@ -12,6 +14,7 @@ import {
 } from "@/backend/src/services/questionSimilarityService";
 import {
   buildAutoSubjectDocument,
+  canImportFromJob,
   normalizeExamType,
   toBloomPercentages,
   type BloomDistribution,
@@ -167,6 +170,22 @@ async function findSimilarSubject(
  */
 export async function POST(request: NextRequest) {
   try {
+    const { userId } = await auth();
+    if (!userId) {
+      return NextResponse.json(
+        { error: "Unauthorized" },
+        { status: 401 }
+      );
+    }
+
+    const caller = await userRepo.getById(userId);
+    if (!canImportFromJob(caller?.role)) {
+      return NextResponse.json(
+        { error: "Only an admin can import a pipeline job" },
+        { status: 403 }
+      );
+    }
+
     const { job_id, filename } = await request.json();
 
     if (!job_id || !filename) {

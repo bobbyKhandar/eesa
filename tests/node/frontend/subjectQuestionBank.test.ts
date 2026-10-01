@@ -4,6 +4,7 @@ import { describe, it } from "node:test";
 import {
   buildAutoSubjectDocument,
   buildPromptStats,
+  canImportFromJob,
   escapeRegExp,
   normalizeBloomLevel,
   normalizeExamType,
@@ -21,6 +22,16 @@ import {
   toUniqueQuestionStats,
   type PromptLike,
 } from "../../../packages/frontend/lib/subjectQuestionBank.ts";
+
+describe("canImportFromJob", () => {
+  it("allows only the admin role", () => {
+    assert.equal(canImportFromJob("admin"), true);
+    assert.equal(canImportFromJob("student"), false);
+    assert.equal(canImportFromJob("teacher"), false);
+    assert.equal(canImportFromJob(undefined), false);
+    assert.equal(canImportFromJob(null), false);
+  });
+});
 
 describe("escapeRegExp", () => {
   it("escapes regex metacharacters so user input matches literally", () => {

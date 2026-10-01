@@ -551,6 +551,15 @@ export function toUniqueQuestionList(data: unknown): UniqueQuestionView[] {
   return Array.isArray(data) ? (data as UniqueQuestionView[]) : [];
 }
 
+/**
+ * Importing a finished pipeline job writes subjects, prompts and reports.
+ * Only an admin may trigger that. Anyone else, including a signed-out caller,
+ * is refused. The page guard on `/admin` does not cover this route.
+ */
+export function canImportFromJob(role: unknown): boolean {
+  return role === "admin";
+}
+
 export function toUniqueQuestionStats(data: unknown): UniqueQuestionStatsView | null {
   if (!isRecord(data)) return null;
   if (typeof data.totalUniqueQuestions !== "number") return null;
