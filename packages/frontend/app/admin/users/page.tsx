@@ -1,214 +1,149 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/frontend/components/ui/card"
 import { Button } from "@/frontend/components/ui/button"
 import { Input } from "@/frontend/components/ui/input"
 import { Badge } from "@/frontend/components/ui/badge"
-import { Avatar, AvatarFallback, AvatarImage } from "@/frontend/components/ui/avatar"
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-  DropdownMenuSeparator,
-} from "@/frontend/components/ui/dropdown-menu"
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/frontend/components/ui/table"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/frontend/components/ui/select"
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/frontend/components/ui/table"
+import { Search, Users, UserCheck, UserX, Crown } from "lucide-react"
 import {
-  Search,
-  MoreHorizontal,
-  UserPlus,
-  Download,
-  Users,
-  UserCheck,
-  UserX,
-  Crown,
-  Shield,
-  User,
-  Settings,
-  FileText,
-  Calendar,
-} from "lucide-react"
+  filterAdminUsers,
+  type AdminUserCounts,
+  type AdminUserRow,
+} from "@/frontend/lib/adminUserList"
+
+const EMPTY_COUNTS: AdminUserCounts = {
+  total: 0,
+  active: 0,
+  inactive: 0,
+  suspended: 0,
+  admins: 0,
+}
 
 export default function AdminUsers() {
   const [searchTerm, setSearchTerm] = useState("")
   const [roleFilter, setRoleFilter] = useState("all")
   const [statusFilter, setStatusFilter] = useState("all")
+  const [users, setUsers] = useState<AdminUserRow[]>([])
+  const [counts, setCounts] = useState<AdminUserCounts>(EMPTY_COUNTS)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [pendingId, setPendingId] = useState<string | null>(null)
 
-  // Mock user data
-  const users = [
-    {
-      id: 1,
-      name: "John Doe",
-      email: "john.doe@university.edu",
-      role: "student",
-      status: "active",
-      branch: "Computer Science",
-      joinDate: "2024-01-15",
-      lastActive: "2 hours ago",
-      examsCompleted: 12,
-      avgScore: 85.5,
-    },
-    {
-      id: 2,
-      name: "Jane Smith",
-      email: "jane.smith@university.edu",
-      role: "faculty",
-      status: "active",
-      branch: "Mathematics",
-      joinDate: "2023-08-20",
-      lastActive: "1 day ago",
-      examsCompleted: 0,
-      avgScore: 0,
-    },
-    {
-      id: 3,
-      name: "Mike Johnson",
-      email: "mike.johnson@university.edu",
-      role: "student",
-      status: "inactive",
-      branch: "Physics",
-      joinDate: "2024-02-10",
-      lastActive: "1 week ago",
-      examsCompleted: 8,
-      avgScore: 78.2,
-    },
-    {
-      id: 4,
-      name: "Sarah Wilson",
-      email: "sarah.wilson@university.edu",
-      role: "admin",
-      status: "active",
-      branch: "Administration",
-      joinDate: "2023-05-12",
-      lastActive: "30 minutes ago",
-      examsCompleted: 0,
-      avgScore: 0,
-    },
-    {
-      id: 5,
-      name: "David Brown",
-      email: "david.brown@university.edu",
-      role: "student",
-      status: "suspended",
-      branch: "Chemistry",
-      joinDate: "2024-03-05",
-      lastActive: "2 weeks ago",
-      examsCompleted: 5,
-      avgScore: 65.8,
-    },
-  ]
+  const load = async () => {
+    const response = await fetch("/api/admin/users")
+    const data = await response.json().catch(() => null)
+    if (!response.ok || !data?.success) {
+      throw new Error(data?.error || "Failed to load users")
+    }
+    setUsers(Array.isArray(data.users) ? data.users : [])
+    setCounts(data.counts ?? EMPTY_COUNTS)
+  }
 
-  const userStats = [
-    { title: "Total Users", value: "2,847", icon: Users, color: "blue" },
-    { title: "Active Users", value: "2,156", icon: UserCheck, color: "green" },
-    { title: "Inactive Users", value: "691", icon: UserX, color: "yellow" },
-    { title: "Admins", value: "12", icon: Crown, color: "purple" },
-  ]
+  useEffect(() => {
+    let active = true
+    load()
+      .catch((err) => {
+        if (active) setError(err instanceof Error ? err.message : "Failed to load users")
+      })
+      .finally(() => {
+        if (active) setLoading(false)
+      })
+    return () => {
+      active = false
+    }
+  }, [])
 
-  const filteredUsers = users.filter((user) => {
-    const matchesSearch =
-      user.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      user.email.toLowerCase().includes(searchTerm.toLowerCase())
-    const matchesRole = roleFilter === "all" || user.role === roleFilter
-    const matchesStatus = statusFilter === "all" || user.status === statusFilter
-    return matchesSearch && matchesRole && matchesStatus
-  })
-
-  const getRoleIcon = (role: string) => {
-    switch (role) {
-      case "admin":
-        return <Crown className="h-4 w-4 text-purple-500" />
-      case "faculty":
-        return <Shield className="h-4 w-4 text-blue-500" />
-      default:
-        return <User className="h-4 w-4 text-gray-500" />
+  const setStatus = async (userId: string, status: "active" | "suspended") => {
+    setPendingId(userId)
+    setError(null)
+    try {
+      const response = await fetch("/api/admin/users", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId, status }),
+      })
+      const data = await response.json().catch(() => null)
+      if (!response.ok || !data?.success) {
+        throw new Error(data?.error || "Failed to update status")
+      }
+      await load()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to update status")
+    } finally {
+      setPendingId(null)
     }
   }
 
-  const getStatusBadge = (status: string) => {
-    const variants = {
-      active: "default",
-      inactive: "secondary",
-      suspended: "destructive",
-    } as const
+  const visible = filterAdminUsers(users, {
+    search: searchTerm,
+    role: roleFilter,
+    status: statusFilter,
+  })
 
-    return (
-      <Badge variant={variants[status as keyof typeof variants] || "secondary"}>
-        {status.charAt(0).toUpperCase() + status.slice(1)}
-      </Badge>
-    )
-  }
+  const stats = [
+    { title: "Total users", value: counts.total, icon: Users },
+    { title: "Active", value: counts.active, icon: UserCheck },
+    { title: "Inactive", value: counts.inactive, icon: UserX },
+    { title: "Admins", value: counts.admins, icon: Crown },
+  ]
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">User Management</h1>
-          <p className="text-muted-foreground">Manage users, roles, and permissions across the platform</p>
-        </div>
-        <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm">
-            <Download className="h-4 w-4 mr-2" />
-            Export
-          </Button>
-          <Button size="sm">
-            <UserPlus className="h-4 w-4 mr-2" />
-            Add User
-          </Button>
-        </div>
+      <div>
+        <h1 className="text-3xl font-bold tracking-tight">User management</h1>
+        <p className="text-muted-foreground">Accounts stored in the database, with the status getCounts uses</p>
       </div>
 
-      {/* User Statistics */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-        {userStats.map((stat) => (
+        {stats.map((stat) => (
           <Card key={stat.title}>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">{stat.title}</CardTitle>
               <stat.icon className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">{stat.value}</div>
+              <div className="text-2xl font-bold">{loading ? "…" : stat.value}</div>
             </CardContent>
           </Card>
         ))}
       </div>
 
-      {/* Filters and Search */}
       <Card>
         <CardHeader>
           <CardTitle>Users</CardTitle>
-          <CardDescription>Manage and monitor all platform users</CardDescription>
+          <CardDescription>Search, then suspend or restore an account</CardDescription>
         </CardHeader>
         <CardContent>
           <div className="flex flex-col sm:flex-row gap-4 mb-6">
             <div className="relative flex-1">
               <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
               <Input
-                placeholder="Search users..."
+                placeholder="Search name or email"
                 value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
+                onChange={(event) => setSearchTerm(event.target.value)}
                 className="pl-8"
               />
             </div>
             <Select value={roleFilter} onValueChange={setRoleFilter}>
-              <SelectTrigger className="w-32">
+              <SelectTrigger className="w-36">
                 <SelectValue placeholder="Role" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">All Roles</SelectItem>
+                <SelectItem value="all">All roles</SelectItem>
                 <SelectItem value="student">Student</SelectItem>
-                <SelectItem value="faculty">Faculty</SelectItem>
+                <SelectItem value="teacher">Teacher</SelectItem>
                 <SelectItem value="admin">Admin</SelectItem>
               </SelectContent>
             </Select>
             <Select value={statusFilter} onValueChange={setStatusFilter}>
-              <SelectTrigger className="w-32">
+              <SelectTrigger className="w-36">
                 <SelectValue placeholder="Status" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">All Status</SelectItem>
+                <SelectItem value="all">All statuses</SelectItem>
                 <SelectItem value="active">Active</SelectItem>
                 <SelectItem value="inactive">Inactive</SelectItem>
                 <SelectItem value="suspended">Suspended</SelectItem>
@@ -216,96 +151,65 @@ export default function AdminUsers() {
             </Select>
           </div>
 
-          {/* Users Table */}
-          <div className="rounded-md border">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>User</TableHead>
-                  <TableHead>Role</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Branch</TableHead>
-                  <TableHead>Last Active</TableHead>
-                  <TableHead>Performance</TableHead>
-                  <TableHead className="w-[50px]">Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {filteredUsers.map((user) => (
-                  <TableRow key={user.id}>
-                    <TableCell>
-                      <div className="flex items-center space-x-3">
-                        <Avatar className="h-8 w-8">
-                          <AvatarImage src={`/placeholder.svg?height=32&width=32`} />
-                          <AvatarFallback>
-                            {user.name
-                              .split(" ")
-                              .map((n) => n[0])
-                              .join("")}
-                          </AvatarFallback>
-                        </Avatar>
-                        <div>
-                          <div className="font-medium">{user.name}</div>
-                          <div className="text-sm text-muted-foreground">{user.email}</div>
-                        </div>
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex items-center space-x-2">
-                        {getRoleIcon(user.role)}
-                        <span className="capitalize">{user.role}</span>
-                      </div>
-                    </TableCell>
-                    <TableCell>{getStatusBadge(user.status)}</TableCell>
-                    <TableCell>{user.branch}</TableCell>
-                    <TableCell>{user.lastActive}</TableCell>
-                    <TableCell>
-                      {user.role === "student" ? (
-                        <div className="text-sm">
-                          <div>{user.examsCompleted} exams</div>
-                          <div className="text-muted-foreground">{user.avgScore}% avg</div>
-                        </div>
-                      ) : (
-                        <span className="text-muted-foreground">N/A</span>
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button variant="ghost" size="sm">
-                            <MoreHorizontal className="h-4 w-4" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end" className="w-48">
-                          <DropdownMenuItem>
-                            <Settings className="h-4 w-4 mr-2" />
-                            Change Role
-                          </DropdownMenuItem>
-                          <DropdownMenuItem>
-                            <FileText className="h-4 w-4 mr-2" />
-                            Resource Management
-                          </DropdownMenuItem>
-                          <DropdownMenuItem>
-                            <Calendar className="h-4 w-4 mr-2" />
-                            Exam Management
-                          </DropdownMenuItem>
-                          <DropdownMenuSeparator />
-                          <DropdownMenuItem>
-                            <User className="h-4 w-4 mr-2" />
-                            View Profile
-                          </DropdownMenuItem>
-                          <DropdownMenuItem className="text-red-600">
-                            <UserX className="h-4 w-4 mr-2" />
-                            Suspend User
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    </TableCell>
+          {error && <p className="mb-4 text-sm text-red-600">{error}</p>}
+          {loading && <p className="text-sm text-muted-foreground">Loading users…</p>}
+          {!loading && !error && visible.length === 0 && (
+            <p className="text-sm text-muted-foreground">No users match these filters.</p>
+          )}
+
+          {visible.length > 0 && (
+            <div className="rounded-md border">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>User</TableHead>
+                    <TableHead>Role</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead>Branch</TableHead>
+                    <TableHead className="w-[140px]">Status</TableHead>
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
+                </TableHeader>
+                <TableBody>
+                  {visible.map((user) => (
+                    <TableRow key={user.id}>
+                      <TableCell>
+                        <div className="font-medium">{user.name}</div>
+                        <div className="text-sm text-muted-foreground">{user.email}</div>
+                      </TableCell>
+                      <TableCell className="capitalize">{user.role}</TableCell>
+                      <TableCell>
+                        <Badge variant={user.status === "suspended" ? "destructive" : "secondary"}>
+                          {user.status}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>{user.branch || "—"}</TableCell>
+                      <TableCell>
+                        {user.status === "suspended" ? (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            disabled={pendingId === user.id}
+                            onClick={() => void setStatus(user.id, "active")}
+                          >
+                            Restore
+                          </Button>
+                        ) : (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            disabled={pendingId === user.id}
+                            onClick={() => void setStatus(user.id, "suspended")}
+                          >
+                            Suspend
+                          </Button>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>

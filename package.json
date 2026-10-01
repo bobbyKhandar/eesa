@@ -36,6 +36,6 @@
     "tailwindcss": "^4.1.11"
   },
   "scripts": {
-    "test:admin-users-resources": "node --test tests/node/admin-users-resources.test.ts"
+    "test:admin-users-resources": "node --experimental-strip-types --test tests/node/admin-users-resources.test.ts tests/node/admin-user-list.test.ts"
   }
 }

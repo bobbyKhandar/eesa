@@ -452,25 +452,21 @@ describe("resource page follows the catalogue", () => {
   });
 });
 
-describe("admin pages that still render mock data", () => {
-  // Not fixed here: wiring these to real APIs is a separate change. Recorded so
-  // the gap stays visible.
-  const mockPages = [
-    "packages/frontend/app/admin/page.tsx",
-    "packages/frontend/app/admin/users/page.tsx",
-    "packages/frontend/app/admin/resources/page.tsx",
-    "packages/frontend/app/admin/analytics/page.tsx",
-    "packages/frontend/app/admin/settings/page.tsx",
-  ];
-
-  it("are all behind the guard", () => {
+describe("admin pages read stored data", () => {
+  it("keeps the segment behind the admin guard", () => {
     assert.ok(read("packages/frontend/app/admin/layout.tsx").includes("resolveIsAdmin"));
-    assert.ok(mockPages.every((page) => read(page).length > 0));
   });
 
-  it("fetch nothing from an API yet", () => {
-    for (const page of mockPages) {
-      assert.doesNotMatch(read(page), /fetch\(/, `${page} still calls the API`);
-    }
+  it("loads users and the resource catalog instead of sample rows", () => {
+    assert.match(read("packages/frontend/app/admin/users/page.tsx"), /\/api\/admin\/users/);
+    assert.match(read("packages/frontend/app/admin/page.tsx"), /\/api\/admin\/users/);
+    assert.match(read("packages/frontend/app/admin/resources/page.tsx"), /\/api\/resources\?action=subjects/);
+    assert.doesNotMatch(read("packages/frontend/app/admin/users/page.tsx"), /john\.doe@university\.edu/);
+    assert.doesNotMatch(read("packages/frontend/app/admin/page.tsx"), /2,847/);
+  });
+
+  it("does not present sample analytics or unsaved system switches", () => {
+    assert.doesNotMatch(read("packages/frontend/app/admin/analytics/page.tsx"), /activeUsers: 1200/);
+    assert.doesNotMatch(read("packages/frontend/app/admin/settings/page.tsx"), /maintenanceMode/);
   });
 });
