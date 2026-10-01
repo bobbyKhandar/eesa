@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
+import { requireAdminCaller } from "@/frontend/lib/routeAccess";
 
 // AI Pipeline server URL (defaults to localhost:5000)
 const AI_PIPELINE_URL =
@@ -7,6 +8,9 @@ const AI_PIPELINE_URL =
 
 export async function POST(req: NextRequest) {
   try {
+    const denied = await requireAdminCaller();
+    if (denied) return denied;
+
     const formData = await req.formData();
     const files = formData.getAll("files");
 

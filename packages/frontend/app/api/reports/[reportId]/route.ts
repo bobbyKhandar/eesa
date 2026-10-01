@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getReportWithQuestions } from "@/backend/dist/services/publishAnalysisService";
+import { requireSignedIn } from "@/frontend/lib/routeAccess";
 
 /**
  * GET /api/reports/[reportId]
@@ -10,6 +11,9 @@ export async function GET(
   context: { params: Promise<{ reportId: string }> }
 ) {
   try {
+    const denied = await requireSignedIn();
+    if (denied) return denied;
+
     const params = await context.params;
     const { reportId } = params;
 

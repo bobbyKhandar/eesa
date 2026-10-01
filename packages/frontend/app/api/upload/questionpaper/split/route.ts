@@ -1,12 +1,16 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { PDFDocument } from 'pdf-lib';
+import { requireAdminCaller } from "@/frontend/lib/routeAccess";
 
 // AI Pipeline server URL
 const AI_PIPELINE_URL = process.env.AI_PIPELINE_URL || "http://localhost:5000";
 
 export async function POST(req: NextRequest) {
   try {
+    const denied = await requireAdminCaller();
+    if (denied) return denied;
+
     const formData = await req.formData();
     const file = formData.get("file") as File;
     const rangesStr = formData.get("ranges") as string;
