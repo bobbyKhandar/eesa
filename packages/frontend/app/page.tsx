@@ -1,14 +1,7 @@
 import Link from "next/link"
 import { Button } from "@/frontend/components/ui/button"
 import { ArrowRight, Brain, CheckCircle, Clock } from "lucide-react"
-import {
-
-  SignInButton,
-  SignUpButton,
-  SignedIn,
-  SignedOut,
-  UserButton,
-} from '@clerk/nextjs'
+import { SignInButton, SignUpButton, SignedIn, SignedOut } from '@clerk/nextjs'
 
 export default function Home() {
   return (
@@ -28,14 +21,30 @@ export default function Home() {
                 </p>
               </div>
               <div className="flex flex-col sm:flex-row gap-4">
-                <Link href="/dashboard">
-                <SignInButton>
-                  
-                  <Button size="lg" className="gap-1" >
-                    Get Started <ArrowRight className="h-4 w-4" />
-                  </Button>
-                </SignInButton>
-                </Link>
+                {/* Signed out: open Clerk's modal and send the user to the
+                    dashboard afterwards. A <Link> must not wrap a Clerk
+                    button - nested interactive elements swallow the click. */}
+                <SignedOut>
+                  <SignInButton mode="modal" forceRedirectUrl="/dashboard">
+                    <Button size="lg" className="gap-1">
+                      Get Started <ArrowRight className="h-4 w-4" />
+                    </Button>
+                  </SignInButton>
+                  <SignUpButton mode="modal" forceRedirectUrl="/dashboard">
+                    <Button size="lg" variant="outline" className="gap-1">
+                      Create an account <ArrowRight className="h-4 w-4" />
+                    </Button>
+                  </SignUpButton>
+                </SignedOut>
+                {/* Signed in: a plain link is the only valid interactive
+                    element here, so the navigation cannot be intercepted. */}
+                <SignedIn>
+                  <Link href="/dashboard">
+                    <Button size="lg" className="gap-1">
+                      Go to Dashboard <ArrowRight className="h-4 w-4" />
+                    </Button>
+                  </Link>
+                </SignedIn>
               </div>
             </div>
           </div>
