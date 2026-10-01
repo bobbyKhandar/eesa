@@ -9,8 +9,9 @@
  *   - a percentage is never `NaN` / `Infinity` when `maxMarks` is 0
  *   - "subject" is `exam.subject`; `examDegree` is the degree programme
  *   - the trend chart is chronological and keyed by year + month
- *   - the exam time limit is derived from `exam.duration` and enforced on the
- *     server, so `autoSubmitted` cannot be claimed as a normal submission
+ *   - the exam time limit is derived from `exam.duration` and from the
+ *     server-recorded attempt start, so a late client cannot submit after
+ *     the window (plus a short grace) has closed
  *
  * The API routes, the take-exam page and the results pages all import from
  * here; there is no second copy of any of these rules.
@@ -425,5 +426,56 @@ export function duplicateSubmissionOutcome(existing?: {
     status: 409,
     error: "You have already submitted this exam",
     ...(submissionId ? { submissionId } : {}),
+  }
+}
+
+/**
+ * How long after the official end a submit that is already in flight may
+ * still land. Anything later is rejected. The client clock is not consulted.
+ */
+export const ATTEMPT_GRACE_SECONDS = 30
+
+export interface OpenAttempt {
+  timeSpent: number
+  autoSubmitted: boolean
+  remainingSeconds: number
+}
+
+/**
+ * Decide whether a submission is still inside the attempt that was recorded
+ * when the student opened the exam.
+ *
+ * No `startedAt` means the client skipped the start call and must not be
+ * graded. A submission that arrives after the duration plus
+ * `ATTEMPT_GRACE_SECONDS` is closed. `timeSpent` is the server's elapsed
+ * time, clamped to the exam limit, never the number the browser sent.
+ */
+export function attemptWindowDecision(input: {
+  startedAt?: unknown
+  durationMinutes?: unknown
+  now?: unknown
+}): OpenAttempt | { error: string; status: number } {
+  const started = toDate(input.startedAt)
+  if (!started) {
+    return { error: "Start the exam before submitting", status: 400 }
+  }
+
+  const now = toDate(input.now) ?? new Date()
+  const limit = examTimeLimitSeconds(input.durationMinutes)
+  const elapsed = Math.floor((now.getTime() - started.getTime()) / 1000)
+
+  if (elapsed < 0) {
+    return { timeSpent: 0, autoSubmitted: false, remainingSeconds: limit }
+  }
+
+  if (elapsed > limit + ATTEMPT_GRACE_SECONDS) {
+    return { error: "The exam window has closed", status: 403 }
+  }
+
+  const timeSpent = Math.min(elapsed, limit)
+  return {
+    timeSpent,
+    autoSubmitted: elapsed >= limit,
+    remainingSeconds: Math.max(0, limit - elapsed),
   }
 }

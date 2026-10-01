@@ -4,15 +4,17 @@ import { ExamSubmissionRepository } from "@/backend/dist/database/repositories/E
 import { ExamRepository } from "@/backend/dist/database/repositories/ExamRepository";
 import { UserRepository } from "@/backend/dist/database/repositories/UserRepository";
 import { evaluateExamResponses } from "@/backend/dist/services/examEvaluationService";
+import { ExamAttemptRepository } from "@/backend/src/database/repositories/ExamAttemptRepository";
 import {
+  attemptWindowDecision,
   duplicateSubmissionOutcome,
-  resolveSubmissionTime,
   scorePercentage,
 } from "@/frontend/lib/examResults";
 
 const submissionRepo = new ExamSubmissionRepository();
 const examRepo = new ExamRepository();
 const userRepo = new UserRepository();
+const attemptRepo = new ExamAttemptRepository();
 
 export async function POST(request: NextRequest) {
   try {
@@ -26,7 +28,7 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { examId, responses, timeSpent, autoSubmit } = body;
+    const { examId, responses } = body;
 
     // Validate required fields
     if (!examId || !responses || !Array.isArray(responses)) {
@@ -67,21 +69,19 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // The exam's own window is the authority on how long the attempt ran. The
-    // client's `autoSubmit` flag is honoured, but a duration beyond the limit
-    // is clamped and an attempt that used the whole window is auto-submitted
-    // regardless of what the client claimed. A `timeSpent` that is not a
-    // non-negative number is rejected instead of being stored - it renders as
-    // `NaN` in every duration column on the results pages.
-    const attempt = resolveSubmissionTime({
+    // The attempt row written when the student opened the exam is the clock.
+    // A missing row means the client never started, and a row older than the
+    // duration plus a short grace is rejected. `timeSpent` from the body is
+    // ignored so a forged duration cannot extend the window.
+    const opened = await attemptRepo.get(examId, userId);
+    const attempt = attemptWindowDecision({
+      startedAt: opened?.startedAt,
       durationMinutes: exam.duration,
-      timeSpent,
-      autoSubmit,
     });
     if ("error" in attempt) {
       return NextResponse.json(
         { success: false, error: attempt.error },
-        { status: 400 }
+        { status: attempt.status }
       );
     }
 

@@ -54,18 +54,28 @@ export default function TakeExamPage({ params }: { params: Promise<{ id: string 
         }
 
         console.log('STEP 1: Exam data received successfully')
+
+        // The server records the start. Reloading the page resumes that clock
+        // instead of granting a fresh duration, and a window that has already
+        // closed is refused before the questions are shown.
+        const attemptResponse = await fetch(`/api/exams/${encodeURIComponent(examId)}/attempt`, {
+          method: 'POST',
+        })
+        const attempt = await attemptResponse.json().catch(() => null)
+        if (!attemptResponse.ok || !attempt?.success || !attempt.startedAt) {
+          throw new Error(attempt?.error || 'Failed to start the exam')
+        }
+
         setExam(data.exam)
         examRef.current = data.exam
 
-        // Same rule the submit route applies to `timeSpent`: the limit comes
-        // from the exam's duration, and only a missing/zero duration falls back
-        // to the default.
         const limit = examTimeLimitSeconds(data.exam?.duration)
-        timeLeftRef.current = limit
-        setTimeLeft(limit)
-
-        const startedAt = Date.now()
-        startTimeRef.current = startedAt
+        const remaining = typeof attempt.remainingSeconds === 'number'
+          ? attempt.remainingSeconds
+          : limit
+        timeLeftRef.current = remaining
+        setTimeLeft(remaining)
+        startTimeRef.current = Date.parse(attempt.startedAt)
       } catch (err: any) {
         console.error('STEP 1: Error fetching exam:', err)
         setError(err.message || 'Failed to load exam')

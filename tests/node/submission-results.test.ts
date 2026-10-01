@@ -7,6 +7,8 @@ import {
   calculateGradeDistribution,
   calculatePerformanceTrend,
   calculateSubjectPerformance,
+  ATTEMPT_GRACE_SECONDS,
+  attemptWindowDecision,
   duplicateSubmissionOutcome,
   examTimeLimitSeconds,
   formatDuration,
@@ -414,5 +416,58 @@ describe("duplicateSubmissionOutcome", () => {
       status: 409,
       error: "You have already submitted this exam",
     });
+  });
+});
+
+describe("attemptWindowDecision", () => {
+  const started = new Date("2026-10-01T10:00:00.000Z");
+
+  it("rejects a submit that never opened an attempt", () => {
+    assert.deepEqual(attemptWindowDecision({ durationMinutes: 30, now: started }), {
+      error: "Start the exam before submitting",
+      status: 400,
+    });
+  });
+
+  it("measures time from the server start and ignores how long the client claims", () => {
+    const now = new Date(started.getTime() + 90_000);
+    assert.deepEqual(
+      attemptWindowDecision({ startedAt: started, durationMinutes: 30, now }),
+      { timeSpent: 90, autoSubmitted: false, remainingSeconds: 1800 - 90 },
+    );
+  });
+
+  it("marks the attempt auto-submitted once the official limit is reached", () => {
+    const now = new Date(started.getTime() + 30 * 60 * 1000);
+    assert.deepEqual(
+      attemptWindowDecision({ startedAt: started, durationMinutes: 30, now }),
+      { timeSpent: 1800, autoSubmitted: true, remainingSeconds: 0 },
+    );
+  });
+
+  it("still accepts a submit inside the grace period", () => {
+    const now = new Date(started.getTime() + (30 * 60 + ATTEMPT_GRACE_SECONDS) * 1000);
+    const decision = attemptWindowDecision({ startedAt: started, durationMinutes: 30, now });
+    assert.equal("error" in decision, false);
+    if (!("error" in decision)) {
+      assert.equal(decision.timeSpent, 1800);
+      assert.equal(decision.autoSubmitted, true);
+    }
+  });
+
+  it("rejects a submit after the grace period", () => {
+    const now = new Date(started.getTime() + (30 * 60 + ATTEMPT_GRACE_SECONDS + 1) * 1000);
+    assert.deepEqual(
+      attemptWindowDecision({ startedAt: started, durationMinutes: 30, now }),
+      { error: "The exam window has closed", status: 403 },
+    );
+  });
+
+  it("treats a start slightly in the future as just opened", () => {
+    const now = new Date(started.getTime() - 5_000);
+    assert.deepEqual(
+      attemptWindowDecision({ startedAt: started, durationMinutes: 30, now }),
+      { timeSpent: 0, autoSubmitted: false, remainingSeconds: 1800 },
+    );
   });
 });
