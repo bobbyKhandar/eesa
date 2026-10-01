@@ -1,10 +1,10 @@
 {
   "name": "eesa",
   "private": true,
-  "workspaces": [
-    "packages/backend",
-    "packages/frontend"
-  ],
+  "workspaces": ["packages/backend", "packages/frontend"],
+  "overrides": {
+    "tailwindcss": "^3.4.17"
+  },
   "scripts": {
     "test": "node --experimental-strip-types --import ./tests/node/register-hook.mjs --test tests/node/exam-evaluator-security.test.ts",
     "test:auth-dashboard": "node --experimental-strip-types --test tests/node/dashboard-auth.test.ts",
@@ -27,16 +27,5 @@
     "globals": "^16.3.0",
     "typescript": "^5.8.3",
     "typescript-eslint": "^8.35.1"
-  },
-  "dependencies": {
-    "@clerk/nextjs": "^6.24.0",
-    "class-variance-authority": "^0.7.1",
-    "dotenv": "^17.2.0",
-    "lodash": "^4.17.21",
-    "lucide-react": "^0.525.0",
-    "mongoose": "^8.16.3",
-    "radix-ui": "^1.4.2",
-    "tailwind-merge": "^3.3.1",
-    "tailwindcss": "^4.1.11"
   }
 }
