@@ -46,8 +46,7 @@
 - **Clerk** via `@clerk/nextjs`.
 - Server side: `import { auth } from "@clerk/nextjs/server"` in API routes. Returns `userId`.
 - Client side: `useUser()`, `<SignInButton/>`, `<SignUpButton/>`, `<UserButton/>`.
-- Middleware: `middleware.ts` — protects all routes via `clerkMiddleware()`.
-- Authorization is enforced again inside route handlers. Admin database actions and job cleanup use `requireAdmin()` (`lib/requestAuth.ts`) and only succeed when the Mongo user role is `admin`. Exam question reads require an assigned user, the creator, or an admin. `GET /api/exams/[id]` always omits answer keys. Submission reads require the owner or an admin. Self-service user creation cannot grant the admin role.
+- Middleware: `app/middleware.ts` — protects all routes via `clerkMiddleware()`.
 
 ## AI Pipeline Communication
 - Frontend API routes call the Python Flask AI pipeline via `fetch(AI_PIPELINE_URL + "/endpoint")`.
