@@ -30,12 +30,6 @@
   import { JobMetadataRepository } from "@/backend/src/database/repositories/JobMetadataRepository"
   ```
 
-## Pure Logic Helpers (`lib/`)
-- Logic that can be tested without React, Next.js or a database lives in `lib/` as pure functions, e.g. `lib/subjectQuestionBank.ts` (query-param parsing, Bloom's normalisation, prompt→unique-question projection, subject code normalisation, API payload guards).
-- Keep these modules dependency free so they run under `node --test` with type stripping (`tests/node/frontend/`). Unit test them rather than duplicating the logic inside components or route handlers.
-- **Never trust an API response shape:** validate with the guards in these helpers (`toUniqueQuestionList`, `toUniqueQuestionStats`) instead of `setState(data)`. A failed request returns `{ error }`, and storing that where an array or stats object is expected crashes the page.
-- **URL params are already decoded** by Next.js. Use `safeDecodeParam()` rather than `decodeURIComponent()`, which throws for names containing a literal `%`.
-
 ## Database Access (API routes only)
 - **API routes import `connect()`** from `@/backend/src/database/connect` or `@/backend/dist/database/connect` and call `await connect()` before any DB operation.
 - **Use repositories** from `@/backend/dist/database/repositories/` (or `src/`). Import singleton instances via `repositories/index.ts` or instantiate directly: `new RepositoryName()`.
