@@ -78,7 +78,6 @@
 | Service | Role |
 |---|---|
 | `geminiAi.js` | Google Gemini AI integration (458 lines) — postAnswers, getBloomsAnatomy, refineSyllabus, sendEmail |
-| `userProvisioning.ts` | Single source of truth for turning a Clerk identity into a local user record. `buildUserProfile()` builds the insert document, `resolveProvisionedRole()` keeps an existing role and otherwise falls back to `student` (never `teacher`/`admin` from a client), `splitUpsertFields()` splits `$set` (Clerk-owned: `email`, `name`, `lastLogin`) from `$setOnInsert` (`role`, exam arrays, `createdAt`). |
 | `examAnalysisService.ts` | Gemini-powered exam analysis — extracts questions, classifies Bloom's, maps to syllabus |
 | `ocrService.ts` | HTTP client for AI Pipeline OCR service (axios) |
 | `ec2OcrClient.ts` | Axios client for EC2-based AI Pipeline |

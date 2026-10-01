@@ -6,8 +6,7 @@
 - **Layout shell** is split: `app/layout.tsx` (Server Component — wraps ClerkProvider + ClientLayout) and `app/clientLayout.tsx` ("use client" — sidebar, top nav, mobile toggle).
 
 ## Pages & Data Fetching
-- **All pages are Client Components ("use client")** except the root `app/page.tsx` (landing page), `app/layout.tsx`, and the thin server-side guards (`app/dashboard/layout.tsx`). The entire app uses `useEffect` + `fetch()` for data fetching. **Do not write React Server Components with `async function`** for pages — that pattern is not used here.
-- **Pure derivations belong in `lib/`.** `lib/dashboardMetrics.ts` holds the dashboard's score/dedupe/recency/search maths so it can be unit tested without React. Keep new view logic out of `.tsx` files when it can be a plain function.
+- **All pages are Client Components ("use client")** except the root `app/page.tsx` (landing page) and `app/layout.tsx`. The entire app uses `useEffect` + `fetch()` for data fetching. **Do not write React Server Components with `async function`** — that pattern is not used here.
 - **API Route Handlers** (`app/api/.../route.ts`) are always server-side (no "use client"). These import backend code directly via the `@/` alias.
 - **Mutation pattern:** Pages call `fetch("/api/...", { method: "POST", body: ... })` from event handlers. No server actions or React Query.
 
@@ -45,22 +44,9 @@
 
 ## Authentication
 - **Clerk** via `@clerk/nextjs`.
-- Server side: `import { auth } from "@clerk/nextjs/server"` in API routes. Returns `userId`. Use `currentUser()` when the Clerk profile (email, name) is needed.
+- Server side: `import { auth } from "@clerk/nextjs/server"` in API routes. Returns `userId`.
 - Client side: `useUser()`, `<SignInButton/>`, `<SignUpButton/>`, `<UserButton/>`.
-- Middleware lives at `packages/frontend/middleware.ts` (**not** `app/middleware.ts`) and passes a handler to `clerkMiddleware()`. A handler-less `clerkMiddleware()` only attaches the auth context and protects nothing.
-- Protected matcher: `createRouteMatcher(['/dashboard(.*)', '/api/users(.*)'])`. Page requests get a 302 to `/sign-in?redirect_url=…`; `/api/**` requests get a `401` JSON body, because a redirect is not a usable answer for a fetch.
-- `app/dashboard/layout.tsx` re-checks the session server-side for the whole segment. `app/sign-in/[[...sign-in]]/page.tsx` and `app/sign-up/[[...sign-up]]/page.tsx` use `routing="path"` and are the redirect target — removing them makes the guard 404.
-
-### Auth rules
-- **Identity comes from the session, never the request body.** A handler that accepts an `email` or `user.id` from the payload must verify it resolves to the caller (or the caller is an admin).
-- **Roles are server-side.** Self-service provisioning always stores `student` (`resolveProvisionedRole` in `packages/backend/src/services/userProvisioning.ts`); an existing role is preserved so an admin promotion is not reset on the next dashboard load.
-- **One provisioning path.** `buildUserProfile()` + `UserRepository.upsertByClerkId()` are the only way a local user record is written. Do not add a `findById`-then-`create` pair.
-- `upsertByClerkId` splits the update: `$set` for Clerk-owned fields (`email`, `name`, `lastLogin`), `$setOnInsert` for `role`, the exam arrays and `createdAt`. `_id` is excluded from both.
-- **API URLs are absolute** — `"/api/..."`. `"api/..."` resolves against the current route segment and 404s off the root route.
-- **Reset client state on session change.** Wait for `isLoaded`, clear state when the user is gone, and abort in-flight requests in the effect cleanup.
-- **Route params in Client Components come from `useParams()`.** Next 15 passes `params` as a promise; reading it synchronously yields `undefined`.
-- `GET /api/users/userInfo` returns `404` when the record is not provisioned yet — that is the dashboard's trigger for `POST /api/users/create`, not an error.
-- Never nest a Clerk `<SignInButton>`/`<SignUpButton>` inside a `<Link>`; the nested interactive elements swallow the click. Use `forceRedirectUrl` so Clerk knows where to send the user.
+- Middleware: `app/middleware.ts` — protects all routes via `clerkMiddleware()`.
 
 ## AI Pipeline Communication
 - Frontend API routes call the Python Flask AI pipeline via `fetch(AI_PIPELINE_URL + "/endpoint")`.

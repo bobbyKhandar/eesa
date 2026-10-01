@@ -29,6 +29,6 @@
     "tailwindcss": "^4.1.11"
   },
   "scripts": {
-    "test:auth-dashboard": "node --test tests/node/dashboard-auth.test.ts"
+    "test:auth-dashboard": "node --experimental-strip-types --test tests/node/dashboard-auth.test.ts"
   }
 }
