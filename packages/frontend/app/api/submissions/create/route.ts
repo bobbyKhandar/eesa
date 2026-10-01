@@ -3,7 +3,7 @@ import { auth } from "@clerk/nextjs/server";
 import { ExamSubmissionRepository } from "@/backend/dist/database/repositories/ExamSubmissionRepository";
 import { ExamRepository } from "@/backend/dist/database/repositories/ExamRepository";
 import { UserRepository } from "@/backend/dist/database/repositories/UserRepository";
-import { evaluateExamResponses } from "@/backend/dist/services/examEvaluationService";
+import { evaluateExamSubmission } from "@/backend/src/services/examEvaluationService";
 import { ExamAttemptRepository } from "@/backend/src/database/repositories/ExamAttemptRepository";
 import {
   attemptWindowDecision,
@@ -86,26 +86,15 @@ export async function POST(request: NextRequest) {
     }
 
     console.log("Starting AI evaluation for submission...");
-    
-    // Prepare responses with question text for AI evaluation
-    const responsesWithQuestions = responses.map((r: any) => {
-      const question = exam.questionDetails?.find((q: any) => q._id.toString() === r.questionId.toString());
-      return {
-        questionId: r.questionId,
-        questionText: question?.promptData?.questionText || "Question text not found",
-        questionType: question?.questionType || "TEXT",
-        userResponse: r.userResponse || "",
-        maxMarks: r.maxMarks
-      };
-    });
+    const evaluation = await evaluateExamSubmission(exam.questionDetails || [], responses);
+    if ("error" in evaluation) {
+      return NextResponse.json(
+        { success: false, error: evaluation.error },
+        { status: 400 }
+      );
+    }
 
-    console.log("Sending to Gemini AI for evaluation...");
-    // Evaluate responses using Gemini AI
-    const evaluatedResponses = await evaluateExamResponses(responsesWithQuestions);
-    
-    // Calculate total marks
-    const totalMarks = evaluatedResponses.reduce((sum: number, r: any) => sum + (r.allottedMarks || 0), 0);
-    const maxTotalMarks = evaluatedResponses.reduce((sum: number, r: any) => sum + (r.maxMarks || 0), 0);
+    const { responses: evaluatedResponses, marksAchieved: totalMarks, maxMarks: maxTotalMarks } = evaluation;
     const percentage = scorePercentage(totalMarks, maxTotalMarks);
 
     console.log(`Evaluation complete: ${totalMarks}/${maxTotalMarks} (${percentage.toFixed(2)}%)`);
