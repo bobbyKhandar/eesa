@@ -37,6 +37,9 @@ yarn-error.log*
 .env*
 **/.env*
 
+# Clerk keyless mode stores an unclaimed instance secret in this directory
+**/.clerk/
+
 # vercel
 .vercel
 
