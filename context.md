@@ -21,6 +21,9 @@ MongoDB is accessed via `packages/backend/src/database/connect.ts` using ready-s
 ### AI/Python Boundary
 The Next.js frontend NEVER talks to AWS Textract or Bedrock directly. It must send POST requests to the Flask AI Pipeline (`http://127.0.0.1:5000`). The AI pipeline owns all AWS integration.
 
+### Auth & Session Identity
+Identity is derived from the Clerk session, never from a request body. `packages/frontend/middleware.ts` protects `/dashboard(.*)` and `/api/users(.*)` (302 to `/sign-in` for pages, 401 JSON for API routes), and `app/dashboard/layout.tsx` re-checks the session server-side. Roles are assigned server-side by `packages/backend/src/services/userProvisioning.ts`; `UserRepository.upsertByClerkId` is the only writer of a local user record. See the "Auth Flow" section of `README.md`.
+
 ### Package-Specific Rules
 See the `context.md` file inside each package for domain-specific rules:
 - `packages/frontend/context.md` — React/TypeScript component and data-fetching patterns

@@ -101,23 +101,34 @@ export async function POST(req: Request) {
     const clerkUser = await currentUser();
     
     if (clerkUser) {
-      const { getUserModel } = await import("@/backend/dist/database/mongooseSchemas.js");
-      const UserModel = getUserModel();
-      
-      // Check if user exists
-      let user = await UserModel.findById(userId);
-      
-      if (!user) {
-        // Create user with Clerk ID as _id
-        await UserModel.create({
-          _id: userId,
-          email: clerkUser.emailAddresses[0]?.emailAddress || '',
-          name: clerkUser.firstName ? `${clerkUser.firstName} ${clerkUser.lastName || ''}`.trim() : undefined,
-          role: 'teacher', // Default to teacher for exam creators
-          currentAllocatedExams: [],
-          submissionHistory: [],
-          createdAt: new Date()
-        });
+      const { userRepo } = await import("@/backend/dist/database/repositories/index.js");
+      const { buildUserProfile } = await import("@/backend/src/services/userProvisioning");
+
+      const email = clerkUser.emailAddresses[0]?.emailAddress || '';
+
+      if (email) {
+        // Single provisioning path: the same upsert the dashboard uses, so the
+        // stored role no longer depends on which page loaded first and the
+        // find-then-create pair cannot race with it.
+        const existing = await userRepo.getById(userId);
+        const profile = buildUserProfile(
+          {
+            userId,
+            email,
+            name: clerkUser.firstName
+              ? `${clerkUser.firstName} ${clerkUser.lastName || ""}`.trim()
+              : undefined,
+            imageUrl: clerkUser.imageUrl,
+          },
+          { existingRole: existing?.role }
+        );
+        const provisioned = await userRepo.upsertByClerkId(profile);
+        if (!provisioned.success) {
+          return NextResponse.json(
+            { success: false, error: provisioned.error || "Failed to provision user" },
+            { status: 500 }
+          );
+        }
       }
     }
 

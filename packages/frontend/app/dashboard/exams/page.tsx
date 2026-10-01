@@ -7,55 +7,65 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Input } from "@/frontend/components/ui/input"
 import { Badge } from "@/frontend/components/ui/badge"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/frontend/components/ui/tabs"
-import { Search, Plus, Clock, BookOpen, ArrowRight, Eye, Edit, Trash2, Users } from "lucide-react"
+import { Search, Plus, Clock, BookOpen, ArrowRight, Eye, Trash2, Users } from "lucide-react"
+import { filterExams } from "@/frontend/lib/dashboardMetrics"
 import { useUser } from "@clerk/nextjs"
 
 export default function DashboardExamsPage() {
-  const { user } = useUser()
+  const { user, isLoaded } = useUser()
   const [exams, setExams] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [searchQuery, setSearchQuery] = useState("")
 
   useEffect(() => {
-    console.log("useEffect triggered, user:", user?.id);
-    
+    // Wait for Clerk before deciding there is nothing to load. Bailing out on a
+    // missing user left `loading` true and the page stuck on "Loading exams..."
+    // forever for a signed-out visitor.
+    if (!isLoaded) return
+
     if (!user?.id) {
-      console.log("No user ID, skipping fetch");
-      return;
+      setExams([])
+      setLoading(false)
+      return
     }
+
+    const controller = new AbortController()
+    let active = true
 
     const fetchExams = async () => {
       try {
-        console.log("Starting fetchExams...");
         setLoading(true)
-        const response = await fetch('/api/exams/list')
-        console.log("Response received:", response.status);
+        setError(null)
+        const response = await fetch("/api/exams/list", {
+          signal: controller.signal,
+          cache: "no-store",
+        })
         const data = await response.json()
-        console.log("Data:", data)
-        
+
         if (!response.ok || !data.success) {
-          throw new Error(data.error || 'Failed to fetch exams')
+          throw new Error(data.error || "Failed to fetch exams")
         }
 
-        setExams(data.exams || [])
+        if (active) setExams(Array.isArray(data.exams) ? data.exams : [])
       } catch (err: any) {
-        setError(err.message || 'Failed to load exams')
-        console.error('Error fetching exams:', err)
+        if (!active || controller.signal.aborted) return
+        setError(err.message || "Failed to load exams")
       } finally {
-        setLoading(false)
+        if (active) setLoading(false)
       }
     }
 
     fetchExams()
-  }, [user?.id])
 
-  // Filter exams based on search query
-  const filteredExams = exams.filter(exam =>
-    exam.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    exam.description?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    exam.subject?.toLowerCase().includes(searchQuery.toLowerCase())
-  )
+    return () => {
+      active = false
+      controller.abort()
+    }
+  }, [isLoaded, user?.id])
+
+  // `exam.title.toLowerCase()` threw on any record without a title.
+  const filteredExams = filterExams(exams as Record<string, unknown>[], searchQuery) as any[]
 
   if (loading) {
     return (
@@ -247,11 +257,6 @@ function ExamCard({ exam }: { exam: any }) {
         <Link href={`/dashboard/exams/${exam.id}`}>
           <Button variant="outline" size="sm" className="gap-1">
             <Eye className="h-4 w-4" /> View
-          </Button>
-        </Link>
-        <Link href={`/dashboard/exams/${exam.id}/edit`}>
-          <Button variant="outline" size="sm" className="gap-1">
-            <Edit className="h-4 w-4" /> Edit
           </Button>
         </Link>
         <Button 

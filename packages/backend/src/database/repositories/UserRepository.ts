@@ -6,6 +6,7 @@
 import { Types } from "mongoose";
 import { connect } from "../connect.js";
 import { getUserModel } from "../mongooseSchemas.js";
+import { splitUpsertFields } from "../../services/userProvisioning.js";
 import { userZodSchema } from "../schemas/userSchemaZod.js";
 import type { User } from "../schemas/userSchemaZod.js";
 
@@ -346,6 +347,11 @@ export class UserRepository {
   /**
    * Atomically create or return existing user by Clerk ID (upsert).
    * Eliminates the race condition between getById + create.
+   *
+   * Clerk-owned fields (`email`, `name`, `lastLogin`) are refreshed on every
+   * sign-in via `$set`. Role and the exam arrays stay on `$setOnInsert` so a
+   * returning user keeps the role an admin assigned and keeps the exams and
+   * submissions already recorded against the account.
    */
   async upsertByClerkId(data: User): Promise<{ success: boolean; user?: User; error?: string }> {
     try {
@@ -357,9 +363,11 @@ export class UserRepository {
         return { success: false, error: `Validation failed: ${errorMessages}` };
       }
 
+      const fields = splitUpsertFields(validation.data as Record<string, unknown>);
+
       const result = await this.model.findOneAndUpdate(
         { _id: data._id },
-        { $setOnInsert: validation.data },
+        fields,
         { upsert: true, returnDocument: 'after' }
       );
 
