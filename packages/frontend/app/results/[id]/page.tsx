@@ -164,28 +164,34 @@ export default function ResultsPage({ params }: { params: Promise<{ id: string }
                         <CardDescription className="mt-1">{question.text}</CardDescription>
                       </CardHeader>
                       <CardContent className="space-y-4">
-                        {question.type === "mcq" && question.options && question.options.length > 0 && (
+                        {["mcq", "true_false"].includes(String(question.type || "").toLowerCase()) && question.options && question.options.length > 0 && (
                           <div>
                             <p className="text-sm font-medium mb-2">Options:</p>
                             <ul className="list-disc list-inside text-sm space-y-1">
-                              {question.options.map((option: string, i: number) => (
+                              {question.options.map((option: any, i: number) => {
+                                const label = typeof option === "string" ? option : (option?.text || "")
+                                const selected = String(response?.userResponse ?? "")
+                                const selectedThis = selected === label || selected === String(i)
+                                const isCorrectOption = label === question.correctAnswer || String(i) === String(question.correctAnswer)
+                                return (
                                 <li
                                   key={i}
                                   className={
-                                    response?.userResponse === option
-                                      ? option === question.correctAnswer
+                                    selectedThis
+                                      ? isCorrectOption
                                         ? "text-green-600 font-medium"
                                         : "text-red-600 font-medium"
-                                      : option === question.correctAnswer
+                                      : isCorrectOption
                                       ? "text-green-600"
                                       : ""
                                   }
                                 >
-                                  {option}
-                                  {option === question.correctAnswer && " ✓ (Correct)"}
-                                  {response?.userResponse === option && option !== question.correctAnswer && " ✗ (Your answer)"}
+                                  {label}
+                                  {isCorrectOption && " ✓ (Correct)"}
+                                  {selectedThis && !isCorrectOption && " ✗ (Your answer)"}
                                 </li>
-                              ))}
+                                )
+                              })}
                             </ul>
                           </div>
                         )}

@@ -78,6 +78,9 @@
 | Service | Role |
 |---|---|
 | `geminiAi.js` | Google Gemini AI integration (458 lines) — postAnswers, getBloomsAnatomy, refineSyllabus, sendEmail |
+| `examEvaluationService.ts` | Grades a submission. Objective questions use canonical option text; theory questions use Gemini. `maxMarks` comes from the exam question, not the client. |
+| `examAccess.ts` | Server-side decisions for admin actions, exam content, and submission ownership. Strips answer keys for examinees. |
+| `mcqAlignment.ts` | Maps MCQ option indexes and option text onto one canonical option-text representation for storage, grading, and display. |
 | `examAnalysisService.ts` | Gemini-powered exam analysis — extracts questions, classifies Bloom's, maps to syllabus |
 | `ocrService.ts` | HTTP client for AI Pipeline OCR service (axios) |
 | `ec2OcrClient.ts` | Axios client for EC2-based AI Pipeline |

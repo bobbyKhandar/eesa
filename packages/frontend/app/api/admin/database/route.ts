@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { requireAdmin } from '@/frontend/lib/requestAuth';
 import mongoose from 'mongoose';
 import { connect } from '@/backend/src/database/connect';
 import {
@@ -23,6 +24,9 @@ import {
 
 export async function GET() {
   try {
+    const denied = await requireAdmin();
+    if (denied) return denied;
+
     await connect();
 
     const collections = [
