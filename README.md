@@ -139,7 +139,6 @@ packages/frontend/
 │   ├── resources/                   # Resource library
 │   ├── subjects/                    # Subject explorer
 │   ├── take-exam/                   # Exam-taking interface
-│   ├── results/                     # Results list (charts, filters) + per-submission detail
 │   ├── ai-analyze/                  # AI exam analysis
 │   ├── ai-helper/                   # Gemini exam helper
 │   └── upload-status/               # Upload session tracking
@@ -155,9 +154,7 @@ packages/frontend/
 │   ├── theme-provider.tsx
 │   └── notification-system.tsx
 ├── hooks/                           # use-mobile, use-toast
-├── lib/
-│   ├── utils.ts                     # cn() utility (clsx + tailwind-merge)
-│   └── examResults.ts               # Pure submit/grade/results derivations (see "Results & Grading")
+├── lib/utils.ts                     # cn() utility (clsx + tailwind-merge)
 ├── middleware.ts                    # Clerk auth middleware
 └── package.json
 ```
@@ -287,14 +284,14 @@ Or use **VSCode** (`.vscode/launch.json`) — open Run & Debug (Ctrl+Shift+D), s
 | `upload/` | Question paper upload & split |
 | `jobs/` | Status, cleanup |
 | `failed-jobs/` | Failed job details, bulk retry |
-| `submissions/` | Submit an attempt & read one submission. One submission per user per exam; a repeat attempt is a 409 carrying the existing id. |
+| `submissions/` | Submit & get results |
 | `resources/` | Resource CRUD |
 | `admin/database/` | DB stats, S3 backup/restore, truncation |
 | `exam-analysis/` | Publish, upload, upload-bulk |
 | `llm/` | Gemini AI exam helper |
 | `users/` | User CRUD, submissions, metadata |
 | `upload-sessions/` | Upload session management |
-| `results/` | Results for the caller, enriched with the exam's subject, threshold and grade |
+| `results/` | Results retrieval |
 | `reports/` | Report generation |
 | `unique-questions/` | Unique questions retrieval |
 
@@ -339,13 +336,6 @@ All routes registered on the canonical server at `src/api/server.py`. See `packa
 | `npm run start` | Start production server |
 | `npm run lint` | ESLint check |
 
-### Root (`package.json`)
-
-| Script | Description |
-|--------|-------------|
-| `npm run test:node` | Node test runner over every `tests/node/*.test.ts` |
-| `npm run test:submissions` | Node test runner over `tests/node/submission-results.test.ts` (submit → grade → results area) |
-
 ---
 
 ## Testing
@@ -354,59 +344,7 @@ All routes registered on the canonical server at `src/api/server.py`. See `packa
 |----------|-----------|----------|
 | `packages/ai-pipeline/tests/` | Python unittest | 15 test files (server, OCR, pipeline, AWS, integration) |
 | `tests/python/` | Python unittest | 2 test files (experiment, image preprocessing) |
-| `tests/node/` | Node.js built-in test runner | `submission-results.test.ts` — submit → grade → results derivations (pass threshold, percentage guards, trend bucketing, time limits, duplicate attempts) |
-
-Node tests import the modules under test by relative path with an explicit `.ts`
-extension (`../../packages/frontend/lib/examResults.ts`) and run through Node's
-type stripping, so no build step is needed.
-
----
-
-## Results & Grading (take-exam → submit → grade → results)
-
-```
-/take-exam/[id]           app/take-exam/[id]/page.tsx
-                         countdown in a ref, one interval per attempt
-                         → GET  /api/exams/:id
-                         → POST /api/submissions/create        200 → /results/:submissionId
-                                                          409 → /results/:existingSubmissionId
-/results                 app/results/page.tsx — list, filters, recharts panels
-                         → GET  /api/results
-/results/[id]            app/results/[id]/page.tsx — score, verdict, per-question review
-                         → GET  /api/submissions/:id
-/dashboard               app/dashboard/page.tsx — recent submissions
-                         → GET  /api/users/submissions/:id/examDetails
-```
-
-Every derived number in that flow comes from `packages/frontend/lib/examResults.ts`, so
-there is no second copy of a threshold or a percentage:
-
-| Export | Owns |
-|--------|------|
-| `scorePercentage(marksAchieved, maxMarks)` | The one percentage. Returns `0` — never `NaN`/`Infinity` — when `maxMarks` is 0, missing or negative |
-| `resolvePassingPercentage(exam)` | The pass threshold, from `exam.passingPercentage`, clamped to 0-100. `DEFAULT_PASSING_PERCENTAGE` (40) is only a fallback |
-| `verdictFor` / `gradeFor` | passed-failed and the A+→F letter |
-| `buildResultRow(submission, exam)` | One results row, including `subject` (`exam.subject`) — **not** `examDegree`, which is the degree programme |
-| `sortResultsByDateDesc` | Newest first, undated rows last |
-| `summarizeResults` | totals, average, highest, pass rate |
-| `calculatePerformanceTrend` | Averages per `YYYY-MM` bucket, oldest first, last 5. Same-named months in different years are different points |
-| `calculateSubjectPerformance` | Per-subject averages, best first |
-| `calculateGradeDistribution` | Grade counts, ordered A+ → F |
-| `isWithinDateWindow(date, filter, now)` | `all` / `week` / `month` / `semester`. Measures backwards only |
-| `examTimeLimitSeconds(duration)` | The attempt window, from `exam.duration`, in seconds |
-| `resolveSubmissionTime({durationMinutes, timeSpent, autoSubmit})` | Server-side attempt duration: clamped to the window, and an attempt that used the whole window is auto-submitted even if the client said otherwise. Rejects a non-numeric or negative `timeSpent` |
-| `duplicateSubmissionOutcome(existing)` | 409 + the existing submission id, so a repeat attempt opens the real result instead of dead-ending |
-
-Rules the code above depends on:
-
-- **One verdict, one threshold.** `/api/results` used a literal `40` and `/results/[id]` a literal `60`, so the same submission read as both passed and failed. Both read `exam.passingPercentage`; the detail route sends it as `passingPercentage`.
-- **The pass threshold lives on the exam, not in a page.** The create form defaults it to 35, and `/api/exams/list` already returns it.
-- **One submission per user per exam**, enforced by the unique `{examId, userId}` index and checked *before* grading. The old order graded with Gemini first and only then returned a 500 "already exists" with no id.
-- **The exam's window is the authority on duration.** The client reports elapsed seconds; the server clamps them to `exam.duration` and forces `autoSubmitted` when the window is used up. Enforcing the clock itself would need a persisted attempt-start record.
-- **`autoSubmitted` is decided by the countdown reaching zero**, not by reading a `timeLeft` captured when the interval was created — the old closure made every timed-out attempt look like a normal one.
-- **The countdown and the answers live in refs.** The interval used to list `timeLeft` in its deps (rebuilt every second) and ran the auto-submit from inside a `setState` updater, which React may invoke twice.
-- **Marks come from the submission, not from the exam.** `examDetails` used `exam.examMaxMarks`, which reports a percentage against a total that may since have changed and is `undefined` for exams stored without one.
-- **Exam documents carry `_id`; there is no `examId` field.** `examDetails` read `results.examId`, so every `examId` it returned serialised as `undefined`.
+| `tests/node/` | — | Empty (placeholder for future Node.js tests) |
 
 ---
 

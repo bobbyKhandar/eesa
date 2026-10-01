@@ -48,14 +48,6 @@
 - Client side: `useUser()`, `<SignInButton/>`, `<SignUpButton/>`, `<UserButton/>`.
 - Middleware: `app/middleware.ts` — protects all routes via `clerkMiddleware()`.
 
-## Scores, Verdicts & Attempt Timeouts
-- **One module owns them: `lib/examResults.ts`.** `scorePercentage`, `resolvePassingPercentage`, `verdictFor`, `gradeFor`, `buildResultRow`, `summarizeResults`, `calculatePerformanceTrend` / `calculateSubjectPerformance` / `calculateGradeDistribution`, `isWithinDateWindow`, `examTimeLimitSeconds`, `resolveSubmissionTime`, `duplicateSubmissionOutcome`. It is pure — no Next.js, no Mongoose — so `tests/node/submission-results.test.ts` exercises it directly.
-- **Never hardcode a pass threshold in a route or page.** The value is `exam.passingPercentage`; `DEFAULT_PASSING_PERCENTAGE` (40) is only a fallback for exams that carry none. `/api/results` and `/api/submissions/[id]` both send it, so the list and the detail page agree.
-- **Never divide by `maxMarks` unguarded.** `maxMarks` is 0 for a submission with no gradable questions, and the raw division serialised as the strings `"NaN"` / `"Infinity"`.
-- **`exam.subject` is the subject; `examDegree` is the degree programme.** Results rows, the subject filter and the subject chart read `subject`.
-- **A `useEffect` that owns a countdown must not put the countdown value in its dependency array** — that rebuilds the interval on every tick — **and must not call an async submit from inside a `setState` updater**, which React may invoke more than once. `app/take-exam/[id]/page.tsx` keeps `timeLeft`, the answers and the attempt start in refs and creates one interval per attempt.
-- **`autoSubmitted` is decided by the countdown reaching zero**, never by reading a `timeLeft` captured in an older closure. The server re-derives it from `exam.duration` regardless of the client flag.
-
 ## AI Pipeline Communication
 - Frontend API routes call the Python Flask AI pipeline via `fetch(AI_PIPELINE_URL + "/endpoint")`.
 - `AI_PIPELINE_URL` defaults to `http://127.0.0.1:5000` (set in `.env.local`). Also seen as `http://192.168.1.105:5000` or `http://localhost:5000`.
