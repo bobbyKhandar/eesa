@@ -3,7 +3,8 @@
   "private": true,
   "workspaces": ["packages/backend", "packages/frontend"],
   "scripts": {
-    "test": "node --experimental-strip-types --import ./tests/node/register-hook.mjs --test tests/node/exam-evaluator-security.test.ts"
+    "test": "node --experimental-strip-types --import ./tests/node/register-hook.mjs --test tests/node/exam-evaluator-security.test.ts",
+    "test:auth-dashboard": "node --experimental-strip-types --test tests/node/dashboard-auth.test.ts"
   },
   "devDependencies": {
     "@eslint/js": "^9.30.1",
@@ -27,8 +28,5 @@
     "radix-ui": "^1.4.2",
     "tailwind-merge": "^3.3.1",
     "tailwindcss": "^4.1.11"
-  },
-  "scripts": {
-    "test:auth-dashboard": "node --experimental-strip-types --test tests/node/dashboard-auth.test.ts"
   }
 }
