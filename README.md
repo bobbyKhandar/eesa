@@ -250,6 +250,8 @@ Each package has its own `.env` file:
 | `APPLICATION_ADMIN` | Admin email address |
 | `aws_location` | AWS region (e.g. `ap-south-1`) |
 
+The Eesa database is `test`. Set the server-side `mongodb_url` to `mongodb+srv://bobby:<URL_ENCODED_PASSWORD>@cluster0.yuld0s6.mongodb.net/test?appName=Cluster0`; URL-encode the database-user password and keep credentials in ignored environment files. Use the same URI in the root `.env` (for root-run scripts) and `packages/backend/.env` (for the shared connection helper). An inherited `mongodb_url` takes precedence over dotenv files, so update any deployment environment that supplies it and restart the app. A local database migration does not verify a production switch; verify the deployed environment and running app separately.
+
 ### 3. Run in Development
 
 Open **two terminals**:
