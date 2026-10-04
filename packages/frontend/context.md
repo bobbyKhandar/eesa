@@ -51,6 +51,7 @@
 - Middleware: `app/middleware.ts` — protects all routes via `clerkMiddleware()`.
 
 ## AI Pipeline Communication
+- The `/ai-helper` page requests answers through `/api/llm`, reports failures, and loads personal results from `/api/results`. Do not show sample personal performance or claim the AI provider is online without a health check.
 - Frontend API routes call the Python Flask AI pipeline via `fetch(AI_PIPELINE_URL + "/endpoint")`.
 - `AI_PIPELINE_URL` defaults to `http://127.0.0.1:5000` (set in `.env.local`). Also seen as `http://192.168.1.105:5000` or `http://localhost:5000`.
 - **Never call AWS Textract/Bedrock directly from the frontend** — always go through the AI pipeline.
