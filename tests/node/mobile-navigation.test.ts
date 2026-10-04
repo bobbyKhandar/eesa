@@ -7,7 +7,7 @@ import { test } from "node:test"
 import { JSDOM } from "jsdom"
 import ts from "typescript"
 
-test("mobile navigation opens, preserves role access, and closes on navigation, Escape and desktop resize", async () => {
+test("navigation and search interactions, plus account-settings authentication states", async () => {
   const dom = new JSDOM("<!doctype html><html><head></head><body></body></html>", { url: "http://localhost/dashboard", pretendToBeVisual: true })
   for (const key of ["window", "document", "HTMLElement", "Element", "Node", "NodeFilter", "MutationObserver", "CustomEvent", "Event", "KeyboardEvent", "HTMLInputElement"]) {
     Object.defineProperty(globalThis, key, { configurable: true, value: dom.window[key] })
@@ -27,6 +27,7 @@ test("mobile navigation opens, preserves role access, and closes on navigation, 
   const { createRoot } = require("react-dom/client")
   const base = resolve(dirname(fileURLToPath(import.meta.url)), "../..")
   let pathname = "/dashboard"
+  let account = { isLoaded: true, isSignedIn: true }
   const cache = new Map()
   // Load the real TSX components and Radix primitives; stub only Next/Clerk platform boundaries.
   function load(filename) {
@@ -41,7 +42,7 @@ test("mobile navigation opens, preserves role access, and closes on navigation, 
       if (id === "next/navigation") return { usePathname: () => pathname }
       if (id === "next/font/google") return { Inter: () => ({ className: "inter" }) }
       if (id === "next/link") return { __esModule: true, default: React.forwardRef((props, ref) => React.createElement("a", { ...props, ref, onClick: (event) => { event.preventDefault(); props.onClick?.(event) } })) }
-      if (id === "@clerk/nextjs") return { SignedIn: ({ children }) => children, SignedOut: () => null, SignInButton: ({ children }) => children, UserButton: () => null }
+      if (id === "@clerk/nextjs") return { SignedIn: ({ children }) => children, SignedOut: () => null, SignInButton: ({ children }) => children, UserButton: () => null, useUser: () => account, UserProfile: ({ routing }) => React.createElement("div", { "data-account-settings": routing }, "Authenticated account settings") }
       if (id.startsWith("@/")) {
         const path = resolve(base, "packages", id.slice(2))
         try { return load(path + ".tsx") } catch (error) { if (error.code !== "ENOENT") throw error; return load(path + ".ts") }
@@ -104,6 +105,19 @@ test("mobile navigation opens, preserves role access, and closes on navigation, 
       await click(dialog().querySelector("li a"))
       assert.equal(dialog(), null, "selecting a search result closes the search dialog")
     } finally { globalThis.fetch = originalFetch }
+    const SettingsPage = load(resolve(base, "packages/frontend/app/dashboard/settings/page.tsx")).default
+    account = { isLoaded: false, isSignedIn: false }
+    await act(async () => root.render(React.createElement(SettingsPage)))
+    assert.match(container.textContent, /Loading account settings/)
+    assert.equal(container.querySelector("[data-account-settings]"), null)
+    account = { isLoaded: true, isSignedIn: false }
+    await act(async () => root.render(React.createElement(SettingsPage)))
+    assert.match(container.textContent, /Sign in to manage your account/)
+    assert.equal(container.querySelector("[data-account-settings]"), null)
+    account = { isLoaded: true, isSignedIn: true }
+    await act(async () => root.render(React.createElement(SettingsPage)))
+    assert.equal(container.querySelector("[data-account-settings]").getAttribute("data-account-settings"), "hash")
+    assert.doesNotMatch(container.textContent, /John Doe|Active Sessions|Two-Factor Authentication.*Enabled/)
   } finally {
     await act(async () => root.unmount())
     dom.window.close()

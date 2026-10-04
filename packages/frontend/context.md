@@ -44,6 +44,7 @@
 - Use `cn()` from `@/frontend/lib/utils` for className merging (uses `clsx` + `tailwind-merge`).
 
 ## Authentication
+- `/dashboard/settings` renders Clerk's `UserProfile` with hash routing so profile/photo and security changes persist through Clerk. Do not substitute sample identity, local-only save handlers, or invented security status.
 - **Clerk** via `@clerk/nextjs`.
 - Server side: `import { auth } from "@clerk/nextjs/server"` in API routes. Returns `userId`.
 - Client side: `useUser()`, `<SignInButton/>`, `<SignUpButton/>`, `<UserButton/>`.
