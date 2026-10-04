@@ -1,6 +1,7 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { Suspense, useState, useEffect } from "react"
+import { useSearchParams } from "next/navigation"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/frontend/components/ui/tabs"
 import { BookOpen, AlertCircle } from "lucide-react"
 import {
@@ -32,6 +33,11 @@ interface PYQsData {
 }
 
 export default function ResourcesPage() {
+  return <Suspense fallback={<p role="status">Loading resources...</p>}><ResourcesContent /></Suspense>
+}
+
+function ResourcesContent() {
+  const linkedSubject = useSearchParams().get("subject")
   const [selection, setSelection] = useState<ResourceSelection>(EMPTY_SELECTION)
   const { branch: selectedBranch, semester: selectedSemester, subject: selectedSubject } = selection
   const [activeTab, setActiveTab] = useState("pyqs")
@@ -76,6 +82,17 @@ export default function ResourcesPage() {
       return next === current ? current : next
     })
   }, [resourcesData])
+
+  // Global search can deep-link to a resource subject. Resolve it through the
+  // loaded catalogue so the branch and semester pickers remain consistent.
+  useEffect(() => {
+    const subjectName = linkedSubject
+    if (!subjectName || !resourcesData) return
+    const subject = resourcesData.subjects.find(item => item.name === subjectName)
+    if (subject?.semesters.length) {
+      setSelection({ branch: subject.branch, semester: subject.semesters[0], subject: subject.name })
+    }
+  }, [resourcesData, linkedSubject])
 
   // Fetch PYQs when subject is selected
   useEffect(() => {
