@@ -6,6 +6,7 @@ import { Search, Bell, Settings, LogOut, User, Menu, X } from "lucide-react"
 import { Button } from "@/frontend/components/ui/button"
 import { Input } from "@/frontend/components/ui/input"
 import { DialogTrigger } from "@/frontend/components/ui/dialog"
+import { GlobalSearch } from "@/frontend/components/global-search"
 import {
 
   SignInButton,
@@ -30,7 +31,6 @@ interface TopNavigationProps {
 }
 
 export function TopNavigation({ isMobileMenuOpen }: TopNavigationProps) {
-  const [searchQuery, setSearchQuery] = useState("")
   const [notifications] = useState([
     { id: 1, title: "New exam result available", time: "2 min ago", unread: true },
     { id: 2, title: "Assignment deadline reminder", time: "1 hour ago", unread: true },
@@ -39,11 +39,6 @@ export function TopNavigation({ isMobileMenuOpen }: TopNavigationProps) {
 
   const unreadCount = notifications.filter((n) => n.unread).length
 
-  const handleSearch = (e: React.FormEvent) => {
-    e.preventDefault()
-    // Implement search functionality
-    console.log("Searching for:", searchQuery)
-  }
 
   return (
     <nav className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-4 py-3 fixed top-0 left-0 right-0 z-50">
@@ -63,25 +58,10 @@ export function TopNavigation({ isMobileMenuOpen }: TopNavigationProps) {
         </div>
 
         {/* Center Section - Search Bar */}
-        <div className="flex-1 max-w-md mx-4 hidden md:block">
-          <form onSubmit={handleSearch} className="relative">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
-            <Input
-              type="text"
-              placeholder="Search exams, subjects, resources..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-10 pr-4 w-full bg-gray-50 dark:bg-gray-700 border-gray-200 dark:border-gray-600 focus:bg-white dark:focus:bg-gray-600"
-            />
-          </form>
-        </div>
+        <GlobalSearch />
 
         {/* Right Section - Notifications and User Profile */}
         <div className="flex items-center space-x-3">
-          {/* Mobile Search Button */}
-          <Button variant="ghost" size="sm" className="md:hidden">
-            <Search className="h-5 w-5" />
-          </Button>
 
           {/* Notifications */}
           <DropdownMenu>
@@ -136,19 +116,6 @@ export function TopNavigation({ isMobileMenuOpen }: TopNavigationProps) {
         </div>
       </div>
 
-      {/* Mobile Search Bar */}
-      <div className="mt-3 md:hidden">
-        <form onSubmit={handleSearch} className="relative">
-          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
-          <Input
-            type="text"
-            placeholder="Search exams, subjects, resources..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="pl-10 pr-4 w-full bg-gray-50 dark:bg-gray-700 border-gray-200 dark:border-gray-600"
-          />
-        </form>
-      </div>
     </nav>
   )
 }

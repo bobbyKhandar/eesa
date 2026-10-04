@@ -86,6 +86,24 @@ test("mobile navigation opens, preserves role access, and closes on navigation, 
     await act(async () => { media.matches = true; media.dispatchEvent(new dom.window.Event("change")) })
     assert.equal(dialog(), null)
     assert.equal(trigger().getAttribute("aria-expanded"), "false")
+    const originalFetch = globalThis.fetch
+    globalThis.fetch = async (url) => new Response(JSON.stringify(String(url).includes("exams")
+      ? { success: true, exams: [{ id: "math-exam", title: "Mathematics Exam" }] }
+      : String(url).includes("resources") ? { success: true, data: { subjects: [{ name: "Mathematics" }] } }
+      : { subjects: [{ subjectName: "Mathematics" }] }))
+    try {
+      await click(document.querySelector('[aria-label="Open search"]'))
+      const input = dialog().querySelector("input")
+      await act(async () => {
+        Object.getOwnPropertyDescriptor(dom.window.HTMLInputElement.prototype, "value").set.call(input, "math")
+        input.dispatchEvent(new dom.window.Event("input", { bubbles: true }))
+      })
+      await act(async () => { dialog().querySelector("form").dispatchEvent(new dom.window.Event("submit", { bubbles: true, cancelable: true })) })
+      assert.equal(dialog().querySelectorAll("li a").length, 3, "mobile search displays live results from all three catalogues")
+      assert.equal(dialog().querySelector("li a").getAttribute("href"), "/dashboard/exams/math-exam")
+      await click(dialog().querySelector("li a"))
+      assert.equal(dialog(), null, "selecting a search result closes the search dialog")
+    } finally { globalThis.fetch = originalFetch }
   } finally {
     await act(async () => root.unmount())
     dom.window.close()

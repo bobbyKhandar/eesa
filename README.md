@@ -15,6 +15,7 @@ A modular monolith for end-to-end exam processing: upload scanned question paper
 - **AI Analysis** — Bloom's taxonomy classification, exam analysis reports, Gemini-powered exam helper
 - **Clerk Authentication** — Secure login via email, Google, or GitHub
 - **Responsive Navigation** — Desktop sidebar and accessible mobile navigation dialog share role-filtered links; the mobile menu closes after navigation, Escape, or switching to desktop width.
+- **Global Search** — Desktop and mobile search show live exam, subject, and resource question-bank matches with direct links and source-specific errors.
 
 ---
 
