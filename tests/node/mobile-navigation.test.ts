@@ -40,6 +40,7 @@ test("navigation and search interactions, plus account-settings authentication s
     mod.paths = Module._nodeModulePaths(dirname(filename))
     mod.require = (id) => {
       if (id.endsWith(".css")) return {}
+      if (id.startsWith(".")) return load(resolve(dirname(filename), id))
       if (id === "next/navigation") return { usePathname: () => pathname }
       if (id === "next/font/google") return { Inter: () => ({ className: "inter" }) }
       if (id === "next/link") return { __esModule: true, default: React.forwardRef((props, ref) => React.createElement("a", { ...props, ref, onClick: (event) => { props.onClick?.(event); event.preventDefault() } })) }
@@ -160,6 +161,38 @@ test("navigation and search interactions, plus account-settings authentication s
       assert.equal(question.value, "Retry this question")
       assert.equal(container.querySelector('button[type="submit"]').disabled, false, "failed AI requests restore the send control")
     } finally { globalThis.fetch = originalFetch }
+    const AnalyticsPage = load(resolve(base, "packages/frontend/app/dashboard/analytics/page.tsx")).default
+    globalThis.fetch = async () => new Response(JSON.stringify({ success: true, data: { results: [
+      { id: "math", examName: "Real Math Exam", subject: "Math", date: "2026-10-01", score: 0, totalMarks: 20, percentage: 0, status: "failed" },
+      { id: "cs", examName: "Real CS Exam", subject: "CS", date: "2026-10-01", score: 18, totalMarks: 20, percentage: 90, status: "passed" },
+    ] } }))
+    const originalCreate = URL.createObjectURL
+    const originalRevoke = URL.revokeObjectURL
+    const downloads = []
+    const blobs = []
+    URL.createObjectURL = blob => { blobs.push(blob); return "blob:analytics-test" }
+    URL.revokeObjectURL = () => {}
+    const capture = event => { if (event.target.download) { downloads.push(event.target.download); event.preventDefault() } }
+    document.addEventListener("click", capture)
+    try {
+      await act(async () => root.render(React.createElement(AnalyticsPage)))
+      assert.match(container.textContent, /Real Math Exam/)
+      const subjectFilter = container.querySelector('[aria-label="Subject filter"]')
+      await act(async () => { subjectFilter.value = "CS"; subjectFilter.dispatchEvent(new dom.window.Event("change", { bubbles: true })) })
+      assert.doesNotMatch(container.textContent, /Real Math Exam/)
+      assert.match(container.textContent, /Real CS Exam/)
+      await click(Array.from(container.querySelectorAll("button")).find(button => button.textContent === "Export Data"))
+      await click(Array.from(container.querySelectorAll("button")).find(button => button.textContent === "Generate Report"))
+      assert.deepEqual(downloads, ["exam-performance.csv", "performance-report.txt"])
+      assert.match(await blobs[0].text(), /Real CS Exam/)
+      assert.doesNotMatch(await blobs[0].text(), /Real Math Exam/)
+      assert.match(await blobs[1].text(), /Average score: 90%/)
+    } finally {
+      globalThis.fetch = originalFetch
+      URL.createObjectURL = originalCreate
+      URL.revokeObjectURL = originalRevoke
+      document.removeEventListener("click", capture)
+    }
   } finally {
     await act(async () => root.unmount())
     dom.window.close()
