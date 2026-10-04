@@ -62,12 +62,12 @@ const navigationItems: SidebarSection[] = [
 //   { id: 2, exam: "Physics Test", score: 92, date: "2024-01-13" },
 // ]
 
-export function PermanentSidebar({ isAdmin = false }: { isAdmin?: boolean } = {}) {
+export function PermanentSidebar({ isAdmin = false, embedded = false, onNavigate }: { isAdmin?: boolean; embedded?: boolean; onNavigate?: () => void } = {}) {
   const pathname = usePathname()
   const sections = filterNavigation(navigationItems, isAdmin)
 
   return (
-    <div className="fixed left-0 top-16 h-[calc(100vh-4rem)] w-64 bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 lg:block">
+    <div className={cn("bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700", embedded ? "min-h-0 overflow-hidden" : "fixed left-0 top-16 h-[calc(100vh-4rem)] w-64 lg:block")}>
       <ScrollArea className="h-full">
         <div className="p-4 space-y-6">
           {/* Navigation */}
@@ -81,7 +81,7 @@ export function PermanentSidebar({ isAdmin = false }: { isAdmin?: boolean } = {}
                   {section.items.map((item) => {
                     const isActive = pathname === item.href
                     return (
-                      <Link key={item.name} href={item.href}>
+                      <Link key={item.name} href={item.href} onClick={onNavigate}>
                         <Button
                           variant={isActive ? "secondary" : "ghost"}
                           className={cn(

@@ -5,6 +5,7 @@ import { useState } from "react"
 import { Search, Bell, Settings, LogOut, User, Menu, X } from "lucide-react"
 import { Button } from "@/frontend/components/ui/button"
 import { Input } from "@/frontend/components/ui/input"
+import { DialogTrigger } from "@/frontend/components/ui/dialog"
 import {
 
   SignInButton,
@@ -25,11 +26,10 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/frontend/components/ui/av
 import { Badge } from "@/frontend/components/ui/badge"
 import { Brain } from "lucide-react"
 interface TopNavigationProps {
-  onMobileMenuToggle?: () => void
   isMobileMenuOpen?: boolean
 }
 
-export function TopNavigation({ onMobileMenuToggle, isMobileMenuOpen }: TopNavigationProps) {
+export function TopNavigation({ isMobileMenuOpen }: TopNavigationProps) {
   const [searchQuery, setSearchQuery] = useState("")
   const [notifications] = useState([
     { id: 1, title: "New exam result available", time: "2 min ago", unread: true },
@@ -51,9 +51,11 @@ export function TopNavigation({ onMobileMenuToggle, isMobileMenuOpen }: TopNavig
         {/* Left Section - Logo and Mobile Menu */}
         <div className="flex items-center space-x-4">
           {/* Mobile Menu Toggle */}
-          <Button variant="ghost" size="sm" className="lg:hidden" onClick={onMobileMenuToggle}>
-            {isMobileMenuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
-          </Button>
+          <DialogTrigger asChild>
+            <Button variant="ghost" size="sm" className="lg:hidden" aria-label="Open navigation" aria-controls="mobile-navigation" aria-expanded={isMobileMenuOpen}>
+              {isMobileMenuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
+            </Button>
+          </DialogTrigger>
 
           {/* Logo */}
             <Brain className="h-6 w-6" />
