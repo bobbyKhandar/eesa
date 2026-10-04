@@ -3,7 +3,7 @@
 ## Component Hierarchy
 - **UI primitives** live in `components/ui/` (45 shadcn/ui components — button, card, dialog, etc.). Import from `@/frontend/components/ui/<name>`.
 - **Feature components** live in `components/features/<domain>/`. Always use barrel exports via `index.ts`. Existing domains: `admin/`, `exams/`, `resources/`, `upload/`.
-- **Layout shell** is split: `app/layout.tsx` (Server Component — wraps ClerkProvider + ClientLayout) and `app/clientLayout.tsx` ("use client" — sidebar, top nav, mobile toggle).
+- **Layout shell** is split: `app/layout.tsx` (Server Component — wraps ClerkProvider + ClientLayout) and `app/clientLayout.tsx` ("use client" — sidebar, top nav, accessible mobile navigation dialog). Both navigation surfaces use the same role-filtered links. The mobile dialog closes on link selection, route changes, Escape, or desktop resizing and restores focus through Radix Dialog.
 
 ## Pages & Data Fetching
 - **All pages are Client Components ("use client")** except the root `app/page.tsx` (landing page) and `app/layout.tsx`. The entire app uses `useEffect` + `fetch()` for data fetching. **Do not write React Server Components with `async function`** — that pattern is not used here.
