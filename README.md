@@ -13,6 +13,7 @@ A modular monolith for end-to-end exam processing: upload scanned question paper
 - **Resource Library** — Upload and browse notes, PYQs, and study materials with subject filtering
 - **Admin Tools** — Database stats, S3 backup/restore, collection truncation, query editor, performance monitoring, job status monitoring, failed job retry
 - **AI Analysis** — Bloom's taxonomy classification, exam analysis reports, Gemini-powered exam helper
+- **Study Assistant** — Chat displays actual AI responses and retryable failures; recent exam results come from the signed-in account rather than sample metrics.
 - **Clerk Authentication** — Secure login via email, Google, or GitHub
 - **Account Settings** — Clerk-backed profile/photo editing and account-security management at `/dashboard/settings`.
 - **Responsive Navigation** — Desktop sidebar and accessible mobile navigation dialog share role-filtered links; the mobile menu closes after navigation, Escape, or switching to desktop width.

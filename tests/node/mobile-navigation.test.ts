@@ -21,6 +21,7 @@ test("navigation and search interactions, plus account-settings authentication s
   media.matches = false
   dom.window.matchMedia = () => media
   globalThis.ResizeObserver = class { observe() {} unobserve() {} disconnect() {} }
+  dom.window.HTMLElement.prototype.scrollIntoView = () => {}
 
   const require = createRequire(import.meta.url)
   const React = require("react")
@@ -118,6 +119,31 @@ test("navigation and search interactions, plus account-settings authentication s
     await act(async () => root.render(React.createElement(SettingsPage)))
     assert.equal(container.querySelector("[data-account-settings]").getAttribute("data-account-settings"), "hash")
     assert.doesNotMatch(container.textContent, /John Doe|Active Sessions|Two-Factor Authentication.*Enabled/)
+    const AssistantPage = load(resolve(base, "packages/frontend/app/ai-helper/page.tsx")).default
+    let answerFails = false
+    globalThis.fetch = async (url) => String(url) === "/api/results"
+      ? new Response(JSON.stringify({ success: true, data: { results: [{ id: "real-result", examName: "My Real Exam", subject: "Math", score: 0, totalMarks: 20, percentage: 0 }] } }))
+      : answerFails ? new Response(JSON.stringify({ error: "Provider unavailable" }), { status: 503 })
+      : new Response(JSON.stringify({ success: true, result: "This is the actual model answer." }))
+    try {
+      await act(async () => root.render(React.createElement(AssistantPage)))
+      assert.match(container.textContent, /My Real Exam/)
+      assert.doesNotMatch(container.textContent, /Data Structures Final|AI Online|45\.5/)
+      const question = container.querySelector('[aria-label="Study question"]')
+      const ask = async (text) => act(async () => {
+        Object.getOwnPropertyDescriptor(dom.window.HTMLInputElement.prototype, "value").set.call(question, text)
+        question.dispatchEvent(new dom.window.Event("input", { bubbles: true }))
+      })
+      await ask("Explain trees")
+      await act(async () => container.querySelector("form").dispatchEvent(new dom.window.Event("submit", { bubbles: true, cancelable: true })))
+      assert.match(container.textContent, /This is the actual model answer/)
+      answerFails = true
+      await ask("Retry this question")
+      await act(async () => container.querySelector("form").dispatchEvent(new dom.window.Event("submit", { bubbles: true, cancelable: true })))
+      assert.match(container.querySelector('[role="alert"]').textContent, /Provider unavailable/)
+      assert.equal(question.value, "Retry this question")
+      assert.equal(container.querySelector('button[type="submit"]').disabled, false, "failed AI requests restore the send control")
+    } finally { globalThis.fetch = originalFetch }
   } finally {
     await act(async () => root.unmount())
     dom.window.close()
