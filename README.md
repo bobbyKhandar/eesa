@@ -18,6 +18,7 @@ A modular monolith for end-to-end exam processing: upload scanned question paper
 - **Account Settings** — Clerk-backed profile/photo editing and account-security management at `/dashboard/settings`.
 - **Responsive Navigation** — Desktop sidebar and accessible mobile navigation dialog share role-filtered links; the mobile menu closes after navigation, Escape, or switching to desktop width.
 - **Global Search** — Desktop and mobile search show live exam, subject, and resource question-bank matches with direct links and source-specific errors.
+- **Result Notifications** — Recent account results link to their details; unread counts update when opened or marked read, with per-account read status stored on the device.
 
 ---
 

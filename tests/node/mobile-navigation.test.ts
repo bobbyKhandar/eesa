@@ -9,7 +9,7 @@ import ts from "typescript"
 
 test("navigation and search interactions, plus account-settings authentication states", async () => {
   const dom = new JSDOM("<!doctype html><html><head></head><body></body></html>", { url: "http://localhost/dashboard", pretendToBeVisual: true })
-  for (const key of ["window", "document", "HTMLElement", "Element", "Node", "NodeFilter", "MutationObserver", "CustomEvent", "Event", "KeyboardEvent", "HTMLInputElement"]) {
+  for (const key of ["window", "document", "localStorage", "HTMLElement", "Element", "Node", "NodeFilter", "MutationObserver", "CustomEvent", "Event", "KeyboardEvent", "HTMLInputElement"]) {
     Object.defineProperty(globalThis, key, { configurable: true, value: dom.window[key] })
   }
   Object.defineProperty(globalThis, "navigator", { configurable: true, value: dom.window.navigator })
@@ -42,7 +42,7 @@ test("navigation and search interactions, plus account-settings authentication s
       if (id.endsWith(".css")) return {}
       if (id === "next/navigation") return { usePathname: () => pathname }
       if (id === "next/font/google") return { Inter: () => ({ className: "inter" }) }
-      if (id === "next/link") return { __esModule: true, default: React.forwardRef((props, ref) => React.createElement("a", { ...props, ref, onClick: (event) => { event.preventDefault(); props.onClick?.(event) } })) }
+      if (id === "next/link") return { __esModule: true, default: React.forwardRef((props, ref) => React.createElement("a", { ...props, ref, onClick: (event) => { props.onClick?.(event); event.preventDefault() } })) }
       if (id === "@clerk/nextjs") return { SignedIn: ({ children }) => children, SignedOut: () => null, SignInButton: ({ children }) => children, UserButton: () => null, useUser: () => account, UserProfile: ({ routing }) => React.createElement("div", { "data-account-settings": routing }, "Authenticated account settings") }
       if (id.startsWith("@/")) {
         const path = resolve(base, "packages", id.slice(2))
@@ -50,7 +50,7 @@ test("navigation and search interactions, plus account-settings authentication s
       }
       return require(id)
     }
-    const source = ts.transpileModule(input, { compilerOptions: { jsx: ts.JsxEmit.ReactJSX, module: ts.ModuleKind.CommonJS, esModuleInterop: true } }).outputText
+    const source = ts.transpileModule(input, { compilerOptions: { target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX, module: ts.ModuleKind.CommonJS, esModuleInterop: true } }).outputText
     mod._compile(source, filename)
     return mod.exports
   }
@@ -60,7 +60,7 @@ test("navigation and search interactions, plus account-settings authentication s
   const root = createRoot(container)
   const act = React.act
   const render = async (isAdmin = false) => act(async () => { root.render(React.createElement(Layout, { isAdmin }, "Page")) })
-  const click = async (element) => { assert.ok(element); await act(async () => { element.click() }) }
+  const click = async (element) => { assert.ok(element); await act(async () => { element.click(); await new Promise(resolve => setTimeout(resolve, 20)) }) }
   const trigger = () => document.querySelector('[aria-label="Open navigation"]')
   const dialog = () => document.querySelector('[role="dialog"]')
   try {
@@ -77,7 +77,8 @@ test("navigation and search interactions, plus account-settings authentication s
     await click(trigger())
     await act(async () => { document.activeElement.dispatchEvent(new dom.window.KeyboardEvent("keydown", { key: "Escape", bubbles: true })) })
     assert.equal(dialog(), null)
-    assert.equal(document.activeElement, trigger(), "Escape restores focus to the menu button")
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 20)) })
+    assert.ok(document.activeElement === trigger(), "Escape restores focus to the menu button")
     await click(trigger())
     pathname = "/resources"
     await render()
@@ -105,6 +106,21 @@ test("navigation and search interactions, plus account-settings authentication s
       assert.equal(dialog().querySelector("li a").getAttribute("href"), "/dashboard/exams/math-exam")
       await click(dialog().querySelector("li a"))
       assert.equal(dialog(), null, "selecting a search result closes the search dialog")
+    } finally { globalThis.fetch = originalFetch }
+    const Notifications = load(resolve(base, "packages/frontend/components/result-notifications.tsx")).ResultNotifications
+    account = { isLoaded: true, isSignedIn: true, user: { id: "notifications-user" } }
+    globalThis.fetch = async () => new Response(JSON.stringify({ success: true, data: { results: [{ id: "my-result", examName: "Real result", date: "2026-10-01", score: 10, totalMarks: 20 }] } }))
+    try {
+      await act(async () => root.render(React.createElement(Notifications)))
+      const bell = container.querySelector('[aria-label="Notifications"]')
+      assert.match(bell.textContent, /1/)
+      await act(async () => bell.dispatchEvent(new dom.window.KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true })))
+      assert.match(document.body.textContent, /Exam result: Real result/)
+      const resultLink = document.querySelector('a[href="/results/my-result"]')
+      await click(resultLink)
+      assert.doesNotMatch(container.querySelector('[aria-label="Notifications"]').textContent, /1/)
+      assert.match(localStorage.getItem("eesa:read-results:notifications-user"), /my-result:10:20/)
+      assert.equal(document.querySelector('[role="menu"]'), null)
     } finally { globalThis.fetch = originalFetch }
     const SettingsPage = load(resolve(base, "packages/frontend/app/dashboard/settings/page.tsx")).default
     account = { isLoaded: false, isSignedIn: false }
