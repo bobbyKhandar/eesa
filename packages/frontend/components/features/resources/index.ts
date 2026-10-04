@@ -1,4 +1,5 @@
 export { UploadResourceDialog } from "./UploadResourceDialog"
+export { SharedNotes } from "./SharedNotes"
 export { StatsCards } from "./StatsCards"
 export { SubjectFilter } from "./SubjectFilter"
 export { SearchFilterBar } from "./SearchFilterBar"

@@ -6,6 +6,7 @@
 - **Layout shell** is split: `app/layout.tsx` (Server Component — wraps ClerkProvider + ClientLayout) and `app/clientLayout.tsx` ("use client" — sidebar, top nav, accessible mobile navigation dialog). Both navigation surfaces use the same role-filtered links. The mobile dialog closes on link selection, route changes, Escape, or desktop resizing and restores focus through Radix Dialog.
 
 ## Pages & Data Fetching
+- Shared notes use authenticated `/api/notes` list/upload and `/api/notes/[id]/file` download/preview routes. The resource upload dialog validates fields/files, reports errors and refreshes the real shared-note list after success.
 - `/dashboard/analytics` derives personal metrics from `/api/results`. Subject/date filters apply to metrics, rows and both downloads; unsupported organisation-wide sample counts and branch/group filters are not presented.
 - Header notifications derive from `/api/results`; read markers are stored per Clerk user on the current device. Do not display sample assignments/invitations as live events.
 - **Global search** uses `components/global-search.tsx` and `lib/globalSearch.ts` to query the existing exam, subject and resource APIs. Resource results pass a `subject` query parameter resolved through the loaded resource catalogue.

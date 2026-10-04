@@ -5,10 +5,10 @@ import { useSearchParams } from "next/navigation"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/frontend/components/ui/tabs"
 import { BookOpen, AlertCircle } from "lucide-react"
 import {
-  UploadResourceDialog, StatsCards, SubjectFilter, SearchFilterBar, PyqsTable, NoteCard,
+  UploadResourceDialog, SharedNotes, StatsCards, SubjectFilter, SearchFilterBar, PyqsTable,
   getDifficultyColor,
 } from "@/frontend/components/features/resources"
-import type { PYQ, Note } from "@/frontend/components/features/resources"
+import type { PYQ } from "@/frontend/components/features/resources"
 import {
   EMPTY_SELECTION,
   reconcileSelection,
@@ -43,6 +43,7 @@ function ResourcesContent() {
   const [activeTab, setActiveTab] = useState("pyqs")
   const [searchQuery, setSearchQuery] = useState("")
   const [filterType, setFilterType] = useState("all")
+  const [notesRefresh, setNotesRefresh] = useState(0)
   
   // API state
   const [loading, setLoading] = useState(true)
@@ -146,92 +147,6 @@ function ResourcesContent() {
     pyq.topic?.toLowerCase().includes(searchQuery.toLowerCase())
   ) || []
 
-  // Mock data for faculty notes (keep until we have an API for notes)
-  const facultyNotes = [
-    {
-      id: 1,
-      title: "Introduction to Data Structures",
-      description: "Comprehensive overview of basic data structures including arrays, linked lists, and stacks",
-      uploadedBy: "Prof. Michael Chen",
-      uploadDate: "2024-01-15",
-      fileType: "PDF",
-      fileSize: "5.2 MB",
-      downloadCount: 342,
-      rating: 4.8,
-      tags: ["Arrays", "Linked Lists", "Stacks"],
-    },
-    {
-      id: 2,
-      title: "Advanced Tree Algorithms",
-      description: "Detailed explanation of tree traversal algorithms and balanced trees",
-      uploadedBy: "Prof. Michael Chen",
-      uploadDate: "2024-01-10",
-      fileType: "PDF",
-      fileSize: "7.1 MB",
-      downloadCount: 278,
-      rating: 4.9,
-      tags: ["Trees", "Algorithms", "BST"],
-    },
-    {
-      id: 3,
-      title: "Graph Theory and Applications",
-      description: "Graph algorithms including DFS, BFS, and shortest path algorithms",
-      uploadedBy: "Prof. Michael Chen",
-      uploadDate: "2024-01-05",
-      fileType: "PDF",
-      fileSize: "6.8 MB",
-      downloadCount: 195,
-      rating: 4.7,
-      tags: ["Graphs", "DFS", "BFS", "Dijkstra"],
-    },
-  ]
-
-  // Mock data for student notes
-  const studentNotes = [
-    {
-      id: 1,
-      title: "Quick Reference: Sorting Algorithms",
-      description: "Concise summary of all major sorting algorithms with time complexities",
-      uploadedBy: "Alex Johnson",
-      uploadDate: "2024-01-20",
-      fileType: "PDF",
-      fileSize: "1.5 MB",
-      downloadCount: 89,
-      rating: 4.5,
-      likes: 23,
-      verified: true,
-      tags: ["Sorting", "Algorithms", "Quick Reference"],
-    },
-    {
-      id: 2,
-      title: "Data Structures Cheat Sheet",
-      description: "Visual representation of common data structures with operations",
-      uploadedBy: "Sarah Kim",
-      uploadDate: "2024-01-18",
-      fileType: "PDF",
-      fileSize: "2.1 MB",
-      downloadCount: 156,
-      rating: 4.6,
-      likes: 45,
-      verified: true,
-      tags: ["Cheat Sheet", "Visual", "Operations"],
-    },
-    {
-      id: 3,
-      title: "Practice Problems Solutions",
-      description: "Step-by-step solutions to common data structure problems",
-      uploadedBy: "Mike Wilson",
-      uploadDate: "2024-01-15",
-      fileType: "PDF",
-      fileSize: "3.2 MB",
-      downloadCount: 67,
-      rating: 4.3,
-      likes: 18,
-      verified: false,
-      tags: ["Practice", "Solutions", "Problems"],
-    },
-  ]
-
   return (
     <div className="space-y-6">
       {error && (
@@ -249,7 +164,7 @@ function ResourcesContent() {
           <h1 className="text-3xl font-bold">Resources</h1>
           <p className="text-gray-500 dark:text-gray-400">Access study materials, notes, and learning resources</p>
         </div>
-        <UploadResourceDialog />
+        <UploadResourceDialog subject={selectedSubject || ""} onUploaded={() => setNotesRefresh(value => value + 1)} />
       </div>
 
       <StatsCards
@@ -294,8 +209,6 @@ function ResourcesContent() {
           <Tabs value={activeTab} onValueChange={setActiveTab}>
             <TabsList className="grid grid-cols-3 w-full">
               <TabsTrigger value="pyqs">Previous Year Papers</TabsTrigger>
-              <TabsTrigger value="faculty">Faculty Notes</TabsTrigger>
-              <TabsTrigger value="student">Student Notes</TabsTrigger>
             </TabsList>
 
             <TabsContent value="pyqs" className="mt-6">
@@ -307,24 +220,11 @@ function ResourcesContent() {
               />
             </TabsContent>
 
-            <TabsContent value="faculty" className="mt-6">
-              <div className="grid gap-6">
-                {facultyNotes.map((note) => (
-                  <NoteCard key={note.id} note={note} />
-                ))}
-              </div>
-            </TabsContent>
-
-            <TabsContent value="student" className="mt-6">
-              <div className="grid gap-6">
-                {studentNotes.map((note) => (
-                  <NoteCard key={note.id} note={note} showLike />
-                ))}
-              </div>
-            </TabsContent>
           </Tabs>
         </div>
       )}
+
+      <SharedNotes refreshKey={notesRefresh} />
 
       {(!selectedBranch || !selectedSemester || !selectedSubject) && (
         <div className="flex flex-col items-center justify-center py-16 text-center">

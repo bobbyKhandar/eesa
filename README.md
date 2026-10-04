@@ -10,7 +10,7 @@ A modular monolith for end-to-end exam processing: upload scanned question paper
 - **Question Clustering** — FAISS + HDBSCAN similarity-based clustering of extracted questions
 - **Exam Management** — Create exams from enriched question banks, organize by subject/syllabus, publish for students
 - **Student Submissions** — Take exams, auto-grading, result analysis
-- **Resource Library** — Upload and browse notes, PYQs, and study materials with subject filtering
+- **Resource Library** — Browse subject-filtered PYQs and share PDF/UTF-8 text notes (up to 10 MB). Authenticated uploads persist in MongoDB GridFS; shared notes support search, download and preview.
 - **Admin Tools** — Database stats, S3 backup/restore, collection truncation, query editor, performance monitoring, job status monitoring, failed job retry
 - **AI Analysis** — Bloom's taxonomy classification, exam analysis reports, Gemini-powered exam helper
 - **Study Assistant** — Chat displays actual AI responses and retryable failures; recent exam results come from the signed-in account rather than sample metrics.
