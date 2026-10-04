@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "build": "tsc",
+    "dev": "tsc --watch",
     "generate-data": "tsx src/database/scripts/generate-sample-data.ts"
   },
   "dependencies": {

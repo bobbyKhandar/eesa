@@ -260,6 +260,8 @@ The Eesa database is `test`. Set the server-side `mongodb_url` to `mongodb+srv:/
 
 ### 3. Run in Development
 
+From the repo root, `npm run dev` starts the Next.js frontend and the backend TypeScript watcher together (`concurrently`).
+
 Open **two terminals**:
 
 ```bash
@@ -332,6 +334,7 @@ All routes registered on the canonical server at `src/api/server.py`. See `packa
 
 | Script | Description |
 |--------|-------------|
+| `npm run dev` | Watch TypeScript (`tsc --watch`) |
 | `npm run build` | TypeScript compilation |
 | `npm run generate-data` | Generate sample data in MongoDB |
 
