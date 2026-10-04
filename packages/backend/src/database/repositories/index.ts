@@ -10,6 +10,7 @@ export { ExamSubmissionRepository } from './ExamSubmissionRepository.js';
 export { UserRepository } from './UserRepository.js';
 export { AnalysisReportRepository } from './AnalysisReportRepository.js';
 export { UniqueQuestionRepository } from './UniqueQuestionRepository.js';
+export { SharedNoteRepository } from './SharedNoteRepository.js';
 // Singleton instances for easy access
 export const promptRepo = new (await import('./PromptRepository.js')).PromptRepository();
 export const examQuestionRepo = new (await import('./ExamQuestionRepository.js')).ExamQuestionRepository();

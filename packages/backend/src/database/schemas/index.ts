@@ -120,6 +120,8 @@ export {
 } from "./analysisReportZod";
 
 // Unique Questions (Deduplicated Question Bank)
+export { sharedNoteMetadataSchema, MAX_NOTE_BYTES, validateNoteFile } from "./sharedNoteSchema";
+export type { SharedNoteMetadata } from "./sharedNoteSchema";
 export type {
   UniqueQuestion,
   UniqueQuestionInsert,

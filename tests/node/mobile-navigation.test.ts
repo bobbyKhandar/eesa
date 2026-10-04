@@ -193,6 +193,47 @@ test("navigation and search interactions, plus account-settings authentication s
       URL.revokeObjectURL = originalRevoke
       document.removeEventListener("click", capture)
     }
+    const UploadDialog = load(resolve(base, "packages/frontend/components/features/resources/UploadResourceDialog.tsx")).UploadResourceDialog
+    const originalFormData = globalThis.FormData
+    let uploadedCount = 0
+    let uploadFails = true
+    globalThis.FormData = class extends dom.window.FormData {
+      constructor(form) { super(form); this.set("file", new dom.window.File(["Real study notes"], "notes.txt", { type: "text/plain" })) }
+    }
+    globalThis.fetch = async (url, options) => {
+      assert.equal(url, "/api/notes")
+      assert.equal(options.method, "POST")
+      assert.equal(options.body.get("subject"), "Math")
+      assert.equal(options.body.get("file").name, "notes.txt")
+      return uploadFails ? new Response(JSON.stringify({ success: false, error: "Storage unavailable" }), { status: 500 }) : new Response(JSON.stringify({ success: true, note: { id: "saved-note" } }), { status: 201 })
+    }
+    try {
+      await act(async () => root.render(React.createElement(UploadDialog, { subject: "Math", onUploaded: () => uploadedCount++ })))
+      await click(container.querySelector("button"))
+      const title = dialog().querySelector('[name="title"]')
+      await act(async () => { Object.getOwnPropertyDescriptor(dom.window.HTMLInputElement.prototype, "value").set.call(title, "Real Notes"); title.dispatchEvent(new dom.window.Event("input", { bubbles: true })) })
+      const submitUpload = async () => act(async () => dialog().querySelector("form").dispatchEvent(new dom.window.Event("submit", { bubbles: true, cancelable: true })))
+      await submitUpload()
+      assert.match(dialog().querySelector('[role="alert"]').textContent, /Storage unavailable/)
+      assert.equal(dialog().querySelector('button[type="submit"]').disabled, false)
+      assert.equal(uploadedCount, 0)
+      uploadFails = false
+      await submitUpload()
+      assert.ok(!dialog(), "successful upload closes the dialog")
+      assert.equal(uploadedCount, 1)
+      assert.match(container.textContent, /Resource uploaded/)
+    } finally { globalThis.fetch = originalFetch; globalThis.FormData = originalFormData }
+    const SharedNotes = load(resolve(base, "packages/frontend/components/features/resources/SharedNotes.tsx")).SharedNotes
+    let noteLoads = 0
+    globalThis.fetch = async () => { noteLoads++; return new Response(JSON.stringify({ success: true, notes: [{ id: "saved-note", title: "Real Uploaded Notes", description: "Guide", subject: "Math", tags: ["revision"], uploadedBy: "Student", uploadDate: "2026-10-04", fileSize: 16 }] })) }
+    try {
+      await act(async () => root.render(React.createElement(SharedNotes)))
+      assert.match(container.textContent, /Real Uploaded Notes/)
+      assert.equal(container.querySelector("a").getAttribute("href"), "/api/notes/saved-note/file")
+      assert.equal(container.querySelector('a[target="_blank"]').getAttribute("href"), "/api/notes/saved-note/file?preview=1")
+      await act(async () => root.render(React.createElement(SharedNotes, { refreshKey: 1 })))
+      assert.equal(noteLoads, 2, "a completed upload refreshes the real note list")
+    } finally { globalThis.fetch = originalFetch }
   } finally {
     await act(async () => root.unmount())
     dom.window.close()

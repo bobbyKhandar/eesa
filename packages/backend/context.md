@@ -34,6 +34,7 @@
 - **Call in API routes:** Every API route method must call `await connect()` before any DB operation.
 
 ## Repositories (`src/database/repositories/`)
+- `SharedNoteRepository` stores validated note metadata and file bytes in MongoDB GridFS (`sharedNotes` bucket), using the existing connection. `sharedNoteSchema.ts` limits metadata and accepts PDF or UTF-8 text files up to 10 MB. Public note projections omit owner IDs; no local disk or separate storage server is required.
 - **12 standalone classes.** No base class or abstract class exists. Each is independent.
 - **Constructor pattern:** Each repository gets its model via a getter function:
   ```ts
