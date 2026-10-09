@@ -10,6 +10,11 @@ import {
 const context = { subject: "Physics", source: "physics-2024.pdf" };
 
 describe("buildPromptPayload", () => {
+  it("rejects missing or blank subjects before creating an invalid prompt", () => {
+    assert.equal(buildPromptPayload({ questionText: "Q" }, {}), null);
+    assert.equal(buildPromptPayload({ questionText: "Q" }, { subject: "   " }), null);
+  });
+
   it("maps the analysis Bloom label onto the prompt enum", () => {
     const payload = buildPromptPayload(
       { questionText: "Define inertia.", bloomLevel: "Recall" },

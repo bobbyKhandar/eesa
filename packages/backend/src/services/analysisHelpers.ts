@@ -201,7 +201,7 @@ export interface AnalyzedQuestionInput {
 
 export interface PromptPayload {
   questionText: string;
-  subject?: string;
+  subject: string;
   topic?: string;
   generateVia: "ocr";
   source?: string;
@@ -230,7 +230,8 @@ export function buildPromptPayload<T extends AnalyzedQuestionInput>(
   context: { subject?: string; source?: string }
 ): PromptPayload | null {
   const questionText = String(question?.questionText ?? "").trim();
-  if (!questionText) return null;
+  const subject = context.subject?.trim();
+  if (!questionText || !subject) return null;
 
   const keywords = Array.isArray(question?.keywords)
     ? question.keywords.filter(
@@ -246,7 +247,7 @@ export function buildPromptPayload<T extends AnalyzedQuestionInput>(
 
   return {
     questionText,
-    subject: context.subject,
+    subject,
     topic: keywords.length > 0 ? keywords.join(", ") : undefined,
     generateVia: "ocr",
     source: context.source,

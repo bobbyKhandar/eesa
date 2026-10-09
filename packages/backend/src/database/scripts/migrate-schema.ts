@@ -30,6 +30,29 @@ import {
   getUserModel 
 } from '../mongooseSchemas.js';
 import { Types } from 'mongoose';
+import type { Question } from '../schemas/questionSchemaZod.js';
+import type { Exam } from '../schemas/examSchemaZod.js';
+import type { ExamSubmissionDocument } from '../schemas/examSubmissionZod.js';
+import type { Prompt } from '../schemas/promptSchemaZod.js';
+
+// This script reads pre-migration documents, not the current schema shape.
+type LegacyQuestion = Question & {
+  _id: Types.ObjectId;
+  subject?: string;
+  topic?: string;
+  createdBy?: string;
+  bloomsLevel?: Prompt['bloomsLevel'];
+  createdAt?: Date;
+};
+type LegacyExam = Omit<Exam, '_id' | 'questions'> & {
+  _id: Types.ObjectId;
+  questions: { questionId: string | Types.ObjectId; marks: number }[];
+};
+type LegacySubmission = ExamSubmissionDocument & {
+  _id: Types.ObjectId;
+  studentEmail?: string;
+  evaluated?: boolean;
+};
 
 // Parse command line arguments
 const args = process.argv.slice(2);
@@ -71,7 +94,7 @@ async function migrateQuestionsToPrompts(): Promise<Map<string, string>> {
     const questions = await QuestionModel.find()
       .skip(processed)
       .limit(batchSize)
-      .lean();
+      .lean<LegacyQuestion[]>();
     
     if (questions.length === 0) break;
     
@@ -147,7 +170,7 @@ async function createExamQuestions(questionToPromptMap: Map<string, string>): Pr
     const exams = await ExamModel.find()
       .skip(processed)
       .limit(batchSize)
-      .lean();
+      .lean<LegacyExam[]>();
     
     if (exams.length === 0) break;
     
@@ -266,7 +289,7 @@ async function updateExamSubmissions(): Promise<void> {
     const submissions = await ExamSubmissionModel.find()
       .skip(processed)
       .limit(batchSize)
-      .lean();
+      .lean<LegacySubmission[]>();
     
     if (submissions.length === 0) break;
     

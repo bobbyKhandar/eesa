@@ -271,7 +271,10 @@ export async function restoreBackup(id: string): Promise<RestoreResult> {
         // ordered: false keeps a single invalid document from aborting the whole
         // batch (and from re-inserting documents the retry already wrote).
         const result = await model.insertMany(batch, { ordered: false });
-        inserted += result?.insertedCount ?? batch.length;
+        inserted += result.length;
+        if (result.length !== batch.length) {
+          errors[name] = `Only ${result.length} of ${batch.length} documents were restored in a batch`;
+        }
       } catch (err) {
         const message = err instanceof Error ? err.message : 'Unknown error';
         console.error(`[DatabaseBackupService] Restore batch failed for ${name}:`, message);
