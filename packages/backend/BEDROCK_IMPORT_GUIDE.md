@@ -61,7 +61,7 @@ Check MongoDB collections:
 - **Prompt**: Individual questions with Bloom's data
 - **UniqueQuestion**: Deduplicated questions with occurrence tracking
 - **AnalysisReport**: Exam-level reports with Bloom's distribution
-- **Subject**: Auto-created subjects linked to reports
+- **subjects**: Legacy subject catalogue, auto-created and linked to reports via the shared model getter (separate from the enhanced `Subject` collection)
 
 ## JSON Structure
 

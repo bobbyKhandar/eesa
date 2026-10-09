@@ -44,7 +44,7 @@ export function GlobalSearch() {
   }
   const form = (inDialog = false) => (
     <form onSubmit={submit} className="flex gap-2" role="search">
-      <Input aria-label="Search exams, subjects, resources" placeholder="Search exams, subjects, resources..." value={query} onChange={event => setQuery(event.target.value)} autoFocus={inDialog} />
+      <Input name="query" aria-label="Search exams, subjects, resources" placeholder="Search exams, subjects, resources..." value={query} onChange={event => setQuery(event.target.value)} autoFocus={inDialog} />
       <Button type="submit" size="sm" aria-label="Search" disabled={!query.trim()}><Search className="h-4 w-4" /></Button>
     </form>
   )

@@ -7,7 +7,7 @@ import { test } from "node:test"
 import { JSDOM } from "jsdom"
 import ts from "typescript"
 
-test("navigation and search interactions, plus account-settings authentication states", async () => {
+test("navigation and search interactions, plus account-settings authentication states", async (t) => {
   const dom = new JSDOM("<!doctype html><html><head></head><body></body></html>", { url: "http://localhost/dashboard", pretendToBeVisual: true })
   for (const key of ["window", "document", "localStorage", "HTMLElement", "Element", "Node", "NodeFilter", "MutationObserver", "CustomEvent", "Event", "KeyboardEvent", "HTMLInputElement"]) {
     Object.defineProperty(globalThis, key, { configurable: true, value: dom.window[key] })
@@ -23,7 +23,17 @@ test("navigation and search interactions, plus account-settings authentication s
   globalThis.ResizeObserver = class { observe() {} unobserve() {} disconnect() {} }
   dom.window.HTMLElement.prototype.scrollIntoView = () => {}
 
-  const require = createRequire(import.meta.url)
+  const require = createRequire(new URL("../../packages/frontend/package.json", import.meta.url))
+  // Match Next's single React runtime even when workspace dependencies have
+  // installed another React version for their peer dependencies.
+  const originalLoad = Module._load
+  Module._load = function (id, parent, isMain) {
+    if (id === "react" || id.startsWith("react/") || id === "react-dom" || id.startsWith("react-dom/")) {
+      return originalLoad.call(this, require.resolve(id), parent, isMain)
+    }
+    return originalLoad.call(this, id, parent, isMain)
+  }
+  t.after(() => { Module._load = originalLoad })
   const React = require("react")
   const { createRoot } = require("react-dom/client")
   const base = resolve(dirname(fileURLToPath(import.meta.url)), "../..")
@@ -49,7 +59,7 @@ test("navigation and search interactions, plus account-settings authentication s
         const path = resolve(base, "packages", id.slice(2))
         try { return load(path + ".tsx") } catch (error) { if (error.code !== "ENOENT") throw error; return load(path + ".ts") }
       }
-      return require(id)
+      return createRequire(filename)(id)
     }
     const source = ts.transpileModule(input, { compilerOptions: { target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX, module: ts.ModuleKind.CommonJS, esModuleInterop: true } }).outputText
     mod._compile(source, filename)

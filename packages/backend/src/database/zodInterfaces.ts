@@ -7,29 +7,7 @@ todo:-
 */
 
 import { z } from "zod";
-import mongoose from "mongoose";
-import path from "path"
-import dotenv from "dotenv"
-
-
-dotenv.config({path: path.resolve(__dirname,"../../.env")  });
-
-
-export async function connect() {
-    const MONGO_URI = process.env.mongodb_url;
-  if (!MONGO_URI) {
-    throw new Error("❌ MongoDB URI is missing. Check your .env file.");
-  }
-
-  if (mongoose.connection.readyState === 0) {
-    try {
-      await mongoose.connect(MONGO_URI, { useNewUrlParser: true });
-      console.log("✅ DB connected successfully");
-    } catch (error) {
-      console.error("❌ Error while connecting to MongoDB:", error);
-    }
-  }
-}
+export { connect } from "./connect";
 
 // Exam Schema
 export const examZodSchema = z.object({

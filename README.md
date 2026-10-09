@@ -262,6 +262,10 @@ The Eesa database is `test`. Set the server-side `mongodb_url` to `mongodb+srv:/
 
 From the repo root, `npm run dev` starts the Next.js frontend and the backend TypeScript watcher together (`concurrently`).
 
+The backend watcher should report `Found 0 errors`. The OCR service uses the existing Gemini question extraction, Bloom classification and insights stages, and stops its progress polling when a batch fails or completes. Bedrock imports use the shared model getters, including the legacy `subjects` collection that links published reports.
+
+Database restore counts the documents actually inserted and reports partial batches as failures when validation skips documents.
+
 Open **two terminals**:
 
 ```bash
@@ -354,8 +358,9 @@ All routes registered on the canonical server at `src/api/server.py`. See `packa
 | Location | Framework | Contents |
 |----------|-----------|----------|
 | `packages/ai-pipeline/tests/` | Python unittest | 15 test files (server, OCR, pipeline, AWS, integration) |
-| `tests/python/` | Python unittest | 2 test files (experiment, image preprocessing) |
-| `tests/node/` | — | Empty (placeholder for future Node.js tests) |
+| `tests/python/` | Python unittest / pytest | String-method experiment tests; the unused FastAPI import placeholder was removed |
+| `tests/node/` | Node.js test runner | Auth, exams, resources, navigation, analysis and backend compilation regressions (`npm run test:node` and `npm run test:ai`) |
+| `tests/runtime/` | Node.js test runner + tsx | OCR stage integration and polling cleanup, plus backup restore counts (`npm run test:runtime`); external OCR, Gemini, MongoDB and S3 calls are mocked |
 
 ---
 

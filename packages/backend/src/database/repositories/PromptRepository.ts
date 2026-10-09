@@ -21,16 +21,7 @@ export class PromptRepository {
    * Create a new prompt in the central question library
    * Used by: OCR pipeline, LLM generator, manual question creation
    */
-  async create(promptData: {
-    questionText: string;
-    subject: string;
-    topic?: string;
-    generateVia: 'llm' | 'ocr' | 'user';
-    source?: string;
-    ocrConfidence?: number;
-    createdBy: string;
-    bloomsLevel?: 'remember' | 'understand' | 'apply' | 'analyze' | 'evaluate' | 'create';
-  }): Promise<{ success: boolean; promptId?: string; error?: string }> {
+  async create(promptData: Pick<Prompt, 'questionText' | 'subject' | 'generateVia'> & Partial<Omit<Prompt, 'questionText' | 'subject' | 'generateVia'>>): Promise<{ success: boolean; promptId?: string; error?: string }> {
     try {
       // Validate input using Zod schema
       const validationResult = promptZodSchema.safeParse({

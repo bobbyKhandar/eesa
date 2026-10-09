@@ -40,29 +40,14 @@ import dotenv from 'dotenv';
 dotenv.config();
 
 // Import models
-import { model, models } from 'mongoose';
-import { zodSchema } from '@zodyac/zod-mongoose';
-import { 
-  promptZodSchema,
-  uniqueQuestionZod,
-  analysisReportZodSchema,
-  subjectDocumentZodSchema,
-  subjectSchemaOptions
-} from '../database/schemas/index.js';
+import { getPromptModel, getSubjectModel } from '../database/mongooseSchemas.js';
+import { getUniqueQuestionModel, getAnalysisReportModel } from '../database/newFeatureModels.js';
 
 // Create models
-const promptSchema = zodSchema(promptZodSchema, { timestamps: true });
-const PromptModel = models.Prompt || model('Prompt', promptSchema);
-
-const uniqueQuestionSchema = zodSchema(uniqueQuestionZod, { timestamps: true });
-uniqueQuestionSchema.index({ normalizedText: 1, subject: 1 });
-const UniqueQuestionModel = models.UniqueQuestion || model('UniqueQuestion', uniqueQuestionSchema);
-
-const analysisReportSchema = zodSchema(analysisReportZodSchema, { timestamps: true });
-const AnalysisReportModel = models.AnalysisReport || model('AnalysisReport', analysisReportSchema);
-
-const subjectSchema = zodSchema(subjectDocumentZodSchema, subjectSchemaOptions);
-const SubjectModel = models.Subject || model('Subject', subjectSchema);
+const PromptModel = getPromptModel();
+const UniqueQuestionModel = getUniqueQuestionModel();
+const AnalysisReportModel = getAnalysisReportModel();
+const SubjectModel = getSubjectModel();
 
 /**
  * Normalize question text for deduplication

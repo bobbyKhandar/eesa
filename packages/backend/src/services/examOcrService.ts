@@ -7,7 +7,7 @@
 
 import { ec2OcrClient } from './ec2OcrClient';
 import type { BatchResult } from './ec2OcrClient';
-import { analyzeWithGemini } from './geminiService'; // Your existing Gemini service
+import { refineAndExtractQuestions, classifyQuestionsWithBlooms, calculateBloomDistribution, generateAnalysisInsights } from './examAnalysisService';
 
 interface ExamAnalysisRequest {
   pdfPaths: string[];
@@ -65,8 +65,12 @@ export async function processExamWithEC2OCR(request: ExamAnalysisRequest) {
     }, 3000);
 
     // Wait for completion (max 10 minutes)
-    const ocrResult = await ec2OcrClient.waitForBatch(batchId, 5000, 600000);
-    clearInterval(pollInterval);
+    let ocrResult: BatchResult;
+    try {
+      ocrResult = await ec2OcrClient.waitForBatch(batchId, 5000, 600000);
+    } finally {
+      clearInterval(pollInterval);
+    }
 
     console.log('✅ OCR processing complete!');
     console.log(`📝 Processed: ${ocrResult.results.length} files`);
@@ -106,13 +110,18 @@ export async function processExamWithEC2OCR(request: ExamAnalysisRequest) {
 
     // Step 6: Analyze with Gemini AI
     console.log('🤖 Analyzing with Gemini AI...');
-    const analysis = await analyzeWithGemini({
-      extractedText: combinedText,
-      subjectName,
-      year,
-      semester,
-      examType,
-    });
+    const extraction = await refineAndExtractQuestions(combinedText, subjectName);
+    if (!extraction.success || !extraction.questions) {
+      throw new Error(extraction.error || 'Question extraction failed');
+    }
+    const classification = await classifyQuestionsWithBlooms(extraction.questions, subjectName);
+    if (!classification.success || !classification.classifiedQuestions) {
+      throw new Error(classification.error || "Bloom's classification failed");
+    }
+    const questions = classification.classifiedQuestions;
+    const bloomDistribution = calculateBloomDistribution(questions);
+    const insights = await generateAnalysisInsights(questions, bloomDistribution, subjectName);
+    const analysis = { subjectName, year, semester, examType, questions, bloomDistribution, insights };
 
     console.log('✅ Analysis complete!');
 
