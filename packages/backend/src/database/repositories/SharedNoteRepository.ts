@@ -1,7 +1,7 @@
 import mongoose from "mongoose"
 import { finished } from "node:stream/promises"
-import { connect } from "../connect.ts"
-import { sharedNoteMetadataSchema, validateNoteFile, type SharedNoteMetadata } from "../schemas/sharedNoteSchema.ts"
+import { connect } from "../connect.js"
+import { sharedNoteMetadataSchema, validateNoteFile, type SharedNoteMetadata } from "../schemas/sharedNoteSchema.js"
 
 async function notesBucket() {
   await connect()

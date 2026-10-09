@@ -1,4 +1,4 @@
-import { z } from "../zodGlobal.ts"
+import { z } from "../zodGlobal.js"
 
 export const sharedNoteMetadataSchema = z.object({
   title: z.string().trim().min(1, "Title is required").max(120),
