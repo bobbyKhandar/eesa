@@ -19,7 +19,7 @@ import {
   getUniqueQuestionModel,
   getSubjectModel,
 } from "./newFeatureModels";
-import { MANAGED_COLLECTION_NAMES } from "./managedCollections";
+import { findDuplicatePhysicalCollections, MANAGED_COLLECTION_NAMES } from "./managedCollections";
 import type { ManagedCollectionName } from "./managedCollections";
 
 export interface ManagedCollection {
@@ -53,10 +53,24 @@ const MODEL_FACTORIES: Record<ManagedCollectionName, () => Model<any>> = {
  * silently skipping a collection during truncate/backup.
  */
 export function getManagedCollections(): ManagedCollection[] {
-  return MANAGED_COLLECTION_NAMES.map((name) => ({
+  const collections = MANAGED_COLLECTION_NAMES.map((name) => ({
     name,
     model: MODEL_FACTORIES[name](),
   }));
+
+  const duplicates = findDuplicatePhysicalCollections(
+    collections.map(({ name, model }) => ({
+      name,
+      collectionName: model.collection.collectionName,
+    }))
+  );
+  if (duplicates.length > 0) {
+    throw new Error(
+      `Managed collection registry maps multiple entries onto one MongoDB collection: ${duplicates.join("; ")}`
+    );
+  }
+
+  return collections;
 }
 
 /**

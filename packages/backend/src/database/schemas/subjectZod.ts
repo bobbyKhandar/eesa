@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { FEATURE_SUBJECT_COLLECTION } from "../subjectCollections";
 
 // Subject topic schema for syllabus breakdown
 export const subjectTopicZodSchema = z.object({
@@ -78,6 +79,9 @@ export const subjectZodSchema = subjectDocumentZodSchema.extend({
 // Mongoose schema options
 export const subjectSchemaOptions = {
   timestamps: true,
+  // Explicit collection. The model name "Subject" pluralizes to "subjects",
+  // which is the legacy question-bank collection.
+  collection: FEATURE_SUBJECT_COLLECTION,
   indexes: [
     { fields: { code: 1 }, options: { unique: true } },
     { fields: { branch: 1, year: 1, semester: 1 } },

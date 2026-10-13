@@ -12,9 +12,11 @@ The new features include:
 
 ## Database Collections
 
-### 1. subjects
+### 1. featureSubjects
 
 Enhanced subject management with detailed curriculum information.
+
+The catalog lives in `featureSubjects`. The legacy question-bank collection `subjects` (fields such as `subjectName` and `analysisReportIds`) is a different model. The `Subject` model name would otherwise pluralize onto `subjects`.
 
 **Schema:** `subjectZod.ts`
 

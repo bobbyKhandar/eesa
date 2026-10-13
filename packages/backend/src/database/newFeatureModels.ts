@@ -15,12 +15,13 @@ import {
   analysisReportSchemaOptions,
   uniqueQuestionZod,
 } from "./schemas/index";
+import { FEATURE_SUBJECT_COLLECTION } from "./subjectCollections";
 
 // Subject Schema
 const subjectSchema = zodSchema(subjectDocumentZodSchema, subjectSchemaOptions);
 
 export const getSubjectModel = () => {
-  return models["Subject"] || model("Subject", subjectSchema);
+  return models["Subject"] || model("Subject", subjectSchema, FEATURE_SUBJECT_COLLECTION);
 };
 
 // Syllabus Schema
