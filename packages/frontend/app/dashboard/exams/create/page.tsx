@@ -7,7 +7,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/fro
 import { Input } from "@/frontend/components/ui/input"
 import { Label } from "@/frontend/components/ui/label"
 import { Textarea } from "@/frontend/components/ui/textarea"
-import { ArrowLeft, Upload } from "lucide-react"
+import { ArrowLeft } from "lucide-react"
 import { ExamTypeSelector, SyllabusTypeSelector, SubjectSelector, QuestionEditor, StudentAssigneeSelector } from "@/frontend/components/features/exams"
 import type { Question } from "@/frontend/components/features/exams"
 import { authoringKind, createQuestionDraft, examUsersForCreation, findInvalidQuestion, findMissingStudentAssignees, mergeQuestionUpdate, nextQuestionId, toCreateExamQuestions } from "@/frontend/lib/examCreation"
@@ -322,18 +322,9 @@ async function uploadExamSet(): Promise<ApiResponse> {
           </div>
 
           {syllabusType === "personal" && (
-            <div className="grid gap-2">
-              <Label htmlFor="syllabus">Upload Syllabus (Optional)</Label>
-              <div className="flex items-center gap-2">
-                <Input id="syllabus" type="file" className="flex-1" />
-                <Button variant="outline" size="sm">
-                  <Upload className="h-4 w-4 mr-2" /> Upload
-                </Button>
-              </div>
-              <p className="text-xs text-gray-500 dark:text-gray-400">
-                Upload a PDF or document file containing your syllabus
-              </p>
-            </div>
+            <p className="text-sm text-gray-500 dark:text-gray-400">
+              A syllabus file is not saved with this exam.
+            </p>
           )}
 
           {examType === "teacher" && (

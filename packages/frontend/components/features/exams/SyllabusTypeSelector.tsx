@@ -1,5 +1,5 @@
 import { Card, CardHeader, CardTitle, CardContent, CardDescription } from "@/frontend/components/ui/card"
-import { FileText, Upload } from "lucide-react"
+import { FileText, Pencil } from "lucide-react"
 
 interface SyllabusTypeSelectorProps {
   examType: "personal" | "teacher"
@@ -26,13 +26,13 @@ export function SyllabusTypeSelector({ examType, onSelect }: SyllabusTypeSelecto
       <Card className="cursor-pointer border-2 hover:border-primary hover:bg-primary/5" onClick={() => onSelect("personal")}>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
-            <Upload className="h-5 w-5" />
+            <Pencil className="h-5 w-5" />
             Personal Syllabus
           </CardTitle>
         </CardHeader>
         <CardContent>
           <p className="text-sm text-gray-500 dark:text-gray-400">
-            Upload or create your own custom syllabus for this exam.
+            Create this exam without a catalog syllabus. A syllabus file is not saved with this exam.
           </p>
         </CardContent>
       </Card>
