@@ -162,6 +162,8 @@ db.exams.aggregate([
   }}
 ])
 ```
+**Order**: `$in` / `localField` lookups do not preserve `exam.questions`. The repository sorts by that array's index and reorders `questionDetails` to the authored sequence before returning.
+
 **Performance Note**: This is a 3-level join. Consider denormalizing or caching for frequently accessed exams.
 
 **Indexes needed**: `{ questions: 1 }` on Exam, `{ promptId: 1 }` on ExamQuestion
