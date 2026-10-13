@@ -16,6 +16,15 @@ import {
   type ResourceSelection,
   type SubjectCatalog,
 } from "@/frontend/lib/resourceCatalog"
+import {
+  activeResourceSection,
+  filterNotesByQuery,
+  filterPyqsByQuery,
+  resourceEmptyMessage,
+  resourceScopeMessage,
+  resourceSearchPlaceholder,
+  visibleResourceSections,
+} from "@/frontend/lib/resourceFilters"
 
 interface ResourcesData extends SubjectCatalog {}
 
@@ -122,12 +131,8 @@ export default function ResourcesPage() {
     return []
   }
 
-  // Get PYQs filtered by search
-  const filteredPyqs = pyqsData?.pyqs.filter(pyq => 
-    pyq.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    pyq.questionText?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    pyq.topic?.toLowerCase().includes(searchQuery.toLowerCase())
-  ) || []
+  const sections = visibleResourceSections(filterType)
+  const activeSection = activeResourceSection(filterType, activeTab)
 
   // Mock data for faculty notes (keep until we have an API for notes)
   const facultyNotes = [
@@ -215,6 +220,20 @@ export default function ResourcesPage() {
     },
   ]
 
+  // Search only the list on screen, so the scope line matches the results.
+  const filteredPyqs = filterPyqsByQuery(
+    pyqsData?.pyqs ?? [],
+    activeSection === "pyqs" ? searchQuery : ""
+  )
+  const filteredFacultyNotes = filterNotesByQuery(
+    facultyNotes,
+    activeSection === "faculty" ? searchQuery : ""
+  )
+  const filteredStudentNotes = filterNotesByQuery(
+    studentNotes,
+    activeSection === "student" ? searchQuery : ""
+  )
+
   return (
     <div className="space-y-6">
       {error && (
@@ -270,41 +289,74 @@ export default function ResourcesPage() {
           <SearchFilterBar
             searchQuery={searchQuery}
             filterType={filterType}
+            searchPlaceholder={resourceSearchPlaceholder(activeSection)}
+            scopeMessage={resourceScopeMessage(filterType, activeSection)}
             onSearchChange={setSearchQuery}
             onFilterChange={setFilterType}
           />
 
-          <Tabs value={activeTab} onValueChange={setActiveTab}>
-            <TabsList className="grid grid-cols-3 w-full">
-              <TabsTrigger value="pyqs">Previous Year Papers</TabsTrigger>
-              <TabsTrigger value="faculty">Faculty Notes</TabsTrigger>
-              <TabsTrigger value="student">Student Notes</TabsTrigger>
-            </TabsList>
+          <Tabs value={activeSection} onValueChange={setActiveTab}>
+            {sections.length > 1 && (
+              <TabsList className="grid grid-cols-3 w-full">
+                {sections.includes("pyqs") && (
+                  <TabsTrigger value="pyqs">Previous Year Papers</TabsTrigger>
+                )}
+                {sections.includes("faculty") && (
+                  <TabsTrigger value="faculty">Faculty Notes</TabsTrigger>
+                )}
+                {sections.includes("student") && (
+                  <TabsTrigger value="student">Student Notes</TabsTrigger>
+                )}
+              </TabsList>
+            )}
 
-            <TabsContent value="pyqs" className="mt-6">
-              <PyqsTable
-                subjectName={selectedSubject}
-                pyqs={filteredPyqs}
-                loading={pyqsLoading}
-                getDifficultyColor={getDifficultyColor}
-              />
-            </TabsContent>
+            {sections.includes("pyqs") && (
+              <TabsContent value="pyqs" className="mt-6">
+                <PyqsTable
+                  subjectName={selectedSubject}
+                  pyqs={filteredPyqs}
+                  loading={pyqsLoading}
+                  getDifficultyColor={getDifficultyColor}
+                  emptyMessage={
+                    activeSection === "pyqs" && searchQuery.trim()
+                      ? resourceEmptyMessage("pyqs", searchQuery)
+                      : undefined
+                  }
+                />
+              </TabsContent>
+            )}
 
-            <TabsContent value="faculty" className="mt-6">
-              <div className="grid gap-6">
-                {facultyNotes.map((note) => (
-                  <NoteCard key={note.id} note={note} />
-                ))}
-              </div>
-            </TabsContent>
+            {sections.includes("faculty") && (
+              <TabsContent value="faculty" className="mt-6">
+                {filteredFacultyNotes.length === 0 ? (
+                  <p className="text-center py-8 text-gray-500 dark:text-gray-400">
+                    {resourceEmptyMessage("faculty", activeSection === "faculty" ? searchQuery : "")}
+                  </p>
+                ) : (
+                  <div className="grid gap-6">
+                    {filteredFacultyNotes.map((note) => (
+                      <NoteCard key={note.id} note={note} />
+                    ))}
+                  </div>
+                )}
+              </TabsContent>
+            )}
 
-            <TabsContent value="student" className="mt-6">
-              <div className="grid gap-6">
-                {studentNotes.map((note) => (
-                  <NoteCard key={note.id} note={note} showLike />
-                ))}
-              </div>
-            </TabsContent>
+            {sections.includes("student") && (
+              <TabsContent value="student" className="mt-6">
+                {filteredStudentNotes.length === 0 ? (
+                  <p className="text-center py-8 text-gray-500 dark:text-gray-400">
+                    {resourceEmptyMessage("student", activeSection === "student" ? searchQuery : "")}
+                  </p>
+                ) : (
+                  <div className="grid gap-6">
+                    {filteredStudentNotes.map((note) => (
+                      <NoteCard key={note.id} note={note} showLike />
+                    ))}
+                  </div>
+                )}
+              </TabsContent>
+            )}
           </Tabs>
         </div>
       )}

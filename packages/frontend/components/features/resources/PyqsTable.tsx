@@ -39,6 +39,8 @@ interface PyqsTableProps {
   pyqs: PYQ[]
   loading: boolean
   getDifficultyColor: (d: string) => string
+  /** Replaces the default empty copy, for example when a search matches nothing. */
+  emptyMessage?: string
 }
 
 const PREVIEW_FIELDS = [
@@ -50,7 +52,7 @@ const PREVIEW_FIELDS = [
   ["Exam type", "examType"],
 ] as const
 
-export function PyqsTable({ subjectName, pyqs, loading, getDifficultyColor }: PyqsTableProps) {
+export function PyqsTable({ subjectName, pyqs, loading, getDifficultyColor, emptyMessage }: PyqsTableProps) {
   const [preview, setPreview] = useState<PyqPreview | null>(null)
   const canDownload = !loading && pyqs.length > 0
 
@@ -83,7 +85,7 @@ export function PyqsTable({ subjectName, pyqs, loading, getDifficultyColor }: Py
           </div>
         ) : pyqs.length === 0 ? (
           <div className="text-center py-8 text-gray-500 dark:text-gray-400">
-            No PYQs available for {subjectName}
+            {emptyMessage ?? `No PYQs available for ${subjectName}`}
           </div>
         ) : (
           <div className="rounded-md border">

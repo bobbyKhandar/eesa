@@ -443,7 +443,9 @@ describe("resource page follows the catalogue", () => {
   });
 
   it("drives the tabs from state instead of defaultValue", () => {
-    assert.match(source, /<Tabs value=\{activeTab\} onValueChange=\{setActiveTab\}>/);
+    // The open tab follows the type filter, so a stale tab cannot keep another
+    // section on screen after Previous Papers, Faculty Notes, or Student Notes.
+    assert.match(source, /<Tabs value=\{activeSection\} onValueChange=\{setActiveTab\}>/);
     assert.doesNotMatch(source, /<Tabs defaultValue/);
   });
 
