@@ -446,10 +446,16 @@ def cluster_questions_for_job(job_id: str, filename: str) -> Optional[Dict]:
             print(f"   ✓ Found {n_clusters} topic clusters")
             print(f"   ✓ Noise points: {n_noise}")
             
-            # Add cluster IDs to similarity data
-            for i, record in enumerate(questions_with_similarity):
-                if i < len(cluster_labels):
-                    record['cluster_id'] = int(cluster_labels[i])
+            # cluster_labels is aligned with records_to_add. questions_with_similarity
+            # drops questions that had no matches, so the filtered-list position is
+            # not the label index. Map each label back by the original question id.
+            labels_by_id = {
+                source['id']: int(label)
+                for source, label in zip(records_to_add, cluster_labels)
+            }
+            for record in questions_with_similarity:
+                if record['id'] in labels_by_id:
+                    record['cluster_id'] = labels_by_id[record['id']]
         
         # Step 7: Update questions in S3 with clustering data
         print(f"\n💾 Updating questions with clustering data...")
