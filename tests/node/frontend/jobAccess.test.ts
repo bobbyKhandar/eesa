@@ -126,4 +126,11 @@ describe("job status and questions route wiring", () => {
     assert.match(questionsRoute, /findByJobIds\(\[jobId\]\)/);
     assertGateBeforeRead(questionsRoute, "fetchFromAiPipeline(");
   });
+
+  it("authorizes the caller before proxying a retry", () => {
+    const retryRoute = readFileSync("packages/frontend/app/api/jobs/[jobId]/retry/route.ts", "utf8");
+    assert.match(retryRoute, /jobContentAccessDecision/);
+    assert.match(retryRoute, /findByJobIds\(\[jobId\]\)/);
+    assertGateBeforeRead(retryRoute, "fetchFromAiPipeline(");
+  });
 });

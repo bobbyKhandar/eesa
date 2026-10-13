@@ -123,7 +123,7 @@ packages/frontend/
 │   │   ├── exams/                   # Create, list, display, details, exam sets
 │   │   ├── subjects/                # Subject listing, from-job
 │   │   ├── upload/                  # Question paper upload & split
-│   │   ├── jobs/                    # Job status & cleanup
+│   │   ├── jobs/                    # Job status, retry & cleanup
 │   │   ├── failed-jobs/             # Failed job details & bulk retry
 │   │   ├── submissions/             # Submit & get results
 │   │   ├── resources/               # Resource CRUD
@@ -291,7 +291,7 @@ Or use **VSCode** (`.vscode/launch.json`) — open Run & Debug (Ctrl+Shift+D), s
 | `exams/` | Create, list, details, exam sets, display |
 | `subjects/` | Subject listing, from-job |
 | `upload/` | Question paper upload & split |
-| `jobs/` | Status, cleanup |
+| `jobs/` | Status, retry, cleanup |
 | `failed-jobs/` | Failed job details, bulk retry |
 | `submissions/` | Submit & get results |
 | `resources/` | Resource CRUD |
@@ -316,6 +316,7 @@ All routes registered on the canonical server at `src/api/server.py`. See `packa
 | `/job/<id>/status` | GET | AWS job full stage details (from S3 metadata) |
 | `/job/<id>/metadata` | GET | Alias for `/job/<id>/status` |
 | `/job/<id>/questions` | GET | Processed questions with 3-level S3 fallback + Bloom's stats |
+| `/job/<id>/retry` | POST | Re-queue a failed or partial-success job from its original S3 PDF |
 | `/jobs/active` | GET | List active AWS jobs |
 | `/submit-local` | POST | Submit local EasyOCR batch |
 | `/submit` | POST | Legacy alias for `/submit-local` |

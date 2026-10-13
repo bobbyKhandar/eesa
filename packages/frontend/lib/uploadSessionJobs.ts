@@ -7,9 +7,9 @@
  * A stored job with no uploader is not readable: missing ownership is not
  * the same as the caller's ownership.
  *
- * Status and extracted-question reads use the same stored-job rule. A job
- * that is not stored yet has no owner, so only an admin may fall through to
- * the AI pipeline.
+ * Status reads, extracted-question reads, and retries use the same stored-job
+ * rule. A job that is not stored yet has no owner, so only an admin may fall
+ * through to the AI pipeline.
  */
 
 export interface StoredJobOwner {
@@ -93,7 +93,7 @@ export interface JobContentAccessDecision {
 }
 
 /**
- * Reading job status or extracted questions requires a signed-in caller.
+ * Reading job status or extracted questions, or retrying a job, requires a signed-in caller.
  *
  * A non-admin may read a job only when every stored copy is owned by them.
  * An admin may read a foreign job, a job with no uploader, or a job that is

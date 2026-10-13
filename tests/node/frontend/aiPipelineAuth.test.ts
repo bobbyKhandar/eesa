@@ -113,6 +113,7 @@ describe("job pipeline proxies reuse the ownership helper", () => {
     for (const path of [
       "packages/frontend/app/api/jobs/[jobId]/status/route.ts",
       "packages/frontend/app/api/jobs/[jobId]/questions/route.ts",
+      "packages/frontend/app/api/jobs/[jobId]/retry/route.ts",
     ]) {
       const source = readRepoFile(path);
       const gate = source.indexOf("jobContentAccessDecision(");

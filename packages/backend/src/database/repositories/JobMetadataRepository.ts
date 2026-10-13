@@ -109,6 +109,29 @@ export class JobMetadataRepository {
   }
 
   /**
+   * Reopen a stored failure after the pipeline accepts a retry.
+   * Status reads treat failed and partial_success as final, so leaving the
+   * old row in place would hide the new run.
+   */
+  async reopenForRetry(jobId: string): Promise<{ success: boolean; error?: string }> {
+    try {
+      await connect();
+      const result = await this.model.updateMany(
+        { job_id: jobId, status: { $in: ["failed", "partial_success"] } },
+        {
+          $set: { status: "in_progress", updated_at: new Date() },
+          $unset: { error: "", error_type: "", failed_stage: "", completed_at: "" },
+        }
+      );
+      console.log(`[JobMetadataRepository] Reopened ${result.modifiedCount} job(s) for retry: ${jobId}`);
+      return { success: true };
+    } catch (error) {
+      console.error('[JobMetadataRepository] Error reopening job for retry:', error);
+      return { success: false, error: 'Failed to reopen job' };
+    }
+  }
+
+  /**
    * Find recent jobs with optional filters
    */
   async findRecent(
