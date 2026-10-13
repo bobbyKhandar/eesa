@@ -67,6 +67,30 @@ export class UserRepository {
   }
 
   /**
+   * Get users by ids. Unknown ids are omitted. An empty request does not hit the database.
+   */
+  async getByIds(userIds: string[]): Promise<User[]> {
+    try {
+      await connect();
+      const uniqueIds = Array.from(
+        new Set(
+          userIds
+            .filter((id) => typeof id === 'string')
+            .map((id) => id.trim())
+            .filter((id) => id.length > 0)
+        )
+      );
+      if (uniqueIds.length === 0) return [];
+
+      const users = await this.model.find({ _id: { $in: uniqueIds } }).lean();
+      return users as User[];
+    } catch (error) {
+      console.error('Error getting users by ids:', error);
+      return [];
+    }
+  }
+
+  /**
    * Get user by email
    */
   async getByEmail(email: string): Promise<User | null> {

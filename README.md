@@ -8,7 +8,7 @@ A modular monolith for end-to-end exam processing: upload scanned question paper
 
 - **OCR Pipeline** — Upload scanned PDFs/images; EasyOCR local mode (free) or AWS Textract + Bedrock pipeline for parsing, enrichment, and subject organization
 - **Question Clustering** — FAISS + HDBSCAN similarity-based clustering of extracted questions
-- **Exam Management** — Create exams from enriched question banks, organize by subject/syllabus, publish for students
+- **Exam Management** — Create exams from enriched question banks, organize by subject/syllabus, assign teacher exams to selected students, and publish them. Assigned students still cannot open a scheduled exam before `scheduledAt`.
 - **Student Submissions** — Take exams, auto-grading, result analysis
 - **Resource Library** — Upload and browse notes, PYQs, and study materials with subject filtering
 - **Admin Tools** — Database stats, S3 backup/restore, collection truncation, query editor, performance monitoring, job status monitoring, failed job retry
@@ -130,7 +130,7 @@ packages/frontend/
 │   │   ├── admin/database/          # DB stats, S3 backup/restore, truncation
 │   │   ├── exam-analysis/           # Publish, upload, upload-bulk, upload-bulk-zip
 │   │   ├── llm/                     # Gemini AI exam helper
-│   │   ├── users/                   # User CRUD, submissions, metadata
+│   │   ├── users/                   # User CRUD, student roster, submissions, metadata
 │   │   ├── upload-sessions/         # Upload session management
 │   │   ├── results/                 # Results retrieval
 │   │   ├── reports/                 # Report generation
@@ -148,7 +148,7 @@ packages/frontend/
 │   ├── ui/                          # 50 shadcn/ui components
 │   ├── features/                    # Domain-organized feature components
 │   │   ├── admin/                   # DatabaseStatCard, ConfirmTruncateDialog, SqlQueryEditor
-│   │   ├── exams/                   # ExamTypeSelector, QuestionEditor, SubjectSelector
+│   │   ├── exams/                   # ExamTypeSelector, QuestionEditor, SubjectSelector, StudentAssigneeSelector
 │   │   ├── resources/               # UploadResourceDialog, NoteCard, PyqsTable, SearchFilterBar
 │   │   └── upload/                  # JobStatusBadge, StageDetails, StatusMessage
 │   ├── permanent-sidebar.tsx
