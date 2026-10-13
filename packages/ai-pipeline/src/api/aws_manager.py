@@ -30,6 +30,24 @@ except ImportError as e:
     AWS_MODULES_AVAILABLE = False
 
 
+def chunked_parsing_outcome(parsing_result: Optional[Dict]) -> Optional[str]:
+    """Classify a chunked parse payload as ``failed``, ``partial``, or neither.
+
+    Non-chunked payloads (including a token-limit failure) return None so the
+    caller keeps its own status. A chunked payload is ``failed`` when nothing
+    parsed, and ``partial`` when ``failed_chunks`` names chunks that were lost.
+    """
+    if not isinstance(parsing_result, dict) or not parsing_result.get("is_chunked"):
+        return None
+    status = parsing_result.get("status")
+    failed_chunks = parsing_result.get("failed_chunks") or []
+    if status == "failed":
+        return "failed"
+    if status == "partial" or failed_chunks:
+        return "partial"
+    return None
+
+
 class AWSPipelineManager:
     """
     Orchestrator for the AWS-based AI Pipeline.
@@ -218,7 +236,40 @@ class AWSPipelineManager:
                 print(f"   Using standard processing")
                 parsing_result = parse_questions_for_job(job_id, filename)
 
-            if isinstance(parsing_result, dict) and not parsing_result.get('success', True):
+            chunk_outcome = chunked_parsing_outcome(parsing_result)
+            parsing_partial = chunk_outcome == 'partial'
+            if chunk_outcome == 'failed':
+                failed_chunks = parsing_result.get('failed_chunks') or []
+                metadata['status'] = 'failed'
+                metadata['failed_stage'] = 'parsing'
+                metadata['error'] = parsing_result.get('error', 'All chunks failed to parse')
+                metadata['error_type'] = parsing_result.get('error_type', 'chunk_parse_failed')
+                metadata['stages']['parsing']['status'] = 'failed'
+                metadata['stages']['parsing']['error'] = metadata['error']
+                metadata['stages']['parsing']['failed_chunks'] = failed_chunks
+                metadata['stages']['parsing']['completed_at'] = datetime.now().isoformat()
+                self.save_job_metadata(job_id, metadata)
+                return metadata
+
+            if parsing_partial:
+                failed_chunks = parsing_result.get('failed_chunks') or []
+                metadata['failed_stage'] = 'parsing'
+                metadata['error'] = parsing_result.get(
+                    'error',
+                    f"{len(failed_chunks)} chunks failed to parse",
+                )
+                metadata['error_type'] = parsing_result.get('error_type', 'chunk_parse_partial')
+                metadata['stages']['parsing'] = {
+                    'status': 'partial',
+                    'completed_at': datetime.now().isoformat(),
+                    'error': metadata['error'],
+                    'failed_chunks': failed_chunks,
+                    'total_questions': parsing_result.get('total_questions', 0),
+                    'total_exams': parsing_result.get('total_exams', 0),
+                    'processing_cost': parsing_result.get('processing_cost', 0),
+                    'is_chunked': True,
+                }
+            elif isinstance(parsing_result, dict) and not parsing_result.get('success', True):
                 metadata['status'] = 'partial_success'
                 metadata['failed_stage'] = 'parsing'
                 metadata['error'] = parsing_result.get('error', 'Parsing failed')
@@ -229,7 +280,7 @@ class AWSPipelineManager:
                 self.save_job_metadata(job_id, metadata)
                 return metadata
 
-            if not parsing_result:
+            elif not parsing_result:
                 metadata['status'] = 'partial_success'
                 metadata['failed_stage'] = 'parsing'
                 metadata['error'] = 'Parsing returned no result'
@@ -238,14 +289,15 @@ class AWSPipelineManager:
                 self.save_job_metadata(job_id, metadata)
                 return metadata
 
-            metadata['stages']['parsing'] = {
-                'status': 'success',
-                'completed_at': datetime.now().isoformat(),
-                'total_questions': parsing_result.get('total_questions', 0),
-                'total_exams': parsing_result.get('total_exams', 0),
-                'processing_cost': parsing_result.get('processing_cost', 0),
-                'is_chunked': parsing_result.get('is_chunked', False)
-            }
+            else:
+                metadata['stages']['parsing'] = {
+                    'status': 'success',
+                    'completed_at': datetime.now().isoformat(),
+                    'total_questions': parsing_result.get('total_questions', 0),
+                    'total_exams': parsing_result.get('total_exams', 0),
+                    'processing_cost': parsing_result.get('processing_cost', 0),
+                    'is_chunked': parsing_result.get('is_chunked', False)
+                }
             self.save_job_metadata(job_id, metadata)
 
             # Stage 3: Enrichment
@@ -343,7 +395,7 @@ class AWSPipelineManager:
                     }
             self.save_job_metadata(job_id, metadata)
 
-            metadata['status'] = 'success'
+            metadata['status'] = 'partial_success' if parsing_partial else 'success'
             metadata['completed_at'] = datetime.now().isoformat()
             self.save_job_metadata(job_id, metadata)
             print(f"[{job_id}] Pipeline complete!")
