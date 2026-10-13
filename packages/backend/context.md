@@ -95,7 +95,7 @@
 |---|---|
 | `generate-sample-data.ts` | Seeds MongoDB with test prompts, exams, submissions |
 | `create-indexes.ts` | Creates MongoDB indexes for performance |
-| `migrate-schema.ts` | Copies legacy questions into prompts and ExamQuestion documents. Each ExamQuestion uses `questionType` (`MCQ`, `TEXT`, or `TRUE_FALSE`) plus the legacy options, answer, and marks. A per-exam failure leaves that exam unchanged and makes the script exit non-zero. Re-runs skip exams that already store ExamQuestion ids and do not rewrite assignees, `createdBy`, or `deletedAt`. |
+| `migrate-schema.ts` | Copies legacy questions into prompts and ExamQuestion documents. Each ExamQuestion uses `questionType` (`MCQ`, `TEXT`, or `TRUE_FALSE`) plus the legacy options, answer, and marks. A per-exam failure leaves that exam unchanged and makes the script exit non-zero. Re-runs skip exams that already store ExamQuestion ids and do not rewrite assignees, `createdBy`, or `deletedAt`. Submission answers are translated into `responses` before a submission is written. A submission that cannot be mapped is left unchanged. The legacy `answers` field is kept, so a re-run restores responses that an older run emptied and, when the stable ExamQuestion id matches, attaches them to the question already stored on the exam. A submission write that does not match the stored document is rolled back. |
 | `importBedrockQuestions.ts` | Imports Bedrock-enriched JSON -> Prompts, UniqueQuestions, etc. |
 | `importOcrQuestions.ts` | Imports OCR-processed question papers |
 | `dryRunOcrImport.ts` | Preview OCR import without modifying DB |

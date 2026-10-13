@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { examQuestionZodSchema } from "./schemas/examQuestionSchemaZod.js";
+import { submissionResponseZodSchema } from "./schemas/examSubmissionZod.js";
 
 /**
  * Maps a legacy exam's embedded `{ questionId, marks }` entries onto the
@@ -7,6 +8,11 @@ import { examQuestionZodSchema } from "./schemas/examQuestionSchemaZod.js";
  * are skipped so a re-run does not rewrite assignees, createdBy, or deletedAt.
  * Failed exams produce no update. ExamQuestion ids are derived from the exam
  * id and the legacy question id, so a retry upserts the same documents.
+ *
+ * Submission answers are translated into responses before a submission is
+ * written. A payload that cannot be mapped produces no update. The legacy
+ * answers field is not removed, so a later run can restore responses that an
+ * older run replaced with an empty array.
  */
 
 const DEFAULT_NEGATIVE_MARKING_PERCENTAGE = 25;
@@ -40,7 +46,60 @@ export interface MappedExamQuestion {
 
 export interface ExamQuestionWrite {
   id: string;
+  legacyQuestionId?: string;
   data: MappedExamQuestion;
+}
+
+export interface LegacyQuestionLink {
+  examQuestionId: string;
+  marks?: number;
+}
+
+export interface MappedSubmissionResponse {
+  questionId: string;
+  userResponse: string;
+  maxMarks: number;
+  allottedMarks: number;
+  feedback?: string;
+  suggestions?: string[];
+}
+
+export interface SubmissionFieldUpdate {
+  userId?: string;
+  responses?: MappedSubmissionResponse[];
+}
+
+export interface SubmissionRollback {
+  userId: unknown;
+  responses: unknown;
+  answers: unknown;
+  hadUserId: boolean;
+  hadResponses: boolean;
+  wroteUserId: boolean;
+  wroteResponses: boolean;
+}
+
+export interface SubmissionRollbackUpdate {
+  set: Record<string, unknown>;
+  unset: Record<string, "">;
+}
+
+export interface SubmissionConversionPlan {
+  status: "skip" | "failed" | "convert";
+  error?: string;
+  update?: SubmissionFieldUpdate;
+  rollback?: SubmissionRollback;
+}
+
+export interface SubmissionConversionInput {
+  _id?: unknown;
+  examId?: unknown;
+  userId?: unknown;
+  studentEmail?: unknown;
+  responses?: unknown;
+  answers?: unknown;
+  questionEvaluations?: unknown;
+  evaluations?: unknown;
 }
 
 export interface ExamConversionPlan {
@@ -414,6 +473,7 @@ export function planExamConversion(
 
     questions.push({
       id: migratedExamQuestionId(examId, legacyQuestionId, index),
+      legacyQuestionId,
       data: parsed.data as MappedExamQuestion,
     });
   }
@@ -425,6 +485,430 @@ export function planExamConversion(
   };
 }
 
+const ANSWER_KEYS = new Set([
+  "questionId",
+  "examQuestionId",
+  "questionText",
+  "userResponse",
+  "response",
+  "answer",
+  "text",
+  "marks",
+  "maxMarks",
+  "allottedMarks",
+  "allocatedMarks",
+  "feedback",
+  "suggestions",
+  "isCorrect",
+  "_id",
+  "__v",
+]);
+
+interface DraftResponse {
+  questionId: string;
+  userResponse: string;
+  maxMarks?: number;
+  allottedMarks?: number;
+  feedback?: string;
+  suggestions?: string[];
+}
+
+function existingUserId(value: unknown): string {
+  if (typeof value === "string") return value.trim();
+  return documentId(value);
+}
+
+function readMark(value: unknown): number | "invalid" {
+  if (typeof value === "number") return Number.isFinite(value) ? value : "invalid";
+  if (typeof value === "string" && value.trim() !== "") {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return "invalid";
+}
+
+function pickMark(record: Record<string, unknown>, keys: string[]): number | undefined | "invalid" {
+  const present = keys.filter((key) => record[key] !== undefined && record[key] !== null);
+  if (present.length === 0) return undefined;
+  const values = present.map((key) => readMark(record[key]));
+  if (values.some((value) => value === "invalid")) return "invalid";
+  const numbers = values as number[];
+  if (numbers.some((value) => value !== numbers[0])) return "invalid";
+  return numbers[0];
+}
+
+function scalarResponse(value: unknown): string | "invalid" | "absent" {
+  if (value === undefined) return "absent";
+  if (value === null) return "";
+  if (typeof value === "string") return value;
+  if (typeof value === "number") return Number.isFinite(value) ? String(value) : "invalid";
+  if (typeof value === "boolean") return value ? "true" : "false";
+  if (Array.isArray(value)) {
+    const primitive = value.every(
+      (item) => typeof item === "string" || typeof item === "number" || typeof item === "boolean"
+    );
+    return primitive ? JSON.stringify(value) : "invalid";
+  }
+  return "invalid";
+}
+
+function readSuggestions(value: unknown): string[] | undefined | "invalid" {
+  if (value === undefined) return undefined;
+  if (!Array.isArray(value) || value.some((item) => typeof item !== "string")) return "invalid";
+  return value;
+}
+
+function readObjectAnswer(
+  value: Record<string, unknown>,
+  fallbackQuestionId?: string
+): DraftResponse | "invalid" {
+  for (const key of Object.keys(value)) {
+    if (!ANSWER_KEYS.has(key) && value[key] !== undefined) return "invalid";
+  }
+
+  const ownId = documentId(value.questionId) || documentId(value.examQuestionId);
+  const questionId = ownId || fallbackQuestionId?.trim() || "";
+  if (!questionId) return "invalid";
+  if (fallbackQuestionId && ownId && ownId !== fallbackQuestionId.trim()) return "invalid";
+
+  const textFields = ["userResponse", "response", "answer", "text"].filter((key) => key in value);
+  const texts: string[] = [];
+  for (const key of textFields) {
+    const text = scalarResponse(value[key]);
+    if (text === "invalid") return "invalid";
+    if (text !== "absent") texts.push(text);
+  }
+  if (texts.length === 0 || texts.some((text) => text !== texts[0])) return "invalid";
+
+  const maxMarks = pickMark(value, ["maxMarks", "marks"]);
+  if (maxMarks === "invalid") return "invalid";
+  const allottedMarks = pickMark(value, ["allottedMarks", "allocatedMarks"]);
+  if (allottedMarks === "invalid") return "invalid";
+
+  let feedback: string | undefined;
+  if ("feedback" in value && value.feedback !== undefined) {
+    if (typeof value.feedback !== "string") return "invalid";
+    feedback = value.feedback;
+  }
+  const suggestions = readSuggestions(value.suggestions);
+  if (suggestions === "invalid") return "invalid";
+
+  return {
+    questionId,
+    userResponse: texts[0],
+    ...(maxMarks !== undefined ? { maxMarks } : {}),
+    ...(allottedMarks !== undefined ? { allottedMarks } : {}),
+    ...(feedback !== undefined ? { feedback } : {}),
+    ...(suggestions !== undefined ? { suggestions } : {}),
+  };
+}
+
+function readAnswerMap(value: Record<string, unknown>): DraftResponse[] | "invalid" {
+  const drafts: DraftResponse[] = [];
+  for (const [key, raw] of Object.entries(value)) {
+    const questionId = key.trim();
+    if (!questionId) return "invalid";
+    if (raw && typeof raw === "object" && !Array.isArray(raw)) {
+      const parsed = readObjectAnswer(raw as Record<string, unknown>, questionId);
+      if (parsed === "invalid") return "invalid";
+      drafts.push(parsed);
+      continue;
+    }
+    const text = scalarResponse(raw);
+    if (text === "invalid" || text === "absent") return "invalid";
+    drafts.push({ questionId, userResponse: text });
+  }
+  return drafts;
+}
+
+function readAnswerList(value: unknown[]): DraftResponse[] | "invalid" {
+  const drafts: DraftResponse[] = [];
+  for (const item of value) {
+    if (!item || typeof item !== "object" || Array.isArray(item)) return "invalid";
+    const parsed = readObjectAnswer(item as Record<string, unknown>);
+    if (parsed === "invalid") return "invalid";
+    drafts.push(parsed);
+  }
+  return drafts;
+}
+
+function readPayload(value: unknown): DraftResponse[] | "empty" | "invalid" {
+  if (value === undefined || value === null) return "empty";
+  if (value instanceof Map) return readPayload(Object.fromEntries(value.entries()));
+  if (Array.isArray(value)) {
+    if (value.length === 0) return "empty";
+    return readAnswerList(value);
+  }
+  if (typeof value === "object") {
+    const drafts = readAnswerMap(value as Record<string, unknown>);
+    if (drafts === "invalid") return "invalid";
+    return drafts.length === 0 ? "empty" : drafts;
+  }
+  return "invalid";
+}
+
+function isCompleteNewResponse(value: unknown): value is MappedSubmissionResponse {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const record = value as Record<string, unknown>;
+  if (typeof record.questionId !== "string" || record.questionId.trim() === "") return false;
+  if (typeof record.userResponse !== "string") return false;
+  if (typeof record.maxMarks !== "number" || !Number.isFinite(record.maxMarks)) return false;
+  if (typeof record.allottedMarks !== "number" || !Number.isFinite(record.allottedMarks)) return false;
+  if (record.feedback !== undefined && typeof record.feedback !== "string") return false;
+  if (record.suggestions !== undefined) {
+    if (!Array.isArray(record.suggestions) || record.suggestions.some((item) => typeof item !== "string")) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function legacyAnswerDrafts(submission: SubmissionConversionInput): DraftResponse[] | "none" | "invalid" {
+  const fields = [submission.answers, submission.questionEvaluations, submission.evaluations];
+  const lists: DraftResponse[][] = [];
+  for (const field of fields) {
+    if (field === undefined || field === null) continue;
+    const read = readPayload(field);
+    if (read === "invalid") return "invalid";
+    if (read === "empty") continue;
+    lists.push(read);
+  }
+  if (lists.length === 0) return "none";
+  const merged = lists[0].map((draft) => ({ ...draft }));
+  for (const extraList of lists.slice(1)) {
+    if (extraList.length !== merged.length) return "invalid";
+    for (let index = 0; index < merged.length; index += 1) {
+      const target = merged[index];
+      const extra = extraList[index];
+      if (target.questionId !== extra.questionId || target.userResponse !== extra.userResponse) return "invalid";
+      if (extra.maxMarks !== undefined) {
+        if (target.maxMarks !== undefined && target.maxMarks !== extra.maxMarks) return "invalid";
+        target.maxMarks = extra.maxMarks;
+      }
+      if (extra.allottedMarks !== undefined) {
+        if (target.allottedMarks !== undefined && target.allottedMarks !== extra.allottedMarks) return "invalid";
+        target.allottedMarks = extra.allottedMarks;
+      }
+      if (extra.feedback !== undefined) {
+        if (target.feedback !== undefined && target.feedback !== extra.feedback) return "invalid";
+        target.feedback = extra.feedback;
+      }
+      if (extra.suggestions !== undefined) {
+        if (
+          target.suggestions !== undefined &&
+          JSON.stringify(target.suggestions) !== JSON.stringify(extra.suggestions)
+        ) {
+          return "invalid";
+        }
+        target.suggestions = extra.suggestions;
+      }
+    }
+  }
+  return merged;
+}
+
+function applyQuestionLinks(
+  drafts: DraftResponse[],
+  links: ReadonlyMap<string, LegacyQuestionLink> | undefined
+): MappedSubmissionResponse[] | "invalid" {
+  const mapped: MappedSubmissionResponse[] = [];
+  const seen = new Set<string>();
+  for (const draft of drafts) {
+    const link = links?.get(draft.questionId);
+    const response = {
+      questionId: link?.examQuestionId ?? draft.questionId,
+      userResponse: draft.userResponse,
+      maxMarks: draft.maxMarks ?? link?.marks ?? 0,
+      allottedMarks: draft.allottedMarks ?? 0,
+      ...(draft.feedback !== undefined ? { feedback: draft.feedback } : {}),
+      ...(draft.suggestions !== undefined ? { suggestions: draft.suggestions } : {}),
+    };
+    if (seen.has(response.questionId)) return "invalid";
+    seen.add(response.questionId);
+    const parsed = submissionResponseZodSchema.safeParse(response);
+    if (!parsed.success) return "invalid";
+    mapped.push(parsed.data as MappedSubmissionResponse);
+  }
+  return mapped;
+}
+
+function failedSubmission(error: string): SubmissionConversionPlan {
+  return { status: "failed", error };
+}
+
+export function matchStoredExamQuestions(
+  examId: string,
+  legacyQuestionIds: readonly string[],
+  examQuestionIds: readonly string[],
+  marksByExamQuestionId?: ReadonlyMap<string, number>
+): Map<string, LegacyQuestionLink> {
+  const present = new Set(examQuestionIds);
+  const links = new Map<string, LegacyQuestionLink>();
+  for (const legacyId of new Set(legacyQuestionIds)) {
+    const matches: string[] = [];
+    for (let index = 0; index < examQuestionIds.length; index += 1) {
+      const id = migratedExamQuestionId(examId, legacyId, index);
+      if (present.has(id)) matches.push(id);
+    }
+    if (matches.length !== 1) continue;
+    const marks = marksByExamQuestionId?.get(matches[0]);
+    links.set(legacyId, {
+      examQuestionId: matches[0],
+      ...(typeof marks === "number" ? { marks } : {}),
+    });
+  }
+  return links;
+}
+
+export function legacyQuestionLinks(
+  questions: readonly ExamQuestionWrite[]
+): Map<string, LegacyQuestionLink> | undefined {
+  const links = new Map<string, LegacyQuestionLink>();
+  for (const question of questions) {
+    const legacyId = question.legacyQuestionId?.trim();
+    if (!legacyId) continue;
+    const existing = links.get(legacyId);
+    const next = { examQuestionId: question.id, marks: question.data.marks };
+    if (existing && (existing.examQuestionId !== next.examQuestionId || existing.marks !== next.marks)) {
+      return undefined;
+    }
+    links.set(legacyId, next);
+  }
+  return links;
+}
+
+/**
+ * Plans one submission write. Already-stored responses are kept. An empty
+ * responses array is rebuilt from a surviving answers or evaluation payload.
+ * The returned rollback restores userId and responses for that document only.
+ * answers is never part of the write or the rollback update.
+ */
+export function planSubmissionConversion(
+  submission: SubmissionConversionInput,
+  options?: {
+    resolvedUserId?: string | null;
+    questionLinks?: ReadonlyMap<string, LegacyQuestionLink>;
+    examQuestionIds?: readonly string[];
+    marksByExamQuestionId?: ReadonlyMap<string, number>;
+  }
+): SubmissionConversionPlan {
+  const preserved = Array.isArray(submission.responses) && submission.responses.every(isCompleteNewResponse);
+  const responsesEmpty = !Array.isArray(submission.responses) || submission.responses.length === 0;
+  let translated: MappedSubmissionResponse[] | undefined;
+
+  if (!(preserved && !responsesEmpty)) {
+    let drafts: DraftResponse[] | "none" | "invalid" = "none";
+    if (Array.isArray(submission.responses) && submission.responses.length > 0) {
+      drafts = readAnswerList(submission.responses);
+    } else if (submission.responses !== undefined && submission.responses !== null && !Array.isArray(submission.responses)) {
+      const read = readPayload(submission.responses);
+      drafts = read === "empty" ? "none" : read;
+    } else {
+      drafts = legacyAnswerDrafts(submission);
+    }
+
+    if (drafts === "invalid") {
+      return failedSubmission(
+        "Submission answers could not be translated without dropping answer data; submission left unchanged"
+      );
+    }
+    if (drafts !== "none") {
+      const examId = documentId(submission.examId);
+      const links =
+        options?.questionLinks ??
+        (examId && options?.examQuestionIds && options.examQuestionIds.length > 0
+          ? matchStoredExamQuestions(
+              examId,
+              drafts.map((draft) => draft.questionId),
+              options.examQuestionIds,
+              options.marksByExamQuestionId
+            )
+          : undefined);
+      const mapped = applyQuestionLinks(drafts, links);
+      if (mapped === "invalid") {
+        return failedSubmission(
+          "Submission answers could not be translated without dropping answer data; submission left unchanged"
+        );
+      }
+      translated = mapped;
+    }
+  }
+
+  const userId = existingUserId(submission.userId);
+  let resolvedUserId = userId;
+  if (!resolvedUserId) {
+    const provided = typeof options?.resolvedUserId === "string" ? options.resolvedUserId.trim() : "";
+    if (!provided) {
+      const email = typeof submission.studentEmail === "string" ? submission.studentEmail.trim() : "";
+      return failedSubmission(
+        email
+          ? `No user found for email ${email}; submission left unchanged`
+          : "Submission has no userId or studentEmail; submission left unchanged"
+      );
+    }
+    resolvedUserId = provided;
+  }
+
+  const update: SubmissionFieldUpdate = {};
+  if (!userId) update.userId = resolvedUserId;
+  if (translated && translated.length > 0) update.responses = translated;
+  if (!update.userId && !update.responses) return { status: "skip" };
+
+  const hadResponses = submission.responses !== undefined && submission.responses !== null;
+  return {
+    status: "convert",
+    update,
+    rollback: {
+      userId: submission.userId,
+      responses: submission.responses,
+      answers: submission.answers,
+      hadUserId: userId.length > 0,
+      hadResponses,
+      wroteUserId: update.userId !== undefined,
+      wroteResponses: update.responses !== undefined,
+    },
+  };
+}
+
+export function submissionRollbackUpdate(rollback: SubmissionRollback): SubmissionRollbackUpdate {
+  const set: Record<string, unknown> = {};
+  const unset: Record<string, ""> = {};
+  if (rollback.wroteUserId) {
+    if (rollback.hadUserId) set.userId = rollback.userId;
+    else unset.userId = "";
+  }
+  if (rollback.wroteResponses) {
+    if (rollback.hadResponses) set.responses = rollback.responses;
+    else unset.responses = "";
+  }
+  return { set, unset };
+}
+
+export function submissionWriteLanded(
+  stored: { userId?: unknown; responses?: unknown },
+  update: SubmissionFieldUpdate
+): boolean {
+  if (update.userId && documentId(stored.userId) !== update.userId && stored.userId !== update.userId) {
+    return false;
+  }
+  if (!update.responses) return true;
+  if (!Array.isArray(stored.responses) || stored.responses.length !== update.responses.length) return false;
+  return update.responses.every((response, index) => {
+    const item = stored.responses?.[index] as Record<string, unknown> | undefined;
+    if (!item || typeof item !== "object") return false;
+    const feedback = item.feedback === undefined ? undefined : item.feedback;
+    const suggestions = item.suggestions === undefined ? undefined : item.suggestions;
+    return (
+      (typeof item.questionId === "string" ? item.questionId : documentId(item.questionId)) === response.questionId &&
+      item.userResponse === response.userResponse &&
+      item.maxMarks === response.maxMarks &&
+      item.allottedMarks === response.allottedMarks &&
+      feedback === response.feedback &&
+      JSON.stringify(suggestions ?? undefined) === JSON.stringify(response.suggestions ?? undefined)
+    );
+  });
+}
+
 export function migrationExitCode(failures: readonly MigrationFailure[]): number {
   return failures.length === 0 ? 0 : 1;
 }
@@ -434,12 +918,13 @@ export function formatMigrationReport(failures: readonly MigrationFailure[], dry
     return [
       dryRun ? "Migration dry run completed. No documents were written." : "Migration completed.",
       "Exams that already reference ExamQuestion ids were left unchanged.",
+      "Submission answers are kept. A re-run restores responses from a surviving answers field when responses are empty.",
     ];
   }
 
   const mode = dryRun ? "Migration dry run failed" : "Migration failed";
   return [
-    `${mode} with ${failures.length} error(s). Failed exams were not rewritten.`,
+    `${mode} with ${failures.length} error(s). Failed exams and submissions were not rewritten.`,
     ...failures.map((failure) => `[${failure.step}] ${failure.id}: ${failure.error}`),
   ];
 }
