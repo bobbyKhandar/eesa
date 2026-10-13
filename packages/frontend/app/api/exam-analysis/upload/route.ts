@@ -12,6 +12,10 @@ import {
   generateAnalysisInsights 
 } from "@/backend/dist/services/examAnalysisService";
 import type { CreateExamAnalysisRequest } from "@/backend/dist/database/schemas/examAnalysisZod";
+import {
+  questionsWithoutComputedSyllabusAlignment,
+  syllabusOptionsWithoutAlignment,
+} from "@/frontend/lib/syllabusAlignment";
 
 const analysisRepo = new ExamAnalysisRepository();
 
@@ -49,10 +53,16 @@ export async function POST(request: NextRequest) {
     const examType = formData.get("examType") as "main" | "kt";
     const userNotes = formData.get("userNotes") as string || undefined;
     
-    // Analysis options
-    const alignWithSyllabus = formData.get("alignWithSyllabus") === "true";
-    const syllabusId = formData.get("syllabusId") as string || undefined;
-    const comparePastPapers = formData.get("comparePastPapers") === "true";
+    // Syllabus upload and saved-syllabus ids are not matched to persisted
+    // content, so they are not recorded as alignment.
+    const syllabusFile = formData.get("syllabusFile");
+    const syllabusId = formData.get("syllabusId");
+    const analysisOptions = syllabusOptionsWithoutAlignment({
+      alignWithSyllabus: formData.get("alignWithSyllabus") === "true",
+      syllabusId: typeof syllabusId === "string" ? syllabusId : undefined,
+      syllabusFileName: syllabusFile instanceof File ? syllabusFile.name : undefined,
+      comparePastPapers: formData.get("comparePastPapers") === "true",
+    });
 
     // Validation
     if (!file || !subjectName || !year || !semester) {
@@ -101,12 +111,7 @@ export async function POST(request: NextRequest) {
         fileSize: file.size,
       },
       status: "pending",
-      analysisOptions: {
-        alignWithSyllabus,
-        syllabusId,
-        comparePastPapers,
-        pastPaperIds: [], // TODO: Find relevant past papers
-      },
+      analysisOptions,
       userNotes,
       analyzedBy: userId,
       bloomDistribution: {
@@ -236,28 +241,13 @@ async function processExamAnalysis(
     console.log("STEP 6: Saving analysis results...");
     const updateData: any = {
       status: "completed",
-      questions: classifiedQuestions.map(q => ({
-        questionNumber: q.questionNumber,
-        questionText: q.questionText,
-        marks: q.marks,
-        bloomLevel: q.bloomLevel,
-        bloomJustification: q.bloomJustification,
-        confidence: q.confidence,
-        difficulty: q.difficulty,
-        keywords: q.keywords,
-        syllabusTopics: q.topicsCovered,
-        isSyllabusAligned: true, // TODO: Implement actual syllabus matching
-        similarQuestionIds: [],
-      })),
+      questions: questionsWithoutComputedSyllabusAlignment(classifiedQuestions),
       bloomDistribution,
       overallAssessment: insights.overallAssessment,
       recommendations: insights.recommendations,
       strengths: insights.strengths,
       improvements: insights.improvements,
     };
-
-    // TODO: If alignWithSyllabus is true, match questions to syllabus topics
-    // TODO: If comparePastPapers is true, compare with historical data
 
     await analysisRepo.update(analysisId, updateData);
 

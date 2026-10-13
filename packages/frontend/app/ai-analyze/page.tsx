@@ -12,8 +12,7 @@ import { Textarea } from "@/frontend/components/ui/textarea"
 import { Checkbox } from "@/frontend/components/ui/checkbox"
 import { RadioGroup, RadioGroupItem } from "@/frontend/components/ui/radio-group"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/frontend/components/ui/select"
-import { Separator } from "@/frontend/components/ui/separator"
-import { Upload, FileText, FileType2, BookOpen } from "lucide-react"
+import { Upload, BookOpen } from "lucide-react"
 
 export default function UploadPage() {
   const router = useRouter()
@@ -21,11 +20,6 @@ export default function UploadPage() {
 
   // Form state
   const [docFile, setDocFile] = useState<File | null>(null)
-  const [alignWithSyllabus, setAlignWithSyllabus] = useState<boolean>(true)
-  const [syllabusSource, setSyllabusSource] = useState<"upload" | "existing">("existing")
-  const [syllabusFile, setSyllabusFile] = useState<File | null>(null)
-  const [existingSyllabusId, setExistingSyllabusId] = useState<string>("")
-
   const [pastPaperComparison, setPastPaperComparison] = useState<boolean>(true)
 
   const [subject, setSubject] = useState("")
@@ -56,16 +50,6 @@ export default function UploadPage() {
       formData.append("semester", semester)
       formData.append("examType", examType)
       formData.append("userNotes", notes)
-      formData.append("alignWithSyllabus", String(alignWithSyllabus))
-      
-      if (alignWithSyllabus && syllabusSource === "existing" && existingSyllabusId) {
-        formData.append("syllabusId", existingSyllabusId)
-      }
-      
-      if (alignWithSyllabus && syllabusSource === "upload" && syllabusFile) {
-        formData.append("syllabusFile", syllabusFile)
-      }
-      
       formData.append("comparePastPapers", String(pastPaperComparison))
 
       // Upload and start analysis
@@ -95,8 +79,7 @@ export default function UploadPage() {
         <div className="space-y-1">
           <h1 className="text-3xl font-bold tracking-tight">Upload & Analyze</h1>
           <p className="text-sm text-muted-foreground">
-            Upload an exam image/PDF/DOCX, provide metadata, and optionally align with a syllabus or compare to past
-            papers.
+            Upload an exam image/PDF/DOCX, provide metadata, and optionally compare to past papers.
           </p>
         </div>
         <Button
@@ -213,84 +196,9 @@ export default function UploadPage() {
               <BookOpen className="h-5 w-5" />
               Analysis Options
             </CardTitle>
-            <CardDescription>Align with syllabus and compare against past papers</CardDescription>
+            <CardDescription>Compare against past papers</CardDescription>
           </CardHeader>
           <CardContent className="grid gap-6">
-            <div className="flex items-start justify-between gap-4">
-              <div className="space-y-1">
-                <div className="flex items-center gap-2">
-                  <Checkbox
-                    id="align-syllabus"
-                    checked={alignWithSyllabus}
-                    onCheckedChange={(v) => setAlignWithSyllabus(Boolean(v))}
-                  />
-                  <Label htmlFor="align-syllabus">Align with syllabus</Label>
-                </div>
-                <p className="text-xs text-muted-foreground">
-                  Improves relevance by mapping questions to syllabus topics.
-                </p>
-              </div>
-            </div>
-
-            {alignWithSyllabus && (
-              <div className="grid gap-4 rounded-lg border p-4">
-                <div className="space-y-2">
-                  <Label>Syllabus Source</Label>
-                  <RadioGroup
-                    value={syllabusSource}
-                    onValueChange={(v) => setSyllabusSource(v as "upload" | "existing")}
-                    className="flex flex-wrap gap-4"
-                  >
-                    <div className="flex items-center space-x-2">
-                      <RadioGroupItem id="syll-upload" value="upload" />
-                      <Label htmlFor="syll-upload" className="flex items-center gap-2">
-                        <FileType2 className="h-4 w-4" />
-                        Upload file
-                      </Label>
-                    </div>
-                    <div className="flex items-center space-x-2">
-                      <RadioGroupItem id="syll-existing" value="existing" />
-                      <Label htmlFor="syll-existing" className="flex items-center gap-2">
-                        <FileText className="h-4 w-4" />
-                        Select existing
-                      </Label>
-                    </div>
-                  </RadioGroup>
-                </div>
-
-                {syllabusSource === "upload" ? (
-                  <div className="space-y-2">
-                    <Label htmlFor="syllabus">Upload syllabus (PDF/DOCX)</Label>
-                    <Input
-                      id="syllabus"
-                      type="file"
-                      accept=".pdf,.doc,.docx"
-                      onChange={(e) => setSyllabusFile(e.target.files?.[0] ?? null)}
-                    />
-                    <p className="text-xs text-muted-foreground">
-                      Optional; leave empty to proceed without a syllabus.
-                    </p>
-                  </div>
-                ) : (
-                  <div className="space-y-2">
-                    <Label htmlFor="existing-syllabus">Existing syllabus</Label>
-                    <Select value={existingSyllabusId} onValueChange={setExistingSyllabusId}>
-                      <SelectTrigger id="existing-syllabus">
-                        <SelectValue placeholder="Choose a saved syllabus" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="syll-phy-2025">Physics (2025 Curriculum)</SelectItem>
-                        <SelectItem value="syll-math-2024">Mathematics (2024 — Sem 2)</SelectItem>
-                        <SelectItem value="syll-chem-2023">Chemistry (2023 Revised)</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                )}
-              </div>
-            )}
-
-            <Separator />
-
             <div className="flex items-start justify-between gap-4">
               <div className="space-y-1">
                 <div className="flex items-center gap-2">
