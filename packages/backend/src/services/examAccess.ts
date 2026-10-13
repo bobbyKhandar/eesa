@@ -1,3 +1,5 @@
+import { isExamDeleted } from "../database/examDeletion.js";
+
 export interface AccessDecision {
   allowed: boolean;
   status: number;
@@ -61,10 +63,14 @@ export function examContentAccessDecision(input: {
   assignedUsers?: string[] | null;
   createdBy?: string | null;
   scheduledAt?: unknown;
+  deletedAt?: unknown;
   now?: Date;
 }): ExamContentDecision {
   if (!input.callerId) {
     return { allowed: false, status: 401, error: "Unauthorized", revealAnswerKey: false };
+  }
+  if (isExamDeleted(input.deletedAt)) {
+    return { allowed: false, status: 404, error: "Exam not found", revealAnswerKey: false };
   }
   const isAdmin = input.callerRole === "admin";
   const isCreator = !!input.createdBy && input.createdBy === input.callerId;
@@ -99,10 +105,14 @@ export function examAttemptStartDecision(input: {
   callerId: string | null;
   assignedUsers?: string[] | null;
   scheduledAt?: unknown;
+  deletedAt?: unknown;
   now?: Date;
 }): AccessDecision {
   if (!input.callerId) {
     return { allowed: false, status: 401, error: "Unauthorized" };
+  }
+  if (isExamDeleted(input.deletedAt)) {
+    return { allowed: false, status: 404, error: "Exam not found" };
   }
   if (!(input.assignedUsers ?? []).includes(input.callerId)) {
     return { allowed: false, status: 403, error: "You are not assigned to this exam" };

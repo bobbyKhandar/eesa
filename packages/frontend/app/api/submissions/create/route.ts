@@ -5,6 +5,7 @@ import { ExamRepository } from "@/backend/dist/database/repositories/ExamReposit
 import { UserRepository } from "@/backend/dist/database/repositories/UserRepository";
 import { evaluateExamSubmission } from "@/backend/src/services/examEvaluationService";
 import { ExamAttemptRepository } from "@/backend/src/database/repositories/ExamAttemptRepository";
+import { isExamDeleted } from "@/backend/src/database/examDeletion";
 import {
   attemptWindowDecision,
   duplicateSubmissionOutcome,
@@ -40,7 +41,7 @@ export async function POST(request: NextRequest) {
 
     // Verify exam exists and get full details with questions
     const exam = await examRepo.getWithFullDetails(examId);
-    if (!exam) {
+    if (!exam || isExamDeleted(exam.deletedAt)) {
       return NextResponse.json(
         { success: false, error: "Exam not found" },
         { status: 404 }

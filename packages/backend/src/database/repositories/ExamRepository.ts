@@ -8,6 +8,7 @@ import type { Model } from "mongoose";
 import { connect } from "../connect.js";
 import { getExamModel, getUserModel } from "../mongooseSchemas.js";
 import type { Exam } from "../schemas/examSchemaZod.js";
+import { activeExamQuery } from "../examDeletion.js";
 import { ExamQuestionRepository } from "./ExamQuestionRepository.js";
 
 const { ObjectId } = Types;
@@ -232,7 +233,7 @@ export class ExamRepository {
       );
       if (uniqueIds.length === 0) return [];
 
-      const exams = await this.model.find({ _id: { $in: uniqueIds } }).lean();
+      const exams = await this.model.find(activeExamQuery({ _id: { $in: uniqueIds } })).lean();
       const examsById = new Map<string, Exam>(exams.map((exam) => [String(exam._id), exam]));
 
       return uniqueIds
@@ -250,7 +251,7 @@ export class ExamRepository {
   async getBySubject(subjectId: string, limit: number = 50): Promise<Exam[]> {
     try {
       await connect();
-      const exams = await this.model.find({ subject: subjectId })
+      const exams = await this.model.find(activeExamQuery({ subject: subjectId }))
         .sort({ createdAt: -1 })
         .limit(limit)
         .lean();
@@ -267,7 +268,7 @@ export class ExamRepository {
   async getByCreator(creatorId: string, limit: number = 50): Promise<Exam[]> {
     try {
       await connect();
-      const exams = await this.model.find({ createdBy: creatorId })
+      const exams = await this.model.find(activeExamQuery({ createdBy: creatorId }))
         .sort({ createdAt: -1 })
         .limit(limit)
         .lean();
@@ -304,24 +305,29 @@ export class ExamRepository {
   }
 
   /**
-   * Delete exam, its question instances, and every user allocation of it
+   * Soft-delete an exam. The exam and its ExamQuestion rows stay so saved
+   * submissions can still join the title, prompts, and marks. The exam is
+   * removed from every user's allocation and hidden from listings and attempts.
    */
   async delete(examId: string): Promise<{ success: boolean; error?: string }> {
     try {
       await connect();
 
-      const existing = await this.model.findById(examId).select('questions').lean();
-      const result = await this.model.deleteOne({ _id: examId });
-
-      if (result.deletedCount === 0) {
+      const existing = await this.model.findById(examId).select('_id').lean();
+      if (!existing) {
         return { success: false, error: 'Exam not found' };
       }
 
-      // Both cleanups are best-effort: the exam is already gone, and reporting a
-      // failure here would tell the caller the delete failed when it did not.
-      const questionIds = Array.isArray(existing?.questions) ? existing.questions : [];
-      const removedQuestions = await this.examQuestionRepo.deleteManyByIds(questionIds);
+      const result = await this.model.updateOne(
+        { _id: examId },
+        { $set: { deletedAt: new Date() } }
+      );
+      if (result.matchedCount === 0) {
+        return { success: false, error: 'Exam not found' };
+      }
 
+      // Allocation cleanup is best-effort. Listing queries also exclude
+      // deletedAt, so a failed pull cannot put the exam back on a student list.
       try {
         const UserModel = getUserModel();
         await UserModel.updateMany(
@@ -332,7 +338,7 @@ export class ExamRepository {
         console.warn('Could not clear exam from user allocations:', userUpdateError);
       }
 
-      console.log(`Exam ${examId} deleted (${removedQuestions} questions removed)`);
+      console.log(`Exam ${examId} soft-deleted`);
       return { success: true };
     } catch (error) {
       console.error('Error deleting exam:', error);
@@ -346,7 +352,7 @@ export class ExamRepository {
   async getAll(limit: number = 100): Promise<Exam[]> {
     try {
       await connect();
-      const exams = await this.model.find({})
+      const exams = await this.model.find(activeExamQuery())
         .sort({ createdAt: -1 })
         .limit(limit)
         .lean();

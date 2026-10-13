@@ -190,7 +190,7 @@ getById(id)                 // Get by ID
 getBySubject(subjectId)     // Filter by subject
 getByCreator(creatorId)     // Filter by creator
 update(id, updates)         // Update exam
-delete(id)                  // Remove
+delete(id)                  // Soft-delete: set deletedAt, keep questions, clear allocations
 ```
 
 **Example - Full Exam Creation:**
