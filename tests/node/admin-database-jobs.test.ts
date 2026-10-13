@@ -10,6 +10,7 @@ import {
 } from "../../packages/backend/src/database/managedCollections.ts";
 
 import {
+  assessBackupRestore,
   BACKUP_ID_PATTERN,
   chunkDocuments,
   formatBackupErrors,
@@ -191,6 +192,35 @@ describe("chunkDocuments", () => {
         [RESTORE_BATCH_SIZE, 5]
       );
     }
+  });
+});
+
+describe("assessBackupRestore", () => {
+  it("refuses a failed backup so unread collections are not erased", () => {
+    const decision = assessBackupRestore({
+      status: "failed",
+      error: "Backup incomplete, failed to read: Subject: not authorized on Subject",
+    });
+    assert.equal(decision.allowed, false);
+    assert.match(decision.reason ?? "", /Subject: not authorized on Subject/);
+  });
+
+  it("refuses a failed backup that has no error detail", () => {
+    const decision = assessBackupRestore({ status: "failed", error: "   " });
+    assert.equal(decision.allowed, false);
+    assert.match(decision.reason ?? "", /incomplete/i);
+  });
+
+  it("allows a completed backup, including one whose collections were legitimately empty", () => {
+    const decision = assessBackupRestore({ status: "completed" });
+    assert.equal(decision.allowed, true);
+    assert.equal(decision.reason, undefined);
+  });
+
+  it("does not treat missing metadata as a failed backup", () => {
+    assert.equal(assessBackupRestore(null).allowed, true);
+    assert.equal(assessBackupRestore(undefined).allowed, true);
+    assert.equal(assessBackupRestore({}).allowed, true);
   });
 });
 
@@ -385,6 +415,52 @@ describe("admin database + jobs surfaces", () => {
     const source = readRepoFile("packages/frontend/app/api/admin/database/truncate/route.ts");
     assert.match(source, /for \(const \{ name, model \} of collections\)/);
     assert.match(source, /deleteMany\(\{\}\)/);
+  });
+
+  it("refuses a failed backup before deleting any collection", () => {
+    const source = stripComments(
+      readRepoFile("packages/backend/src/services/databaseBackupService.ts")
+    );
+    const restoreStart = source.indexOf("async function restoreBackup");
+    assert.ok(restoreStart >= 0, "restoreBackup must exist");
+    const nextExport = source.indexOf("\nexport ", restoreStart + 1);
+    const restoreFn = source.slice(restoreStart, nextExport === -1 ? undefined : nextExport);
+    const gate = restoreFn.search(/assessBackupRestore\(/);
+    const wipe = restoreFn.indexOf("deleteMany");
+    assert.ok(gate >= 0, "restoreBackup must consult assessBackupRestore");
+    assert.ok(wipe >= 0, "restore still replaces collection contents");
+    assert.ok(
+      gate < wipe,
+      "the failed-backup check must run before any collection is cleared"
+    );
+    assert.match(restoreFn, /BackupNotRestorableError/);
+    assert.doesNotMatch(
+      restoreFn.slice(0, gate),
+      /deleteMany|insertMany/,
+      "no writes may happen before the restore decision"
+    );
+  });
+
+  it("reports an unrestorable backup as a conflict instead of a partial restore", () => {
+    const source = stripComments(
+      readRepoFile("packages/frontend/app/api/admin/database/backup/[id]/restore/route.ts")
+    );
+    assert.match(source, /BackupNotRestorableError/);
+    assert.match(source, /status:\s*409/);
+  });
+
+  it("does not enable restore for a failed backup", () => {
+    const source = stripComments(readRepoFile("packages/frontend/app/admin/database/page.tsx"));
+    assert.match(
+      source,
+      /disabled=\{[^}]*backup\.status === ["']failed["']/,
+      "the Restore control must be disabled when the backup is failed"
+    );
+    assert.match(
+      source,
+      /if \(backup\.status === ["']failed["']\) return/,
+      "a failed backup must not open the restore confirmation"
+    );
   });
 
   it("admin database page never references the undefined setIsTruncating", () => {
