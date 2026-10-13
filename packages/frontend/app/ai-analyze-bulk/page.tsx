@@ -12,9 +12,8 @@ import { Checkbox } from "@/frontend/components/ui/checkbox"
 import { Upload, FileArchive, FileText, Loader2 } from "lucide-react"
 import {
   markError,
-  markSuccess,
   markUploading,
-  mergeSplitSubjects,
+  statusesFromBulkResponse,
 } from "@/frontend/lib/bulkUploadStatus"
 import type { UploadStatus } from "@/frontend/lib/bulkUploadStatus"
 
@@ -135,25 +134,16 @@ export default function BulkUploadPage() {
               throw new Error(data?.error || "Upload failed")
             }
 
-            if (data.multipleSubjects && Array.isArray(data.analyses)) {
-              // One PDF produced several per-subject analyses.
-              session.statuses = mergeSplitSubjects(
-                session.statuses,
-                startIndex,
-                file.name,
-                data.analyses
-              )
-              // All of the split entries belong to this file.
-              statusIndex = startIndex + data.analyses.length
-            } else {
-              session.statuses = markSuccess(
-                session.statuses,
-                startIndex,
-                data.analysisId,
-                data.extractedMetadata
-              )
-              statusIndex = startIndex + 1
-            }
+            // The upload response only means the analysis record exists.
+            // Background processing is still pending, so the row stays
+            // "processing" until the status page observes completion.
+            const rows = statusesFromBulkResponse(file.name, data)
+            session.statuses = [
+              ...session.statuses.slice(0, startIndex),
+              ...rows,
+              ...session.statuses.slice(startIndex + 1),
+            ]
+            statusIndex = startIndex + rows.length
 
             persist(session.statuses)
           } catch (error: any) {

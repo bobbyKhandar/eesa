@@ -7,13 +7,12 @@
  */
 import JSZip from "jszip";
 import {
-  markError,
-  markSuccess,
-  mergeSplitSubjects,
-  type SplitAnalysis,
-  type UploadExtractedMetadata,
+  statusesFromBulkResponse,
+  type BulkUploadBody,
   type UploadStatus,
 } from "./bulkUploadStatus";
+
+export { statusesFromBulkResponse, type BulkUploadBody };
 
 export interface ZipLimits {
   maxEntries: number;
@@ -53,15 +52,6 @@ export interface ExtractedZipPdf {
 export type ZipExtractResult =
   | { ok: true; files: ExtractedZipPdf[] }
   | { ok: false; error: string };
-
-export interface BulkUploadBody {
-  success?: boolean;
-  error?: string;
-  analysisId?: string;
-  multipleSubjects?: boolean;
-  analyses?: SplitAnalysis[];
-  extractedMetadata?: UploadExtractedMetadata;
-}
 
 const ZIP_MIME_TYPES = new Set(["application/zip", "application/x-zip-compressed"]);
 
@@ -153,21 +143,6 @@ export async function extractZipPdfs(
   }
 
   return { ok: true, files };
-}
-
-/** Map one upload-bulk JSON body onto the status rows the bulk page renders. */
-export function statusesFromBulkResponse(
-  fileName: string,
-  body: BulkUploadBody | null
-): UploadStatus[] {
-  const seed: UploadStatus[] = [{ fileName, status: "uploading" }];
-  if (body?.multipleSubjects && Array.isArray(body.analyses)) {
-    return mergeSplitSubjects(seed, 0, fileName, body.analyses);
-  }
-  if (body?.success && typeof body.analysisId === "string" && body.analysisId.length > 0) {
-    return markSuccess(seed, 0, body.analysisId, body.extractedMetadata);
-  }
-  return markError(seed, 0, body?.error || "Upload failed");
 }
 
 /**
