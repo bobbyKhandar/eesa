@@ -437,6 +437,13 @@ def enrich_chunked_questions(job_id: str, filename: str, chunk_metadata_key: str
         
         chunk_keys = chunk_metadata['chunk_keys']
         print(f"   ✓ Found {len(chunk_keys)} chunks to enrich")
+
+        try:
+            from chunk_merger import build_enriched_chunk, merge_chunks, validate_merge_result
+        except ImportError:
+            build_enriched_chunk = None
+            merge_chunks = None
+            validate_merge_result = None
         
         enriched_chunks = []
         total_questions = 0
@@ -503,12 +510,16 @@ def enrich_chunked_questions(job_id: str, filename: str, chunk_metadata_key: str
                 exam['questions'] = enriched_questions
                 enriched_exams.append(exam)
             
-            # Save enriched chunk
-            enriched_chunk = {
-                'exams': enriched_exams,
-                'chunk_id': idx,
-                'metadata': parsed_chunk.get('metadata', {})
-            }
+            # Carry chunk_metadata (including is_continuation) so a later
+            # merge can join an exam that crossed this chunk boundary.
+            if build_enriched_chunk is not None:
+                enriched_chunk = build_enriched_chunk(parsed_chunk, enriched_exams, idx)
+            else:
+                enriched_chunk = {
+                    'exams': enriched_exams,
+                    'chunk_id': idx,
+                    'metadata': parsed_chunk.get('metadata', {})
+                }
             enriched_chunks.append(enriched_chunk)
             
             # Save to S3
@@ -525,9 +536,7 @@ def enrich_chunked_questions(job_id: str, filename: str, chunk_metadata_key: str
         # Now merge all enriched chunks
         print(f"\n🔗 Merging {len(enriched_chunks)} enriched chunks...")
         
-        try:
-            from chunk_merger import merge_chunks, validate_merge_result
-        except ImportError:
+        if merge_chunks is None:
             print("⚠ chunk_merger not available - concatenating chunks")
             # Simple concatenation fallback
             all_exams = []

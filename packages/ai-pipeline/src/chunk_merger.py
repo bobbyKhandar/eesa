@@ -272,6 +272,57 @@ class ChunkMerger:
         return result
 
 
+# OCR text and boundary spans are already stored on the parsed chunk.
+# Re-copying them onto every enriched chunk only duplicates the payload.
+_CHUNK_METADATA_OMIT = ('text', 'boundaries')
+
+
+def build_enriched_chunk(parsed_chunk: Dict, enriched_exams: List[Dict], chunk_index: int = 0) -> Dict:
+    """Shape one enriched chunk so exams can merge across a chunk boundary.
+
+    Parsing stores chunk details under ``chunk_metadata``. ``ChunkMerger``
+    reads ``is_continuation`` and ``starts_at_question`` on the chunk itself,
+    so those markers (and the related chunk metadata) are copied through.
+    A top-level continuation flag is used only when ``chunk_metadata`` does
+    not include one.
+    """
+    raw_metadata = parsed_chunk.get('chunk_metadata')
+    if isinstance(raw_metadata, dict):
+        chunk_metadata = {
+            key: value
+            for key, value in raw_metadata.items()
+            if key not in _CHUNK_METADATA_OMIT
+        }
+    else:
+        chunk_metadata = {}
+
+    enriched: Dict = {
+        'exams': enriched_exams,
+        'chunk_id': parsed_chunk.get('chunk_id', chunk_metadata.get('chunk_id', chunk_index)),
+        'chunk_metadata': chunk_metadata,
+    }
+
+    subjects = parsed_chunk.get('subjectsCreated')
+    if isinstance(subjects, list):
+        enriched['subjectsCreated'] = list(subjects)
+
+    if 'is_continuation' in chunk_metadata:
+        enriched['is_continuation'] = chunk_metadata.get('is_continuation') is True
+    elif parsed_chunk.get('is_continuation') is True:
+        enriched['is_continuation'] = True
+    else:
+        enriched['is_continuation'] = False
+
+    if 'starts_at_question' in chunk_metadata:
+        enriched['starts_at_question'] = chunk_metadata.get('starts_at_question')
+    elif chunk_metadata.get('start_question') is not None:
+        enriched['starts_at_question'] = chunk_metadata.get('start_question')
+    elif 'starts_at_question' in parsed_chunk:
+        enriched['starts_at_question'] = parsed_chunk.get('starts_at_question')
+
+    return enriched
+
+
 def merge_chunks(parsed_chunks: List[Dict]) -> Dict:
     """
     Main function to merge parsed chunks
