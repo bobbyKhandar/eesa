@@ -52,10 +52,10 @@
 |---|---|
 | `src/aws_texttract_pipeline.py` | Async Textract OCR via `start_document_text_detection()` + polling |
 | `src/parsing_pipeline.py` | Bedrock parsing with Gemma 3 27B — extracts Q&A from OCR text |
-| `src/enrich_questions_job_based.py` | Bedrock enrichment — Bloom's taxonomy, difficulty, keywords, syllabus |
+| `src/enrich_questions_job_based.py` | Bedrock enrichment — Bloom's taxonomy, difficulty, keywords, syllabus. Chunked enrichment reads `chunk_metadata` and keeps continuation markers for the merger |
 | `src/organize_by_subject_job_based.py` | Groups enriched questions into subject-organized JSON on S3 |
 | `src/intelligent_chunking.py` | Splits large OCR text (20k+ chars) at question boundaries for batch processing |
-| `src/chunk_merger.py` | Validates and merges chunked parsing results |
+| `src/chunk_merger.py` | Validates and merges chunked parsing results. `build_enriched_chunk` copies parsing's `chunk_metadata` — including `is_continuation` and `starts_at_question` — onto each enriched chunk so an exam that crosses a chunk boundary stays one exam |
 | `src/question_clustering.py` | LanceDB vector store + FAISS/HDBSCAN for similarity clustering and appearance frequency |
 | `src/local_ocr_engine.py` | EasyOCR-based OCR engine with GPU auto-detect |
 | `src/local_image_processor_pipeline.py` | Image preprocessing (denoise, sharpen, binarize, deskew, contrast enhancement) |
@@ -110,5 +110,5 @@
 - **Use `ThreadPoolExecutor` or `threading.Thread`** for concurrent task execution. Avoid `multiprocessing` (legacy, see `imagePreprocess.py`).
 - **Local pipeline requires Redis.** AWS pipeline does not (uses S3 + in-memory tracking).
 - **LanceDB is local-only** — stored in `lancedb_data/` on the filesystem, not S3.
-- **Chunk large OCR text (>20k chars)** using `intelligent_chunking.py` before passing to Bedrock.
+- **Chunk large OCR text (>20k chars)** using `intelligent_chunking.py` before passing to Bedrock. Parsing stores each chunk's details under `chunk_metadata`. Chunked enrichment must copy that object, including `is_continuation`, onto the enriched chunk before `chunk_merger` runs. Reading a `metadata` key drops the marker and splits one exam into two.
 - **S3 is the canonical data store** for all AWS pipeline stages. Each stage reads the previous stage's output from S3 and writes its own output to S3.
