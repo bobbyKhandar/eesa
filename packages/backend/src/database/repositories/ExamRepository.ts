@@ -9,6 +9,7 @@ import { connect } from "../connect.js";
 import { getExamModel, getUserModel } from "../mongooseSchemas.js";
 import type { Exam } from "../schemas/examSchemaZod.js";
 import { activeExamQuery } from "../examDeletion.js";
+import { orderQuestionDetails } from "../questionOrder.js";
 import { ExamQuestionRepository } from "./ExamQuestionRepository.js";
 
 const { ObjectId } = Types;
@@ -123,8 +124,10 @@ export class ExamRepository {
   }
 
   /**
-   * Get exam with full question details (3-level join: Exam → ExamQuestion → Prompt)
-   * Used by: Student exam page, teacher preview
+   * Get exam with full question details (3-level join: Exam → ExamQuestion → Prompt).
+   * questionDetails follows the exam's questions array. The $in lookup does not.
+   * Still returns a soft-deleted exam so saved submissions can be opened.
+   * Used by: Student exam page, teacher preview, submission review
    */
   async getWithFullDetails(examId: string): Promise<any> {
     try {
@@ -163,14 +166,28 @@ export class ExamRepository {
                   as: 'promptData'
                 }
               },
-              { $unwind: '$promptData' }
+              { $unwind: '$promptData' },
+              // `$in` does not keep exam.questions order. Sort by that index,
+              // then drop the helper so it is not part of the joined question.
+              {
+                $addFields: {
+                  _authoredOrder: { $indexOfArray: ['$$questionIds', '$_idStr'] }
+                }
+              },
+              { $sort: { _authoredOrder: 1 } },
+              { $unset: '_authoredOrder' }
             ],
             as: 'questionDetails'
           }
         }
       ]);
 
-      return result.length > 0 ? result[0] : null;
+      const exam = result.length > 0 ? result[0] : null;
+      if (!exam) return null;
+      // `$sort` inside `$lookup` is not guaranteed to stick in the output array.
+      // Restore the authored sequence again before any caller renders it.
+      exam.questionDetails = orderQuestionDetails(exam.questions, exam.questionDetails);
+      return exam;
     } catch (error) {
       console.error('Error getting exam with full details:', error);
       return null;

@@ -168,7 +168,7 @@ examQuestionRepo.delete(id)
 import { examRepo } from './database/repositories/index.js';
 
 examRepo.createWithPrompts(data)     // Multi-step
-examRepo.getWithFullDetails(id)      // 3-level join
+examRepo.getWithFullDetails(id)      // 3-level join, questionDetails in authored order
 examRepo.assignToUsers(id, userIds[])
 examRepo.getById(id)
 examRepo.getBySubject(subjectId)
