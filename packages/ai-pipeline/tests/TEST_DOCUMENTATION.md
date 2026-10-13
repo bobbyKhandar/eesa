@@ -10,6 +10,7 @@ Comprehensive unit and integration test suite for the cleaned AI Pipeline archit
 tests/
 ├── run_tests.py                    # Comprehensive test runner
 ├── test_ocr_engine.py             # OCR Engine unit tests
+├── test_local_ocr_sanitize.py     # sanitize_text keeps math/science symbols
 ├── test_image_processor.py        # Image Processor unit tests  
 ├── test_pdf_handler.py            # PDF Handler unit tests
 ├── test_docx_handler.py           # DOCX extraction and PDF-handler bypass
@@ -38,6 +39,11 @@ tests/
   - `test_process_image_custom_options()` - Custom processing options
   - `test_process_image_ocr_failure()` - OCR processing errors
   - `test_process_image_invalid_input()` - Invalid input handling
+
+- **TestSanitizeKeepsMathSymbols** (`test_local_ocr_sanitize.py`)
+  - ASCII operators, brackets, Unicode math, Greek letters, and the degree sign are kept
+  - Control characters, zero-width characters, and other junk are still removed
+  - `process_image` returns the sanitized formula with operators intact
 
 - **TestOCREngineTextSanitization**
   - `test_sanitize_text_list()` - List sanitization
