@@ -24,8 +24,11 @@ function safeLabel(level?: string | null): string {
 }
 
 const genAI = new GoogleGenerativeAI(process.env.gemini_api_key || "");
+// API model id. "Gemini 2.0 Flash-Lite" is a display name, and
+// gemini-2.0-flash-lite shut down on 2026-06-01. Google's replacement is
+// gemini-3.1-flash-lite.
 const model = genAI.getGenerativeModel({
-  model: "Gemini 2.0 Flash-Lite",
+  model: "gemini-3.1-flash-lite",
 });
 
 interface QuestionExtractionResult {
