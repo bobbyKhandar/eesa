@@ -92,19 +92,8 @@ export default function Home() {
         </section>
       </main>
       <footer className="border-t py-6">
-        <div className="container flex flex-col items-center justify-between gap-4 md:flex-row">
+        <div className="container flex items-center justify-center">
           <p className="text-sm text-gray-500 dark:text-gray-400">© 2025 AI Exam Evaluator. All rights reserved.</p>
-          <div className="flex items-center gap-4">
-            <Link href="/terms" className="text-sm text-gray-500 hover:underline dark:text-gray-400">
-              Terms
-            </Link>
-            <Link href="/privacy" className="text-sm text-gray-500 hover:underline dark:text-gray-400">
-              Privacy
-            </Link>
-            <Link href="/contact" className="text-sm text-gray-500 hover:underline dark:text-gray-400">
-              Contact
-            </Link>
-          </div>
         </div>
       </footer>
     </div>
