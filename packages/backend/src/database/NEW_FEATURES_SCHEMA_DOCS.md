@@ -165,7 +165,7 @@ AI-powered analysis results for uploaded exam papers.
   - `alignWithSyllabus` (boolean)
   - `syllabusId` (string): Reference to syllabus
   - `comparePastPapers` (boolean)
-  - `pastPaperIds` (array<string>): References
+  - `pastPaperIds` (array<string>): ExamAnalysis ids whose Bloom distributions were compared
 - `extractedText` (string): OCR output
 - `totalQuestions` (number): Question count
 - `totalMarks` (number): Total marks
@@ -246,10 +246,11 @@ All question classifications use these standardized levels:
    - Calculate coverage percentage
    ↓
 7. If comparePastPapers:
-   - Fetch relevant PastPaper documents
-   - Compare Bloom distributions
-   - Find similar questions
-   - Calculate deviation trends
+   - Load the same user's completed or published exam analyses
+   - Keep analyses whose subject name matches
+   - Compare Bloom distributions and record the largest shift
+   - Store those ExamAnalysis ids on pastPaperIds
+   - The PastPaper collection is not queried, and question similarity is not used
    ↓
 8. Generate insights and recommendations
    ↓
