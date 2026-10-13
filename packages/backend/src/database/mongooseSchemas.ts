@@ -24,12 +24,15 @@ import {promptZodSchema, Prompt} from "./schemas/promptSchemaZod"
 import {examQuestionZodSchema, ExamQuestion} from "./schemas/examQuestionSchemaZod"
 import {jobMetadataZodSchema, JobMetadata} from "./schemas/jobMetadataZod"
 import {uploadSessionZodSchema, UploadSession} from "./schemas/uploadSessionZod"
+import { LEGACY_SUBJECT_COLLECTION } from "./subjectCollections";
 
 
 //schema conversion(zod->mongoose) -----------------------------------------------------------------------------------------------
 const examSchema = zodSchema(examZodSchema);
 const questionSchema =zodSchema(questionsZodSchema)
-const subjectSchema =zodSchema(subjectZodSchema)
+const subjectSchema = zodSchema(subjectZodSchema, {
+  collection: LEGACY_SUBJECT_COLLECTION,
+});
 const userSchema =zodSchema(userZodSchema)
 const examSubmissionSchema = zodSchema(examSubmissionDocumentZodSchema, examSubmissionSchemaOptions)
 const promptSchema = zodSchema(promptZodSchema)
@@ -51,7 +54,7 @@ export  function getExamModel():Model<Exam> {
 /**return an singleton SubjectModel */
 export  function getSubjectModel():Model<Subject> {
   
-  return models["subjects"] || model("subjects", subjectSchema);
+  return models["subjects"] || model("subjects", subjectSchema, LEGACY_SUBJECT_COLLECTION);
 }
 
 /**

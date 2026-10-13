@@ -46,9 +46,10 @@ import {
   promptZodSchema,
   uniqueQuestionZod,
   analysisReportZodSchema,
-  subjectDocumentZodSchema,
-  subjectSchemaOptions
 } from '../database/schemas/index.js';
+import { subjectZodSchema } from '../database/schemas/subjectSchemaZod.js';
+import { LEGACY_SUBJECT_COLLECTION } from '../database/subjectCollections.js';
+import { ensureSubjectCollectionsSeparated } from '../database/separateSubjectCollections.js';
 
 // Create models
 const promptSchema = zodSchema(promptZodSchema, { timestamps: true });
@@ -61,8 +62,10 @@ const UniqueQuestionModel = models.UniqueQuestion || model('UniqueQuestion', uni
 const analysisReportSchema = zodSchema(analysisReportZodSchema, { timestamps: true });
 const AnalysisReportModel = models.AnalysisReport || model('AnalysisReport', analysisReportSchema);
 
-const subjectSchema = zodSchema(subjectDocumentZodSchema, subjectSchemaOptions);
-const SubjectModel = models.Subject || model('Subject', subjectSchema);
+// Question-bank rows (subjectName, analysisReportIds). This is the legacy
+// collection, not the academic catalog model named "Subject".
+const subjectSchema = zodSchema(subjectZodSchema, { collection: LEGACY_SUBJECT_COLLECTION });
+const SubjectModel = models[LEGACY_SUBJECT_COLLECTION] || model(LEGACY_SUBJECT_COLLECTION, subjectSchema, LEGACY_SUBJECT_COLLECTION);
 
 /**
  * Normalize question text for deduplication
@@ -333,6 +336,7 @@ async function main() {
     }
 
     await mongoose.connect(mongoUri);
+    await ensureSubjectCollectionsSeparated(mongoose.connection);
     console.log('✓ Connected to MongoDB');
 
     // Find all enriched JSON files

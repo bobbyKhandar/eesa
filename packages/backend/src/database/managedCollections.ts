@@ -9,6 +9,12 @@
  * feature `Subject` collection was counted and backed up but never truncated
  * (truncate reported success while leaving every subject document behind).
  *
+ * `subjects` and `Subject` are both registered. They are different physical
+ * collections (`subjects` for the legacy question bank, `featureSubjects` for
+ * the academic catalog). Mongoose's default pluralization maps both model
+ * names onto `subjects`, so callers must check `model.collection` and not
+ * assume the registry key is a unique MongoDB collection.
+ *
  * This module must stay dependency free (no mongoose/zod imports) so it can be
  * unit tested in isolation.
  */
@@ -39,6 +45,29 @@ const MANAGED_COLLECTION_NAME_SET: ReadonlySet<string> = new Set<string>(
 
 export function isManagedCollectionName(value: unknown): value is ManagedCollectionName {
   return typeof value === 'string' && MANAGED_COLLECTION_NAME_SET.has(value);
+}
+
+/**
+ * Registry keys that resolve to the same MongoDB collection. Backup and
+ * restore clear and insert once per key, so a shared collection is rewritten
+ * by the second model and can reject or strip the first model's documents.
+ */
+export function findDuplicatePhysicalCollections(
+  entries: ReadonlyArray<{ name: string; collectionName: string }>
+): string[] {
+  const owner = new Map<string, string>();
+  const duplicates: string[] = [];
+
+  for (const entry of entries) {
+    const previous = owner.get(entry.collectionName);
+    if (previous !== undefined) {
+      duplicates.push(`${previous} and ${entry.name} both use "${entry.collectionName}"`);
+    } else {
+      owner.set(entry.collectionName, entry.name);
+    }
+  }
+
+  return duplicates;
 }
 
 export interface TruncationResult {

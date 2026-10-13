@@ -79,6 +79,8 @@ packages/backend/
 │   ├── database/
 │   │   ├── connect.ts               # MongoDB connection manager
 │   │   ├── mongooseSchemas.ts       # Zod-to-Mongoose schema conversion
+│   │   ├── newFeatureModels.ts      # Catalog Subject model uses collection featureSubjects
+│   │   ├── subjectCollections.ts    # Keeps legacy `subjects` and catalog `featureSubjects` apart
 │   │   ├── repositories/            # Data access layer (12 files, domain-separated)
 │   │   │   ├── ExamRepository.ts
 │   │   │   ├── ExamSubmissionRepository.ts

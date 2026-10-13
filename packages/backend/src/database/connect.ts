@@ -3,6 +3,7 @@
     import path from "path";
 
 import { fileURLToPath } from 'url';
+import { ensureSubjectCollectionsSeparated } from "./separateSubjectCollections";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -14,6 +15,22 @@ dotenv.config({ path: path.resolve(__dirname, "../../.env") });
 
     
     const mongodb_url=process.env.mongodb_url
+
+    /**
+     * Catalog subjects used to be stored in the legacy `subjects` collection.
+     * Split them once per process. A thrown failure must not take the API down;
+     * the separation promise is dropped so the next connect() can retry.
+     */
+    async function separateSubjectCollectionsSafely(): Promise<void> {
+      try {
+        await ensureSubjectCollectionsSeparated(mongoose.connection);
+      } catch (error) {
+        console.error(
+          "[subject-collections] Failed to separate legacy and feature subject collections:",
+          error
+        );
+      }
+    }
     
     /**
      * Establishes an connection between the database and the api end point 
@@ -40,6 +57,7 @@ dotenv.config({ path: path.resolve(__dirname, "../../.env") });
   switch (mongoose.connection.readyState) {
     case 0: // Disconnected
       await mongoose.connect(mongodb_url);
+      await separateSubjectCollectionsSafely();
       return{
         successCode: 0,
         message: " DB connected successfully",
@@ -47,6 +65,7 @@ dotenv.config({ path: path.resolve(__dirname, "../../.env") });
       break;
 
     case 1: // Connected
+      await separateSubjectCollectionsSafely();
       return {
         successCode: 1,
         message: " Already connected to the database",
