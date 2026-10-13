@@ -1,6 +1,6 @@
 import type { PromptRepository } from "../database/repositories/PromptRepository";
 import type { UniqueQuestionRepository } from "../database/repositories/UniqueQuestionRepository";
-import type { AnalysisReport } from "../database/schemas/index";
+import type { AnalysisReport, AnalysisReportInput } from "../database/schemas/index";
 import {
   appendCreatedPrompt,
   buildPromptPayload,
@@ -51,7 +51,7 @@ export interface PublishAnalysisPorts {
     patch: { status: "published"; isPublished: true; publishedAt: Date }
   ): Promise<{ success?: boolean; error?: string } | void>;
   findReport(examAnalysisId: string): Promise<StoredReport | null>;
-  createReport(data: AnalysisReport): Promise<StoredReport>;
+  createReport(data: AnalysisReportInput): Promise<StoredReport>;
   updateReport(id: string, patch: Partial<AnalysisReport>): Promise<unknown>;
   createPrompt: PromptRepository["create"];
   findPrompt(promptId: string): Promise<{ questionText?: string | null } | null>;
@@ -365,7 +365,7 @@ async function savePendingReport(
     return { ...existingReport, questionIds, publishStatus: "pending" };
   }
 
-  const reportData: AnalysisReport = {
+  const reportData: AnalysisReportInput = {
     examAnalysisId,
     subjectCode: analysis.subjectCode,
     subjectName: analysis.subjectName,

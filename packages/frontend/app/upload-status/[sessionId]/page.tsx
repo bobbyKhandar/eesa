@@ -257,7 +257,7 @@ export default function UploadStatusPage({ params }: { params: Promise<{ session
           <CardHeader>
             <CardTitle>Upload Session Not Found</CardTitle>
             <CardDescription>
-              The upload session with ID "{sessionId}" could not be found or has expired.
+              The upload session with ID &quot;{sessionId}&quot; could not be found or has expired.
             </CardDescription>
           </CardHeader>
           <CardContent>

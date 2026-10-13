@@ -8,7 +8,7 @@ import { connect } from "../connect.js";
 import { getUserModel } from "../mongooseSchemas.js";
 import { splitUpsertFields } from "../../services/userProvisioning.js";
 import { userZodSchema } from "../schemas/userSchemaZod.js";
-import type { User } from "../schemas/userSchemaZod.js";
+import type { User, UserInsert } from "../schemas/userSchemaZod.js";
 
 export class UserRepository {
   private model: ReturnType<typeof getUserModel>;
@@ -383,7 +383,7 @@ export class UserRepository {
    * returning user keeps the role an admin assigned and keeps the exams and
    * submissions already recorded against the account.
    */
-  async upsertByClerkId(data: User): Promise<{ success: boolean; user?: User; error?: string }> {
+  async upsertByClerkId(data: UserInsert): Promise<{ success: boolean; user?: User; error?: string }> {
     try {
       await connect();
 

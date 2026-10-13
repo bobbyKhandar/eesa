@@ -175,7 +175,7 @@ export default function AnalysisReportPage({ params }: { params: Promise<{ id: s
                 </div>
                 <div className="flex items-center gap-2">
                   <div className={`h-2 w-2 rounded-full ${analysis.questions?.length > 0 ? 'bg-green-500' : 'bg-gray-300'}`} />
-                  <span>Bloom's Taxonomy Classification</span>
+                  <span>Bloom&apos;s Taxonomy Classification</span>
                 </div>
                 <div className="flex items-center gap-2">
                   <div className={`h-2 w-2 rounded-full bg-gray-300`} />

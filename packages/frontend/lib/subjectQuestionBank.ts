@@ -197,6 +197,7 @@ export interface PromptAppearanceFrequency {
 
 export interface PromptLike {
   _id?: unknown;
+  generateVia?: unknown;
   questionText?: string;
   subject?: string;
   subjectCode?: string;

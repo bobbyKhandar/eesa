@@ -892,9 +892,10 @@ export function submissionWriteLanded(
     return false;
   }
   if (!update.responses) return true;
-  if (!Array.isArray(stored.responses) || stored.responses.length !== update.responses.length) return false;
+  const storedResponses = stored.responses;
+  if (!Array.isArray(storedResponses) || storedResponses.length !== update.responses.length) return false;
   return update.responses.every((response, index) => {
-    const item = stored.responses?.[index] as Record<string, unknown> | undefined;
+    const item = storedResponses[index] as Record<string, unknown> | undefined;
     if (!item || typeof item !== "object") return false;
     const feedback = item.feedback === undefined ? undefined : item.feedback;
     const suggestions = item.suggestions === undefined ? undefined : item.suggestions;

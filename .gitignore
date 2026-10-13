@@ -46,6 +46,7 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+!packages/frontend/next-env.d.ts
 
 **/debugging-temp/
 
@@ -83,6 +84,8 @@ frontend/.next
 *.pdf
 *.docx
 *.json
+!packages/frontend/tsconfig.json
+!packages/backend/tsconfig.json
 *.db
 *.sqlite
 *.xlsx

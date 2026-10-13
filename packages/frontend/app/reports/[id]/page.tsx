@@ -275,7 +275,7 @@ export default function ReportDetailPage({ params }: { params: Promise<{ id: str
       <Tabs defaultValue="overview" className="space-y-4">
         <TabsList>
           <TabsTrigger value="overview">Overview</TabsTrigger>
-          <TabsTrigger value="distribution">Bloom's Distribution</TabsTrigger>
+          <TabsTrigger value="distribution">Bloom&apos;s Distribution</TabsTrigger>
         </TabsList>
 
         {/* Overview Tab */}
@@ -366,7 +366,7 @@ export default function ReportDetailPage({ params }: { params: Promise<{ id: str
         <TabsContent value="distribution">
           <Card>
             <CardHeader>
-              <CardTitle>Detailed Bloom's Taxonomy Analysis</CardTitle>
+              <CardTitle>Detailed Bloom&apos;s Taxonomy Analysis</CardTitle>
               <CardDescription>
                 Understanding cognitive complexity distribution
               </CardDescription>

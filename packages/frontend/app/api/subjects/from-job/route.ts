@@ -21,7 +21,6 @@ import {
   type BloomDistribution,
 } from "@/frontend/lib/subjectQuestionBank";
 
-// Import types directly from source since backend has compile errors
 type BloomLevel = "Recall" | "Understand" | "Apply" | "Analyze" | "Evaluate" | "Create";
 type Difficulty = "Easy" | "Medium" | "Hard";
 
@@ -30,7 +29,7 @@ interface AnalyzedQuestion {
   questionText: string;
   marks: number;
   bloomLevel: BloomLevel;
-  bloomJustification?: string;
+  bloomJustification: string;
   confidence?: number;
   syllabusTopics?: string[];
   moduleNumber?: number;
@@ -42,43 +41,6 @@ interface AnalyzedQuestion {
   };
   difficulty?: Difficulty;
   keywords?: string[];
-}
-
-interface ExamAnalysis {
-  subjectCode: string;
-  subjectName: string;
-  branch?: string;
-  year: string;
-  semester: string;
-  examType: "main" | "kt";
-  originalFile?: {
-    fileName: string;
-    fileUrl?: string;
-    fileType?: string;
-    fileSize?: number;
-  };
-  status?: string;
-  analyzedBy?: string;
-  analyzedAt?: Date;
-  questions: AnalyzedQuestion[];
-  totalQuestions?: number;
-  totalMarks?: number;
-  bloomDistribution?: {
-    Recall: number;
-    Understand: number;
-    Apply: number;
-    Analyze: number;
-    Evaluate: number;
-    Create: number;
-  };
-  overallAssessment?: string;
-  recommendations?: string[];
-  strengths?: string[];
-  improvements?: string[];
-  userNotes?: string;
-  isPublished?: boolean;
-  isPublic?: boolean;
-  metadata?: any;
 }
 
 /**
@@ -473,7 +435,7 @@ export async function POST(request: NextRequest) {
         );
 
         // Create exam analysis
-        const examAnalysisData: Partial<ExamAnalysis> = {
+        const examAnalysisData = {
           subjectCode: subjectCode || "UNKNOWN",
           subjectName: subject,
           branch: branch || "CSE",
@@ -491,7 +453,7 @@ export async function POST(request: NextRequest) {
             fileType: filename.split('.').pop()?.toLowerCase() || 'pdf',
             fileSize: 0,
           },
-          status: "completed",
+          status: "completed" as const,
           analyzedBy: "ai-pipeline", // Required field - system user ID
           analyzedAt: new Date(),
           isPublished: false,
@@ -503,7 +465,7 @@ export async function POST(request: NextRequest) {
           },
         };
 
-        const result = await examAnalysisRepo.create(examAnalysisData as ExamAnalysis);
+        const result = await examAnalysisRepo.create(examAnalysisData);
 
         if (result.success) {
           // Auto-create AnalysisReport to make it visible on subjects page

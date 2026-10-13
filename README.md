@@ -343,9 +343,10 @@ All routes registered on the canonical server at `src/api/server.py`. See `packa
 | Script | Description |
 |--------|-------------|
 | `npm run dev` | Start Next.js dev server |
-| `npm run build` | Production build |
+| `npm run build` | Production build (compiles the backend, then fails on TypeScript or ESLint errors) |
 | `npm run start` | Start production server |
 | `npm run lint` | ESLint check |
+| `npm run typecheck` | Compile the backend and run `tsc --noEmit` |
 
 ---
 

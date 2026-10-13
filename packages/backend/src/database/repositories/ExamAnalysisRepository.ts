@@ -1,5 +1,10 @@
+import type { z } from "zod";
 import { getExamAnalysisModel } from "../newFeatureModels";
-import type { ExamAnalysisDocument, ExamAnalysis } from "../schemas/examAnalysisZod";
+import {
+  examAnalysisDocumentZodSchema,
+  type ExamAnalysis,
+  type ExamAnalysisDocument,
+} from "../schemas/examAnalysisZod";
 
 export class ExamAnalysisRepository {
   private model = getExamAnalysisModel();
@@ -7,9 +12,9 @@ export class ExamAnalysisRepository {
   /**
    * Create a new exam analysis
    */
-  async create(analysisData: ExamAnalysisDocument) {
+  async create(analysisData: z.input<typeof examAnalysisDocumentZodSchema>) {
     try {
-      const analysis = await this.model.create(analysisData);
+      const analysis = await this.model.create(analysisData as ExamAnalysisDocument);
       return {
         success: true,
         analysis: this.toPlainObject(analysis),

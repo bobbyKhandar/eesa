@@ -2,7 +2,7 @@
 
 ## Build & Module System
 - **Module type:** ESM (`"type": "module"` in package.json). Use ES import/export syntax.
-- **Build:** TypeScript compiled to `dist/` via `npm run build` (runs `tsc`). Target ES2020, module ESNext, moduleResolution Bundler.
+- **Build:** TypeScript compiled to `dist/` via `npm run build` (runs `tsc`). Target ES2020, lib ES2021, module ESNext, moduleResolution Bundler. `src/scripts`, `src/database/scripts`, and the example `src/services/examOcrService.ts` are excluded: the scripts run through `tsx`, and the example imports a Gemini module that is not in the tree. The frontend `prebuild` runs this compile so `@/backend/dist/...` exists before `next build`.
 - **Output:** `dist/` mirrors `src/` structure. Frontend API routes import from `@/backend/dist/...`.
 - **Scripts:** `npm run build` (tsc), `npm run generate-data` (seed script), `npm run build:scripts` (compile scripts separately).
 

@@ -69,7 +69,13 @@ export async function GET(request: NextRequest) {
         stats = buildPromptStats(prompts);
       }
 
-      return NextResponse.json({ withSimilarQuestions: 0, ...stats });
+      // `withSimilarQuestions` is not on the aggregate result. Putting it after
+      // the spread keeps a real count from the prompt fallback and still
+      // defaults to 0 when the aggregate omits the field.
+      return NextResponse.json({
+        ...stats,
+        withSimilarQuestions: stats?.withSimilarQuestions ?? 0,
+      });
     }
 
     // Get most frequent questions

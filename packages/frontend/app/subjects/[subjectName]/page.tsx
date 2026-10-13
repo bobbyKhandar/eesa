@@ -364,7 +364,7 @@ export default function SubjectReportsPage({ params }: { params: Promise<{ subje
                 <div>
                   <div className="flex items-center gap-2 mb-3">
                     <BarChart3 className="h-4 w-4 text-muted-foreground" />
-                    <p className="text-sm font-medium">Bloom's Taxonomy Distribution</p>
+                    <p className="text-sm font-medium">Bloom&apos;s Taxonomy Distribution</p>
                   </div>
                   <div className="space-y-2">
                     {toBloomRows(report.bloomDistribution).map(({ level, percentage }) => (
@@ -483,7 +483,10 @@ export default function SubjectReportsPage({ params }: { params: Promise<{ subje
             </Card>
           ) : (
             <div className="space-y-4">
-              {uniqueQuestions.map((question, index) => (
+              {uniqueQuestions.map((question, index) => {
+                const topics = question.topics ?? []
+                const appearances = question.appearances ?? []
+                return (
                 <Card key={question._id} className="hover:shadow-md transition-shadow">
                   <CardHeader>
                     <div className="flex items-start justify-between gap-4">
@@ -506,10 +509,10 @@ export default function SubjectReportsPage({ params }: { params: Promise<{ subje
                     </div>
                   </CardHeader>
                   <CardContent className="space-y-3">
-                    {(question.topics?.length ?? 0) > 0 && (
+                    {topics.length > 0 && (
                       <div className="flex items-center gap-2 flex-wrap">
                         <span className="text-sm text-muted-foreground">Topics:</span>
-                        {question.topics.map((topic, i) => (
+                        {topics.map((topic, i) => (
                           <Badge key={i} variant="outline" className="text-xs">
                             {topic}
                           </Badge>
@@ -517,11 +520,11 @@ export default function SubjectReportsPage({ params }: { params: Promise<{ subje
                       </div>
                     )}
 
-                    {(question.appearances?.length ?? 0) > 0 && (
+                    {appearances.length > 0 && (
                       <div className="space-y-2">
                         <p className="text-sm font-medium text-muted-foreground">Appeared in:</p>
                         <div className="flex flex-wrap gap-2">
-                          {question.appearances.map((app, i) => (
+                          {appearances.map((app, i) => (
                             <Badge key={i} variant="secondary" className="text-xs">
                               {app.year} - {app.semester} ({app.examType === "main" ? "Main" : "KT"})
                             </Badge>
@@ -536,7 +539,8 @@ export default function SubjectReportsPage({ params }: { params: Promise<{ subje
                     </div>
                   </CardContent>
                 </Card>
-              ))}
+                )
+              })}
             </div>
           )}
         </TabsContent>

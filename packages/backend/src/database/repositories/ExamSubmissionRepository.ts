@@ -12,6 +12,9 @@ import { connect } from "../connect.js";
 import { getExamSubmissionModel, getUserModel } from "../mongooseSchemas.js";
 import type { ExamSubmissionDocument } from "../schemas/examSubmissionZod.js";
 
+/** Lean Mongo rows include `_id`, which the Zod document schema does not describe. */
+type StoredExamSubmission = ExamSubmissionDocument & { _id: { toString(): string } };
+
 export class ExamSubmissionRepository {
   private model: Model<ExamSubmissionDocument>;
 
@@ -28,6 +31,8 @@ export class ExamSubmissionRepository {
     userId: string;
     timeSpent: number;
     autoSubmitted?: boolean;
+    /** Ignored: the repository stamps `submittedAt` itself when the row is written. */
+    submittedAt?: Date;
     maxMarks: number;
     marksAchieved: number;
     evaluatorObservations?: string;
@@ -146,12 +151,12 @@ export class ExamSubmissionRepository {
   /**
    * Get submission by ID
    */
-  async getById(submissionId: string): Promise<ExamSubmissionDocument | null> {
+  async getById(submissionId: string): Promise<StoredExamSubmission | null> {
     try {
       await connect();
       const submissionObjectId = Types.ObjectId.createFromHexString(submissionId);
       const submission = await this.model.findById(submissionObjectId).lean();
-      return submission;
+      return submission as StoredExamSubmission | null;
     } catch (error) {
       console.error('Error getting submission:', error);
       return null;
@@ -193,11 +198,11 @@ export class ExamSubmissionRepository {
   /**
    * Get submission by exam and user
    */
-  async getByExamAndUser(examId: string, userId: string): Promise<ExamSubmissionDocument | null> {
+  async getByExamAndUser(examId: string, userId: string): Promise<StoredExamSubmission | null> {
     try {
       await connect();
       const submission = await this.model.findOne({ examId, userId }).lean();
-      return submission;
+      return submission as StoredExamSubmission | null;
     } catch (error) {
       console.error('Error getting submission by exam and user:', error);
       return null;

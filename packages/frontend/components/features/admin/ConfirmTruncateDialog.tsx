@@ -74,7 +74,7 @@ function SecondConfirm({ open, onOpenChange, onConfirm, isTruncating }: ConfirmT
               </p>
             </div>
             <p className="text-sm">
-              Click "Delete Everything" to proceed with database truncation.
+              Click &quot;Delete Everything&quot; to proceed with database truncation.
             </p>
           </AlertDialogDescription>
         </AlertDialogHeader>

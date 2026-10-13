@@ -645,14 +645,14 @@ export default function Page() {
             <li>AWS Textract extracts text (OCR)</li>
             <li>Large PDFs are automatically split into manageable chunks</li>
             <li>AI parses questions from extracted text</li>
-            <li>Questions are enriched with metadata (Bloom's Taxonomy, difficulty, etc.)</li>
+            <li>Questions are enriched with metadata (Bloom&apos;s Taxonomy, difficulty, etc.)</li>
             <li>Organized by subject automatically and merged seamlessly</li>
           </ol>
           <div className="mt-3 pt-3 border-t border-gray-200 dark:border-gray-700">
             <p className="font-semibold mb-1 text-green-700 dark:text-green-300">✨ Smart Processing:</p>
             <p className="text-gray-600 dark:text-gray-400">
               The system intelligently handles PDFs of any size by automatically splitting and merging them in the background.
-              You'll see a single job with all questions combined, regardless of the original size!
+              You&apos;ll see a single job with all questions combined, regardless of the original size!
             </p>
           </div>
         </div>
@@ -756,7 +756,7 @@ export default function Page() {
                             <div className="grid grid-cols-2 md:grid-cols-3 gap-3 mt-3 pt-3 border-t border-gray-200 dark:border-gray-700">
                               {q.bloomsTaxonomy && (
                                 <div className="flex flex-col">
-                                  <span className="text-xs text-gray-500 dark:text-gray-400 mb-1">Bloom's Taxonomy</span>
+                                  <span className="text-xs text-gray-500 dark:text-gray-400 mb-1">Bloom&apos;s Taxonomy</span>
                                   <span className="px-2 py-1 bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 rounded text-sm font-medium w-fit">
                                     {q.bloomsTaxonomy}
                                   </span>

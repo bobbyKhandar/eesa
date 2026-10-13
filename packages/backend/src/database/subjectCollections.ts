@@ -50,7 +50,7 @@ export function isLegacySubjectDocument(doc: unknown): boolean {
  * Catalog subjects are the feature schema: a name plus a code in XX### form,
  * and none of the question-bank markers.
  */
-export function isFeatureSubjectDocument(doc: unknown): boolean {
+export function isFeatureSubjectDocument(doc: unknown): doc is Record<string, unknown> {
   if (!isRecord(doc) || isLegacySubjectDocument(doc)) return false;
   if (Array.isArray(doc.analysisReportIds) && doc.analysisReportIds.length > 0) return false;
   return nonEmptyString(doc.name) && typeof doc.code === "string" && FEATURE_SUBJECT_CODE.test(doc.code);

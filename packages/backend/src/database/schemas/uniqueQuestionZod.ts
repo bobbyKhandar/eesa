@@ -67,4 +67,5 @@ export const uniqueQuestionInsertZod = uniqueQuestionZod.omit({
   updatedAt: true,
 });
 
-export type UniqueQuestionInsert = z.infer<typeof uniqueQuestionInsertZod>;
+/** Callers may omit fields that the schema fills with `.default()`. */
+export type UniqueQuestionInsert = z.input<typeof uniqueQuestionInsertZod>;

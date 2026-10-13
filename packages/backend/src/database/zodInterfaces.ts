@@ -23,7 +23,7 @@ export async function connect() {
 
   if (mongoose.connection.readyState === 0) {
     try {
-      await mongoose.connect(MONGO_URI, { useNewUrlParser: true });
+      await mongoose.connect(MONGO_URI);
       console.log("✅ DB connected successfully");
     } catch (error) {
       console.error("❌ Error while connecting to MongoDB:", error);
