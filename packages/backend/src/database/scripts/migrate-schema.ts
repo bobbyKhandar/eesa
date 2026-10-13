@@ -9,6 +9,18 @@
  * 3. Update Exam documents with ExamQuestion IDs
  * 4. Update ExamSubmission documents (email → userId)
  * 5. Verify data integrity
+ *
+ * ExamQuestion documents use questionType (MCQ, TEXT, TRUE_FALSE) plus the
+ * legacy options, answer, and marks. Exams that already store ExamQuestion
+ * ids are skipped, so assignees, createdBy, and deletedAt stay as they are.
+ * A failed exam is not rewritten. Re-running upserts the same ExamQuestion ids.
+ *
+ * Repair for a database already touched by the old script: that run could
+ * create Prompt documents, fail ExamQuestion validation, and still print
+ * completion. Exams in that state still hold { questionId, marks } entries.
+ * Run this script again. It reuses prompts matched by question text and
+ * subject. It does not rebuild an exam whose questions array was already
+ * replaced with ids.
  * 
  * Usage:
  *   ts-node migrate-schema.ts [--dry-run] [--batch-size=100]
@@ -30,6 +42,15 @@ import {
   getUserModel 
 } from '../mongooseSchemas.js';
 import { Types } from 'mongoose';
+import {
+  documentId,
+  formatMigrationReport,
+  legacyQuestionSource,
+  migrationExitCode,
+  planExamConversion,
+  type MigrationFailure,
+  type PromptLink,
+} from '../examSchemaMigration.js';
 
 // Parse command line arguments
 const args = process.argv.slice(2);
@@ -47,7 +68,7 @@ console.log('========================================\n');
 /**
  * Step 1: Migrate Questions to Prompts
  */
-async function migrateQuestionsToPrompts(): Promise<Map<string, string>> {
+async function migrateQuestionsToPrompts(failures: MigrationFailure[]): Promise<Map<string, PromptLink>> {
   console.log('\n[Step 1] Migrating Questions to Prompts...\n');
   
   const QuestionModel = getQuestionModel();
@@ -62,7 +83,7 @@ async function migrateQuestionsToPrompts(): Promise<Map<string, string>> {
     return new Map();
   }
   
-  const questionToPromptMap = new Map<string, string>(); // Maps old question ID to new prompt ID
+  const questionToPromptMap = new Map<string, PromptLink>();
   let processed = 0;
   let migrated = 0;
   
@@ -76,7 +97,9 @@ async function migrateQuestionsToPrompts(): Promise<Map<string, string>> {
     if (questions.length === 0) break;
     
     for (const question of questions) {
+      const questionKey = documentId(question._id);
       try {
+        const source = legacyQuestionSource(question);
         // Check if already migrated
         const existingPrompt = await PromptModel.findOne({
           questionText: question.text,
@@ -84,7 +107,10 @@ async function migrateQuestionsToPrompts(): Promise<Map<string, string>> {
         });
         
         if (existingPrompt) {
-          questionToPromptMap.set(question._id.toString(), existingPrompt._id.toString());
+          questionToPromptMap.set(questionKey, {
+            promptId: documentId(existingPrompt._id),
+            question: source,
+          });
           console.log(`  ⏭️  Question ${question._id} already migrated, skipping...`);
           processed++;
           continue;
@@ -104,13 +130,23 @@ async function migrateQuestionsToPrompts(): Promise<Map<string, string>> {
         if (!isDryRun) {
           const prompt = new PromptModel(promptData);
           const savedPrompt = await prompt.save();
-          questionToPromptMap.set(question._id.toString(), savedPrompt._id.toString());
+          questionToPromptMap.set(questionKey, {
+            promptId: documentId(savedPrompt._id),
+            question: source,
+          });
           migrated++;
+        } else {
+          questionToPromptMap.set(questionKey, {
+            promptId: `dry-run:${questionKey}`,
+            question: source,
+          });
         }
         
         console.log(`  ✅ Migrated question ${question._id} → prompt ${isDryRun ? '[dry-run]' : 'created'}`);
       } catch (error) {
-        console.error(`  ❌ Error migrating question ${question._id}:`, (error as Error).message);
+        const message = (error as Error).message;
+        console.error(`  ❌ Error migrating question ${question._id}:`, message);
+        failures.push({ step: "prompts", id: questionKey || String(question._id), error: message });
       }
       
       processed++;
@@ -126,7 +162,10 @@ async function migrateQuestionsToPrompts(): Promise<Map<string, string>> {
 /**
  * Step 2: Create ExamQuestions for each Exam
  */
-async function createExamQuestions(questionToPromptMap: Map<string, string>): Promise<Map<string, string[]>> {
+async function createExamQuestions(
+  questionToPromptMap: Map<string, PromptLink>,
+  failures: MigrationFailure[]
+): Promise<Map<string, string[]>> {
   console.log('\n[Step 2] Creating ExamQuestion instances...\n');
   
   const ExamModel = getExamModel();
@@ -142,6 +181,7 @@ async function createExamQuestions(questionToPromptMap: Map<string, string>): Pr
   
   const examQuestionMap = new Map<string, string[]>(); // Maps exam ID to array of ExamQuestion IDs
   let processed = 0;
+  let failed = 0;
   
   while (processed < totalExams) {
     const exams = await ExamModel.find()
@@ -152,48 +192,40 @@ async function createExamQuestions(questionToPromptMap: Map<string, string>): Pr
     if (exams.length === 0) break;
     
     for (const exam of exams) {
-      try {
-        const examQuestionIds: string[] = [];
-        
-        if (!exam.questions || exam.questions.length === 0) {
-          console.log(`  ⏭️  Exam ${exam._id} has no questions, skipping...`);
-          processed++;
-          continue;
-        }
-        
-        for (const examQuestion of exam.questions) {
-          const oldQuestionId = examQuestion.questionId.toString();
-          const promptId = questionToPromptMap.get(oldQuestionId);
-          
-          if (!promptId) {
-            console.error(`  ⚠️  No prompt found for question ${oldQuestionId} in exam ${exam._id}`);
-            continue;
+      const examKey = documentId(exam._id) || String(exam._id);
+      const plan = planExamConversion(exam, questionToPromptMap);
+
+      if (plan.status === "skip-empty") {
+        console.log(`  ⏭️  Exam ${exam._id} has no questions, skipping...`);
+      } else if (plan.status === "skip-migrated") {
+        console.log(`  ⏭️  Exam ${exam._id} already references ExamQuestion ids, skipping...`);
+      } else if (plan.status === "failed" || !plan.questions || !plan.examUpdate) {
+        const error = plan.error ?? "Exam conversion failed";
+        console.error(`  ❌ Exam ${exam._id}: ${error}`);
+        failures.push({ step: "exam-questions", id: examKey, error });
+        failed++;
+      } else if (!isDryRun) {
+        try {
+          for (const examQuestion of plan.questions) {
+            // Stable id: a retry overwrites the same document instead of inserting another.
+            // save() runs the ExamQuestion validators before the exam is rewritten.
+            const id = new Types.ObjectId(examQuestion.id);
+            const existing = await ExamQuestionModel.findById(id);
+            const doc = existing ?? new ExamQuestionModel({ _id: id });
+            doc.overwrite({ _id: id, ...examQuestion.data });
+            await doc.save();
           }
-          
-          // Create ExamQuestion
-          const examQuestionData = {
-            promptId: promptId,
-            marks: examQuestion.marks || 1,
-            negativeMarks: exam.negativeMarking ? (examQuestion.marks * 0.25) : 0,
-            answerType: 'mcq' as const, // Default, adjust based on your data
-            options: [], // Would need to be populated from original question
-            createdAt: new Date()
-          };
-          
-          if (!isDryRun) {
-            const newExamQuestion = new ExamQuestionModel(examQuestionData);
-            const savedExamQuestion = await newExamQuestion.save();
-            examQuestionIds.push(savedExamQuestion._id.toString());
-          } else {
-            examQuestionIds.push('[dry-run-id]');
-          }
+          examQuestionMap.set(examKey, plan.examUpdate.questions);
+          console.log(`  ✅ Prepared ${plan.questions.length} ExamQuestions for exam ${exam._id}`);
+        } catch (error) {
+          const message = (error as Error).message;
+          console.error(`  ❌ Error saving ExamQuestions for exam ${exam._id}:`, message);
+          failures.push({ step: "exam-questions", id: examKey, error: message });
+          failed++;
         }
-        
-        examQuestionMap.set(exam._id.toString(), examQuestionIds);
-        console.log(`  ✅ Created ${examQuestionIds.length} ExamQuestions for exam ${exam._id}`);
-        
-      } catch (error) {
-        console.error(`  ❌ Error processing exam ${exam._id}:`, (error as Error).message);
+      } else {
+        examQuestionMap.set(examKey, plan.examUpdate.questions);
+        console.log(`  ✅ Prepared ${plan.questions.length} ExamQuestions for exam ${exam._id}`);
       }
       
       processed++;
@@ -202,14 +234,21 @@ async function createExamQuestions(questionToPromptMap: Map<string, string>): Pr
     console.log(`Progress: ${processed}/${totalExams} exams processed`);
   }
   
-  console.log(`\n✅ Step 2 Complete: ExamQuestions created for ${examQuestionMap.size} exams`);
+  if (failed > 0) {
+    console.error(`\n❌ Step 2 finished with ${failed} exam conversion error(s). Those exams were left unchanged.`);
+  } else {
+    console.log(`\n✅ Step 2 Complete: ExamQuestions prepared for ${examQuestionMap.size} exams`);
+  }
   return examQuestionMap;
 }
 
 /**
  * Step 3: Update Exam documents with new structure
  */
-async function updateExams(examQuestionMap: Map<string, string[]>): Promise<void> {
+async function updateExams(
+  examQuestionMap: Map<string, string[]>,
+  failures: MigrationFailure[]
+): Promise<void> {
   console.log('\n[Step 3] Updating Exam documents...\n');
   
   const ExamModel = getExamModel();
@@ -218,16 +257,11 @@ async function updateExams(examQuestionMap: Map<string, string[]>): Promise<void
   for (const [examId, examQuestionIds] of examQuestionMap) {
     try {
       if (!isDryRun) {
+        // Only the question references change. Assignees, createdBy, createdAt,
+        // and deletedAt stay so a re-run cannot wipe a live or soft-deleted exam.
         await ExamModel.updateOne(
           { _id: examId },
-          {
-            $set: {
-              questions: examQuestionIds,
-              assignedUsers: [], // Initialize empty, would need manual assignment
-              createdBy: 'system', // Fallback
-              createdAt: new Date()
-            }
-          }
+          { $set: { questions: examQuestionIds } }
         );
       }
       
@@ -235,7 +269,9 @@ async function updateExams(examQuestionMap: Map<string, string[]>): Promise<void
       updated++;
       
     } catch (error) {
-      console.error(`  ❌ Error updating exam ${examId}:`, (error as Error).message);
+      const message = (error as Error).message;
+      console.error(`  ❌ Error updating exam ${examId}:`, message);
+      failures.push({ step: "exams", id: examId, error: message });
     }
   }
   
@@ -365,11 +401,12 @@ async function runMigration(): Promise<void> {
     await connect();
     
     const startTime = Date.now();
+    const failures: MigrationFailure[] = [];
     
     // Run migration steps
-    const questionToPromptMap = await migrateQuestionsToPrompts();
-    const examQuestionMap = await createExamQuestions(questionToPromptMap);
-    await updateExams(examQuestionMap);
+    const questionToPromptMap = await migrateQuestionsToPrompts(failures);
+    const examQuestionMap = await createExamQuestions(questionToPromptMap, failures);
+    await updateExams(examQuestionMap, failures);
     await updateExamSubmissions();
     
     if (!isDryRun) {
@@ -377,16 +414,20 @@ async function runMigration(): Promise<void> {
     }
     
     const duration = ((Date.now() - startTime) / 1000).toFixed(2);
+    const exitCode = migrationExitCode(failures);
     
     console.log('\n========================================');
-    console.log(`✅ Migration ${isDryRun ? '(DRY RUN) ' : ''}Complete!`);
+    for (const line of formatMigrationReport(failures, isDryRun)) {
+      if (exitCode === 0) console.log(line);
+      else console.error(line);
+    }
     console.log(`Total time: ${duration} seconds`);
     console.log('========================================\n');
     
-    if (isDryRun) {
+    if (exitCode === 0 && isDryRun) {
       console.log('This was a dry run. No changes were made to the database.');
       console.log('Run without --dry-run to perform the actual migration.\n');
-    } else {
+    } else if (exitCode === 0) {
       console.log('⚠️  IMPORTANT: ');
       console.log('1. Create database indexes by running: ts-node create-indexes.ts');
       console.log('2. Test the new API endpoints thoroughly');
@@ -395,7 +436,7 @@ async function runMigration(): Promise<void> {
     }
     
     await disconnect();
-    process.exit(0);
+    process.exit(exitCode);
     
   } catch (error) {
     console.error('\n❌ Migration failed:', error);

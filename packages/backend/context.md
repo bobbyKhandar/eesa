@@ -95,7 +95,7 @@
 |---|---|
 | `generate-sample-data.ts` | Seeds MongoDB with test prompts, exams, submissions |
 | `create-indexes.ts` | Creates MongoDB indexes for performance |
-| `migrate-schema.ts` | Schema migration utility |
+| `migrate-schema.ts` | Copies legacy questions into prompts and ExamQuestion documents. Each ExamQuestion uses `questionType` (`MCQ`, `TEXT`, or `TRUE_FALSE`) plus the legacy options, answer, and marks. A per-exam failure leaves that exam unchanged and makes the script exit non-zero. Re-runs skip exams that already store ExamQuestion ids and do not rewrite assignees, `createdBy`, or `deletedAt`. |
 | `importBedrockQuestions.ts` | Imports Bedrock-enriched JSON -> Prompts, UniqueQuestions, etc. |
 | `importOcrQuestions.ts` | Imports OCR-processed question papers |
 | `dryRunOcrImport.ts` | Preview OCR import without modifying DB |
