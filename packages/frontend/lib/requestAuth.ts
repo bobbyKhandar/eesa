@@ -44,6 +44,7 @@ export async function requireSubmissionAccess(submissionUserId: string | null | 
 export async function requireExamContentAccess(exam: {
   assignedUsers?: string[] | null;
   createdBy?: string | null;
+  scheduledAt?: unknown;
 }) {
   const caller = await getCaller();
   const decision = examContentAccessDecision({
@@ -51,6 +52,7 @@ export async function requireExamContentAccess(exam: {
     callerRole: caller.role,
     assignedUsers: exam.assignedUsers,
     createdBy: exam.createdBy,
+    scheduledAt: exam.scheduledAt,
   });
   return { caller, decision, denied: deny(decision) };
 }

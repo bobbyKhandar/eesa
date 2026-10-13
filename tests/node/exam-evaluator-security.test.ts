@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { describe, it } from "node:test";
+import { fileURLToPath } from "node:url";
 import {
   adminAccessDecision,
+  examAttemptStartDecision,
   examContentAccessDecision,
   resolveSelfServiceRole,
   selfUserWriteDecision,
@@ -102,6 +106,98 @@ describe("exam question access and answer keys", () => {
     assert.equal(decision.revealAnswerKey, false);
   });
 
+  it("hides question content from an assigned examinee before the scheduled start", () => {
+    const now = new Date("2026-10-13T08:00:00.000Z");
+    const decision = examContentAccessDecision({
+      callerId: "student_1",
+      callerRole: "student",
+      assignedUsers: exam.assignedUsers,
+      createdBy: exam.createdBy,
+      scheduledAt: "2099-01-01T00:00:00.000Z",
+      now,
+    });
+    assert.equal(decision.allowed, false);
+    assert.equal(decision.status, 403);
+    assert.equal(decision.error, "This exam has not started yet");
+    assert.equal(decision.revealAnswerKey, false);
+  });
+
+  it("releases question content once the scheduled start has arrived", () => {
+    const now = new Date("2026-10-13T08:00:00.000Z");
+    const atStart = examContentAccessDecision({
+      callerId: "student_1",
+      callerRole: "student",
+      assignedUsers: exam.assignedUsers,
+      createdBy: exam.createdBy,
+      scheduledAt: now,
+      now,
+    });
+    const afterStart = examContentAccessDecision({
+      callerId: "student_1",
+      callerRole: "student",
+      assignedUsers: exam.assignedUsers,
+      createdBy: exam.createdBy,
+      scheduledAt: new Date("2020-01-01T00:00:00.000Z"),
+      now,
+    });
+    assert.equal(atStart.allowed, true);
+    assert.equal(atStart.revealAnswerKey, false);
+    assert.equal(afterStart.allowed, true);
+    assert.equal(afterStart.revealAnswerKey, false);
+  });
+
+  it("lets the creator and an admin preview question content before the start time", () => {
+    const now = new Date("2026-10-13T08:00:00.000Z");
+    const scheduledAt = new Date("2099-01-01T00:00:00.000Z");
+    const creator = examContentAccessDecision({
+      callerId: "teacher_1",
+      callerRole: "teacher",
+      assignedUsers: ["teacher_1", "student_1"],
+      createdBy: "teacher_1",
+      scheduledAt,
+      now,
+    });
+    const admin = examContentAccessDecision({
+      callerId: "admin_1",
+      callerRole: "admin",
+      assignedUsers: exam.assignedUsers,
+      createdBy: exam.createdBy,
+      scheduledAt,
+      now,
+    });
+    assert.equal(creator.allowed, true);
+    assert.equal(creator.revealAnswerKey, true);
+    assert.equal(admin.allowed, true);
+    assert.equal(admin.revealAnswerKey, true);
+  });
+
+  it("keeps an unscheduled exam available to an assigned examinee", () => {
+    const decision = examContentAccessDecision({
+      callerId: "student_1",
+      callerRole: "student",
+      assignedUsers: exam.assignedUsers,
+      createdBy: exam.createdBy,
+      scheduledAt: "not-a-date",
+      now: new Date("2026-10-13T08:00:00.000Z"),
+    });
+    assert.equal(decision.allowed, true);
+    assert.equal(decision.revealAnswerKey, false);
+  });
+
+  it("still tells a stranger they are not assigned when the exam is in the future", () => {
+    const decision = examContentAccessDecision({
+      callerId: "stranger",
+      callerRole: "student",
+      assignedUsers: exam.assignedUsers,
+      createdBy: exam.createdBy,
+      scheduledAt: "2099-01-01T00:00:00.000Z",
+      now: new Date("2026-10-13T08:00:00.000Z"),
+    });
+    assert.equal(decision.allowed, false);
+    assert.equal(decision.status, 403);
+    assert.equal(decision.error, "You are not assigned to this exam");
+  });
+
   it("strips answer keys and isCorrect from the examinee exam payload", () => {
     const payload = toExamineeExam(exam);
     const serialized = JSON.stringify(payload);
@@ -112,6 +208,90 @@ describe("exam question access and answer keys", () => {
     assert.equal(payload.questions[0].options[1].text, "Green");
     assert.equal("isCorrect" in payload.questions[0].options[1], false);
     assert.equal(payload.questions[0].marks, 5);
+  });
+});
+
+describe("scheduled attempt start", () => {
+  const now = new Date("2026-10-13T08:00:00.000Z");
+
+  it("refuses to open an attempt before the scheduled start", () => {
+    const decision = examAttemptStartDecision({
+      callerId: "student_1",
+      assignedUsers: ["teacher_1", "student_1"],
+      scheduledAt: "2099-01-01T00:00:00.000Z",
+      now,
+    });
+    assert.equal(decision.allowed, false);
+    assert.equal(decision.status, 403);
+    assert.equal(decision.error, "This exam has not started yet");
+  });
+
+  it("refuses an early attempt from the creator so the official timer does not start", () => {
+    const decision = examAttemptStartDecision({
+      callerId: "teacher_1",
+      assignedUsers: ["teacher_1", "student_1"],
+      scheduledAt: new Date("2099-01-01T00:00:00.000Z"),
+      now,
+    });
+    assert.equal(decision.allowed, false);
+    assert.equal(decision.status, 403);
+  });
+
+  it("opens an attempt at the scheduled instant and when no schedule is set", () => {
+    const atStart = examAttemptStartDecision({
+      callerId: "student_1",
+      assignedUsers: ["student_1"],
+      scheduledAt: now,
+      now,
+    });
+    const unscheduled = examAttemptStartDecision({
+      callerId: "student_1",
+      assignedUsers: ["student_1"],
+    });
+    assert.equal(atStart.allowed, true);
+    assert.equal(atStart.status, 200);
+    assert.equal(unscheduled.allowed, true);
+  });
+
+  it("still requires an assigned caller", () => {
+    assert.equal(
+      examAttemptStartDecision({ callerId: null, assignedUsers: ["student_1"] }).status,
+      401
+    );
+    assert.equal(
+      examAttemptStartDecision({
+        callerId: "student_2",
+        assignedUsers: ["student_1"],
+        scheduledAt: new Date("2020-01-01T00:00:00.000Z"),
+        now,
+      }).status,
+      403
+    );
+  });
+});
+
+describe("schedule gate is wired into the content and attempt routes", () => {
+  const root = join(dirname(fileURLToPath(import.meta.url)), "../..");
+  const read = (path: string) => readFileSync(join(root, path), "utf8");
+
+  it("forwards scheduledAt from every question-content exam into the access decision", () => {
+    const auth = read("packages/frontend/lib/requestAuth.ts");
+    assert.match(auth, /scheduledAt:\s*exam\.scheduledAt/);
+    for (const path of [
+      "packages/frontend/app/api/exams/[id]/route.ts",
+      "packages/frontend/app/api/exams/[id]/examSet/route.ts",
+      "packages/frontend/app/api/exams/display/questions/route.ts",
+    ]) {
+      const source = read(path);
+      assert.match(source, /requireExamContentAccess\(/);
+    }
+  });
+
+  it("checks the schedule before recording an attempt", () => {
+    const source = read("packages/frontend/app/api/exams/[id]/attempt/route.ts");
+    const decisionIndex = source.indexOf("examAttemptStartDecision(");
+    const openIndex = source.indexOf("attemptRepo.open(");
+    assert.ok(decisionIndex > -1 && openIndex > decisionIndex);
   });
 });
 
