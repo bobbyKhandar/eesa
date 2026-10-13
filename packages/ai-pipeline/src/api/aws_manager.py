@@ -30,6 +30,15 @@ except ImportError as e:
     AWS_MODULES_AVAILABLE = False
 
 
+def resolve_s3_bucket(requested: Optional[str], configured: str) -> str:
+    """Use a non-blank caller bucket, otherwise the configured bucket."""
+    if isinstance(requested, str):
+        requested = requested.strip()
+        if requested:
+            return requested
+    return configured
+
+
 def chunked_parsing_outcome(parsing_result: Optional[Dict]) -> Optional[str]:
     """Classify a chunked parse payload as ``failed``, ``partial``, or neither.
 
@@ -184,7 +193,14 @@ class AWSPipelineManager:
     # ------------------------------------------------------------------
     # Full 5-Stage Pipeline
     # ------------------------------------------------------------------
-    def process_aws_job_pipeline(self, job_id: str, s3_pdf_key: str, filename: str) -> Dict:
+    def process_aws_job_pipeline(
+        self,
+        job_id: str,
+        s3_pdf_key: str,
+        filename: str,
+        s3_bucket: Optional[str] = None,
+    ) -> Dict:
+        source_bucket = resolve_s3_bucket(s3_bucket, self.s3_bucket)
         metadata = {
             'job_id': job_id,
             'filename': filename,
@@ -202,7 +218,7 @@ class AWSPipelineManager:
             self.save_job_metadata(job_id, metadata)
             if not process_document_async:
                 raise Exception("AWS Textract module not available")
-            ocr_success = process_document_async(self.s3_bucket, s3_pdf_key, job_id)
+            ocr_success = process_document_async(source_bucket, s3_pdf_key, job_id)
             if not ocr_success:
                 metadata['status'] = 'failed'
                 metadata['failed_stage'] = 'ocr'

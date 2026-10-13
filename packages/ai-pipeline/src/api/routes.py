@@ -6,6 +6,7 @@ import time
 from datetime import datetime
 from flask import request, jsonify
 
+from .aws_manager import resolve_s3_bucket
 from .job_retry import plan_job_retry
 from .question_retriever import get_job_questions
 from .service_auth import install_service_auth
@@ -47,14 +48,16 @@ def register_routes(app, aws_manager, pipeline_manager):
             if not data.get('s3_key'):
                 return jsonify({'error': 'Missing s3_key'}), 400
             s3_key = data['s3_key']
-            s3_bucket = data.get('s3_bucket', aws_manager.s3_bucket)
+            s3_bucket = resolve_s3_bucket(data.get('s3_bucket'), aws_manager.s3_bucket)
             job_id = data.get('job_id') or str(uuid.uuid4())
             filename = data.get('filename') or os.path.basename(s3_key)
             try:
                 aws_manager.s3_client.head_object(Bucket=s3_bucket, Key=s3_key)
             except Exception:
                 return jsonify({'error': f'File not found in S3: {s3_key}'}), 404
-            aws_manager.executor.submit(aws_manager.process_aws_job_pipeline, job_id, s3_key, filename)
+            aws_manager.executor.submit(
+                aws_manager.process_aws_job_pipeline, job_id, s3_key, filename, s3_bucket
+            )
             return jsonify({
                 'job_id': job_id,
                 'status': 'processing',
@@ -73,7 +76,7 @@ def register_routes(app, aws_manager, pipeline_manager):
             data = request.json
             if not data.get('jobs') or not isinstance(data['jobs'], list):
                 return jsonify({'error': 'Missing or invalid jobs array'}), 400
-            s3_bucket = data.get('s3_bucket', aws_manager.s3_bucket)
+            s3_bucket = resolve_s3_bucket(data.get('s3_bucket'), aws_manager.s3_bucket)
             job_submissions = []
             for job_data in data['jobs']:
                 s3_key = job_data.get('s3_key')
@@ -81,12 +84,23 @@ def register_routes(app, aws_manager, pipeline_manager):
                     continue
                 job_id = job_data.get('job_id') or str(uuid.uuid4())
                 filename = job_data.get('filename') or os.path.basename(s3_key)
-                job_submissions.append({'job_id': job_id, 's3_key': s3_key, 'filename': filename})
+                job_submissions.append({
+                    'job_id': job_id,
+                    's3_key': s3_key,
+                    'filename': filename,
+                    's3_bucket': s3_bucket,
+                })
             if not job_submissions:
                 return jsonify({'error': 'No valid jobs provided'}), 400
             executor = aws_manager.executor
             for job in job_submissions:
-                executor.submit(aws_manager.process_aws_job_pipeline, job['job_id'], job['s3_key'], job['filename'])
+                executor.submit(
+                    aws_manager.process_aws_job_pipeline,
+                    job['job_id'],
+                    job['s3_key'],
+                    job['filename'],
+                    job['s3_bucket'],
+                )
             return jsonify({
                 'message': f'AWS batch processing started for {len(job_submissions)} jobs',
                 'jobs': [{'job_id': j['job_id'], 'filename': j['filename'], 'status': 'processing'} for j in job_submissions]
