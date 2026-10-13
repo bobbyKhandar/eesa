@@ -8,7 +8,7 @@ A modular monolith for end-to-end exam processing: upload scanned question paper
 
 - **OCR Pipeline** — Upload scanned PDFs/images; EasyOCR local mode (free) or AWS Textract + Bedrock pipeline for parsing, enrichment, and subject organization
 - **Question Clustering** — FAISS + HDBSCAN similarity-based clustering of extracted questions
-- **Exam Management** — Create exams from enriched question banks, organize by subject/syllabus, assign teacher exams to selected students, and publish them. Assigned students still cannot open a scheduled exam before `scheduledAt`.
+- **Exam Management** — Create exams with theory, multiple-choice, and true/false questions, organize by subject/syllabus, assign teacher exams to selected students, and publish them. Assigned students still cannot open a scheduled exam before `scheduledAt`.
 - **Student Submissions** — Take exams, auto-grading, result analysis
 - **Resource Library** — Upload and browse notes, PYQs, and study materials with subject filtering
 - **Admin Tools** — Database stats, S3 backup/restore, collection truncation, query editor, performance monitoring, job status monitoring, failed job retry. A restore loads the whole backup, writes each collection into a side collection, and swaps it into place only after every collection is written, so a failed restore does not leave live data half-wiped. Backups marked failed are still refused.

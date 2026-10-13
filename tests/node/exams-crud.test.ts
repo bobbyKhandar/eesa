@@ -86,11 +86,11 @@ describe("findInvalidQuestion", () => {
     );
   });
 
-  it("accepts a valid list", () => {
+  it("accepts a valid theory list, including a question with no type", () => {
     assert.equal(
       findInvalidQuestion([
         { text: "What is 2 + 2?", marks: 5, type: "TEXT" },
-        { text: "Name the capital of France.", marks: 2.5, type: "MCQ" },
+        { text: "Name the capital of France.", marks: 2.5 },
       ]),
       null
     );

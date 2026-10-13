@@ -10,7 +10,7 @@ import { Textarea } from "@/frontend/components/ui/textarea"
 import { ArrowLeft, Upload } from "lucide-react"
 import { ExamTypeSelector, SyllabusTypeSelector, SubjectSelector, QuestionEditor, StudentAssigneeSelector } from "@/frontend/components/features/exams"
 import type { Question } from "@/frontend/components/features/exams"
-import { examUsersForCreation, findInvalidQuestion, findMissingStudentAssignees } from "@/frontend/lib/examCreation"
+import { authoringKind, createQuestionDraft, examUsersForCreation, findInvalidQuestion, findMissingStudentAssignees, mergeQuestionUpdate, nextQuestionId, toCreateExamQuestions } from "@/frontend/lib/examCreation"
 
 export default function CreateExamPage() {
   const [examType, setExamType] = useState<string | null>(null)
@@ -18,33 +18,12 @@ export default function CreateExamPage() {
   const [selectedBranch, setSelectedBranch] = useState("")
   const [selectedSemester, setSelectedSemester] = useState("")
   const [selectedSubject, setSelectedSubject] = useState("")
-  const [questions, setQuestions] = useState<Question[]>([
-    { id: 1, type: "theory", text: "", marks: 10, questionType: "TEXT", answer: "" },
-  ])
+  const [questions, setQuestions] = useState<Question[]>([createQuestionDraft("theory", 1)])
 
   const addQuestion = (type: string) => {
-    const newId = questions.length > 0 ? Math.max(...questions.map((q) => q.id)) + 1 : 1
-    if (type === "theory") {
-      setQuestions([...questions, { 
-        id: newId, 
-        type: "theory", 
-        text: "", 
-        marks: 10, 
-        questionType: "TEXT",
-        answer: ""
-      }])
-    } else if (type === "mcq") {
-      setQuestions([...questions, { 
-        id: newId, 
-        type: "mcq", 
-        text: "", 
-        options: ["", "", "", ""], 
-        correctOption: 0, 
-        marks: 5,
-        questionType: "MCQ",
-        answer: ""
-      }])
-    }
+    const kind = authoringKind(type)
+    if (!kind) return
+    setQuestions([...questions, createQuestionDraft(kind, nextQuestionId(questions))])
   }
   const [examTitle,setExamTitle]=useState<string>("")
   const [examDescription,setExamDescription]=useState<string>("")
@@ -65,8 +44,8 @@ export default function CreateExamPage() {
     setQuestions(questions.filter((q) => q.id !== id))
   }
 
-  const updateQuestion = (id: number, data: any) => {
-    setQuestions(questions.map((q) => (q.id === id ? { ...q, ...data } : q)))
+  const updateQuestion = (id: number, data: Partial<Question>) => {
+    setQuestions(questions.map((q) => (q.id === id ? mergeQuestionUpdate(q, data) : q)))
   }
 
   interface ApiResponse {
@@ -122,14 +101,7 @@ async function uploadExamSet(): Promise<ApiResponse> {
       negativeMarkingPercentage: negativeMarking ? negativeMarkingPercentage : undefined,
       examMaxMarks: totalMarks,
       examUsers: examUsersForCreation(examType, selectedStudentIds),
-      questions: questions.map(q => ({
-        text: q.text,
-        marks: q.marks,
-        type: q.questionType || "TEXT",
-        options: q.options,
-        correctOption: q.correctOption,
-        answer: q.answer,
-      }))
+      questions: toCreateExamQuestions(questions)
     }
 
     const response = await fetch(`/api/exams/create`, {
