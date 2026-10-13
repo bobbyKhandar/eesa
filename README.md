@@ -128,7 +128,7 @@ packages/frontend/
 │   │   ├── submissions/             # Submit & get results
 │   │   ├── resources/               # Resource CRUD
 │   │   ├── admin/database/          # DB stats, S3 backup/restore, truncation
-│   │   ├── exam-analysis/           # Publish, upload, upload-bulk
+│   │   ├── exam-analysis/           # Publish, upload, upload-bulk, upload-bulk-zip
 │   │   ├── llm/                     # Gemini AI exam helper
 │   │   ├── users/                   # User CRUD, submissions, metadata
 │   │   ├── upload-sessions/         # Upload session management
@@ -296,7 +296,7 @@ Or use **VSCode** (`.vscode/launch.json`) — open Run & Debug (Ctrl+Shift+D), s
 | `submissions/` | Submit & get results |
 | `resources/` | Resource CRUD |
 | `admin/database/` | DB stats, S3 backup/restore, truncation |
-| `exam-analysis/` | Publish, upload, upload-bulk |
+| `exam-analysis/` | Publish, upload, upload-bulk, upload-bulk-zip |
 | `llm/` | Gemini AI exam helper |
 | `users/` | User CRUD, submissions, metadata |
 | `upload-sessions/` | Upload session management |

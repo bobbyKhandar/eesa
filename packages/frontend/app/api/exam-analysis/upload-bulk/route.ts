@@ -18,6 +18,14 @@ import {
 
 const analysisRepo = new ExamAnalysisRepository();
 
+export interface BulkExamIngestInput {
+  userId: string;
+  file: File | null;
+  autoExtractMetadata: boolean;
+  optionalYear?: string;
+  userNotes?: string;
+}
+
 export async function POST(request: NextRequest) {
   try {
     // Establish database connection
@@ -48,13 +56,46 @@ export async function POST(request: NextRequest) {
     const optionalYear = formData.get("optionalYear") as string || undefined;
     const userNotes = formData.get("userNotes") as string || undefined;
 
-    // Validation
-    if (!file) {
-      return NextResponse.json(
-        { success: false, error: "No file provided" },
-        { status: 400 }
-      );
-    }
+    return await ingestBulkExamFile({
+      userId,
+      file,
+      autoExtractMetadata,
+      optionalYear,
+      userNotes,
+    });
+
+  } catch (error) {
+    console.error("Error in bulk exam analysis upload:", error);
+    return NextResponse.json(
+      { success: false, error: "Internal server error" },
+      { status: 500 }
+    );
+  }
+}
+
+/**
+ * Create the analysis record for one PDF and start background processing.
+ * Callers must already have connected to the database. A missing userId is
+ * refused here so a ZIP upload cannot create an unowned analysis.
+ */
+export async function ingestBulkExamFile(input: BulkExamIngestInput): Promise<NextResponse> {
+  const { file, autoExtractMetadata, optionalYear, userNotes } = input;
+  const userId = input.userId;
+
+  if (!userId) {
+    return NextResponse.json(
+      { success: false, error: "Unauthorized" },
+      { status: 401 }
+    );
+  }
+
+  // Validation
+  if (!file) {
+    return NextResponse.json(
+      { success: false, error: "No file provided" },
+      { status: 400 }
+    );
+  }
 
     console.log(`Upload details: ${file.name}, ${file.type}, ${file.size} bytes`);
 
@@ -269,14 +310,6 @@ export async function POST(request: NextRequest) {
       },
       message: "Exam uploaded successfully. Analysis is in progress.",
     });
-
-  } catch (error) {
-    console.error("Error in bulk exam analysis upload:", error);
-    return NextResponse.json(
-      { success: false, error: "Internal server error" },
-      { status: 500 }
-    );
-  }
 }
 
 /**
