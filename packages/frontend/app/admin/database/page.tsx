@@ -168,6 +168,16 @@ export default function AdminDatabase() {
   }
 
   const handleRestoreBackup = async (id: string) => {
+    const backup = backups.find((item) => item.id === id)
+    if (backup?.status === "failed") {
+      setRestoreConfirm(null)
+      setBackupResult({
+        success: false,
+        message: backup.error || "Incomplete backups cannot be restored",
+      })
+      return
+    }
+
     setRestoringId(id)
     setRestoreConfirm(null)
     setBackupResult(null)
@@ -392,9 +402,12 @@ export default function AdminDatabase() {
                               <Button
                                 variant="outline"
                                 size="sm"
-                                onClick={() => setRestoreConfirm(backup.id)}
-                                disabled={restoringId === backup.id}
-                                title="Restore"
+                                onClick={() => {
+                                  if (backup.status === "failed") return
+                                  setRestoreConfirm(backup.id)
+                                }}
+                                disabled={backup.status === "failed" || restoringId === backup.id}
+                                title={backup.status === "failed" ? (backup.error || "Incomplete backups cannot be restored") : "Restore"}
                               >
                                 {restoringId === backup.id ? (
                                   <Loader2 className="h-3 w-3 animate-spin" />

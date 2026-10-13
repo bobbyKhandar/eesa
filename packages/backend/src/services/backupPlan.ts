@@ -95,3 +95,32 @@ export function formatBackupErrors(errors: Record<string, string>): string {
     .map(([name, message]) => `${name}: ${message}`)
     .join("; ");
 }
+
+export interface BackupRestoreAssessment {
+  /** When false, restore must not delete or insert any collection. */
+  allowed: boolean;
+  /** Human-readable reason when restore is refused. */
+  reason?: string;
+}
+
+/**
+ * Decide whether a stored backup may replace live collections.
+ *
+ * `createBackup` records a collection it could not read as an empty array and
+ * sets metadata status to `failed`. Restoring that payload deletes the live
+ * collection and inserts nothing. Only a completed backup is safe to apply.
+ * Missing metadata is not treated as a failure (older objects may have no
+ * metadata file); a backup explicitly marked failed is never restorable.
+ */
+export function assessBackupRestore(
+  metadata: { status?: string | null; error?: string | null } | null | undefined
+): BackupRestoreAssessment {
+  if (metadata?.status === "failed") {
+    const detail = typeof metadata.error === "string" ? metadata.error.trim() : "";
+    return {
+      allowed: false,
+      reason: detail.length > 0 ? detail : "Backup is incomplete and cannot be restored",
+    };
+  }
+  return { allowed: true };
+}

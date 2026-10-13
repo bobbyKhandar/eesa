@@ -4,6 +4,7 @@ import { getManagedCollections } from "../database/managedCollectionModels";
 import type { ManagedCollection } from "../database/managedCollectionModels";
 import { MANAGED_COLLECTION_NAMES } from "../database/managedCollections";
 import {
+  assessBackupRestore,
   chunkDocuments,
   formatBackupErrors,
   isValidBackupId,
@@ -44,6 +45,26 @@ export class BackupNotFoundError extends Error {
   }
 }
 
+/**
+ * Thrown when a backup must not be applied.
+ * Failed backups store unreadable collections as empty arrays; restoring them
+ * would delete the live data and insert nothing.
+ */
+export class BackupNotRestorableError extends Error {
+  readonly backupId: string;
+
+  constructor(id: string, reason?: string) {
+    const detail = typeof reason === 'string' ? reason.trim() : '';
+    super(
+      detail.length > 0
+        ? `Cannot restore backup ${id}: ${detail}`
+        : `Cannot restore backup ${id}: backup is incomplete`
+    );
+    this.name = 'BackupNotRestorableError';
+    this.backupId = id;
+  }
+}
+
 export function getAllCollections(): ManagedCollection[] {
   return getManagedCollections();
 }
@@ -65,8 +86,10 @@ export async function createBackup(): Promise<BackupMetadata> {
       backupData[name] = docs;
       collectionCounts[name] = docs.length;
     } catch (err) {
-      // Never silently record a failed read as "0 documents": restoring that
-      // backup would wipe the collection and insert nothing.
+      // Keep the failed read in the payload so the backup still shows what was
+      // captured, but mark the backup failed. restoreBackup refuses that status
+      // before deleting anything: applying this payload would wipe the collection
+      // and insert nothing.
       const message = err instanceof Error ? err.message : 'Unknown error';
       console.error(`[DatabaseBackupService] Failed to read ${name}:`, message);
       collectionCounts[name] = 0;
@@ -208,6 +231,14 @@ export interface RestoreResult {
 export async function restoreBackup(id: string): Promise<RestoreResult> {
   if (!isValidBackupId(id)) {
     throw new InvalidBackupIdError(id);
+  }
+
+  // A failed backup recorded unreadable collections as empty arrays. Check that
+  // before connecting or deleting, so a refused restore leaves live data intact.
+  const metadata = await getBackup(id);
+  const decision = assessBackupRestore(metadata);
+  if (!decision.allowed) {
+    throw new BackupNotRestorableError(id, decision.reason);
   }
 
   await connect();

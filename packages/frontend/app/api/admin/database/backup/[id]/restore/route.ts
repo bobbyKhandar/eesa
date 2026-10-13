@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import {
   restoreBackup,
   BackupNotFoundError,
+  BackupNotRestorableError,
   InvalidBackupIdError,
 } from '@/backend/src/services/databaseBackupService';
 import { requireAdmin } from '@/frontend/lib/requestAuth';
@@ -43,6 +44,12 @@ export async function POST(
       return NextResponse.json(
         { success: false, error: 'Backup data not found' },
         { status: 404 }
+      );
+    }
+    if (error instanceof BackupNotRestorableError) {
+      return NextResponse.json(
+        { success: false, error: error.message },
+        { status: 409 }
       );
     }
 
