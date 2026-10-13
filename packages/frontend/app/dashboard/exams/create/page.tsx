@@ -13,7 +13,7 @@ import type { Question } from "@/frontend/components/features/exams"
 import { authoringKind, createQuestionDraft, examUsersForCreation, findInvalidQuestion, findMissingStudentAssignees, mergeQuestionUpdate, nextQuestionId, toCreateExamQuestions } from "@/frontend/lib/examCreation"
 
 export default function CreateExamPage() {
-  const [examType, setExamType] = useState<string | null>(null)
+  const [examType, setExamType] = useState<"personal" | "teacher" | null>(null)
   const [syllabusType, setSyllabusType] = useState<string | null>(null)
   const [selectedBranch, setSelectedBranch] = useState("")
   const [selectedSemester, setSelectedSemester] = useState("")

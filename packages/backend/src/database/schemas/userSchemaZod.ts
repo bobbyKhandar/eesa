@@ -80,6 +80,8 @@ export const userZodSchema = z.object({
 });
 
 export type User = z.infer<typeof userZodSchema>
+/** Callers may omit fields that the schema fills with `.default()`. */
+export type UserInsert = z.input<typeof userZodSchema>
 
 export type UserRoleValue = User["role"];
 export type UserStatusValue = User["status"];

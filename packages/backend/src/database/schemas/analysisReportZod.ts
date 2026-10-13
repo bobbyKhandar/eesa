@@ -88,4 +88,6 @@ export const analysisReportSchemaOptions = {
 
 // Export types
 export type AnalysisReport = z.infer<typeof analysisReportZodSchema>;
+/** Callers may omit fields that the schema fills with `.default()`. */
+export type AnalysisReportInput = z.input<typeof analysisReportZodSchema>;
 export type AnalysisReportWithId = z.infer<typeof analysisReportWithIdZodSchema>;

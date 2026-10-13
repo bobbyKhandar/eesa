@@ -1,6 +1,6 @@
 import { Model } from "mongoose";
 import { getAnalysisReportModel } from "../newFeatureModels";
-import type { AnalysisReport, AnalysisReportWithId } from "../schemas/index";
+import type { AnalysisReport, AnalysisReportInput, AnalysisReportWithId } from "../schemas/index";
 import { connect } from "../connect";
 import { normalizeSubjectSummaries } from "./subjectSummary";
 
@@ -31,7 +31,7 @@ export class AnalysisReportRepository {
   /**
    * Create a new analysis report (publish an exam analysis)
    */
-  async create(reportData: AnalysisReport): Promise<AnalysisReportWithId> {
+  async create(reportData: AnalysisReportInput): Promise<AnalysisReportWithId> {
     await connect();
     const report = await this.model.create(reportData);
     return {

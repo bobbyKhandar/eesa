@@ -3,7 +3,9 @@
   "private": true,
   "workspaces": ["packages/backend", "packages/frontend"],
   "overrides": {
-    "tailwindcss": "^3.4.17"
+    "tailwindcss": "^3.4.17",
+    "react": "19.1.0",
+    "react-dom": "19.1.0"
   },
   "scripts": {
     "test": "node --experimental-strip-types --import ./tests/node/register-hook.mjs --test tests/node/exam-evaluator-security.test.ts",
@@ -13,6 +15,8 @@
     "test:submissions": "node --experimental-strip-types --test tests/node/submission-results.test.ts",
     "test:admin-users-resources": "node --experimental-strip-types --test tests/node/admin-users-resources.test.ts tests/node/admin-user-list.test.ts",
     "test:admin-database-jobs": "node --experimental-strip-types --test tests/node/admin-database-jobs.test.ts",
+    "typecheck": "npm run typecheck -w my-v0-project",
+    "lint": "npm run lint -w my-v0-project",
     "test:ai": "node --experimental-strip-types --import ./tests/node/register-hook.mjs --test tests/node/backend/*.test.ts tests/node/frontend/*.test.ts",
     "test:python": "python3 -m pytest tests/python"
   },

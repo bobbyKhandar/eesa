@@ -380,7 +380,7 @@ export default function AdminDatabase() {
                     {backups.length === 0 ? (
                       <TableRow>
                         <TableCell colSpan={6} className="text-center text-muted-foreground py-8">
-                          No backups yet. Click "Create Backup" to get started.
+                          No backups yet. Click &quot;Create Backup&quot; to get started.
                         </TableCell>
                       </TableRow>
                     ) : (

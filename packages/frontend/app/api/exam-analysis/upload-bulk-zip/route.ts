@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { connect } from "@/backend/dist/database/connect";
-import { ingestBulkExamFile } from "../upload-bulk/route";
+import { ingestBulkExamFile } from "@/frontend/lib/bulkExamIngest";
 import {
   collectZipResults,
   extractZipPdfs,

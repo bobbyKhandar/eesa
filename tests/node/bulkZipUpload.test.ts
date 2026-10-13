@@ -17,7 +17,7 @@ import {
 } from "../../packages/frontend/lib/bulkZipUpload.ts";
 
 const ZIP_ROUTE = "packages/frontend/app/api/exam-analysis/upload-bulk-zip/route.ts";
-const BULK_ROUTE = "packages/frontend/app/api/exam-analysis/upload-bulk/route.ts";
+const BULK_INGEST = "packages/frontend/lib/bulkExamIngest.ts";
 
 async function zipOf(files: Record<string, string | Uint8Array>): Promise<Uint8Array> {
   const zip = new JSZip();
@@ -315,7 +315,7 @@ describe("upload-bulk-zip route", () => {
   });
 
   it("reuses the bulk ingest path that records analyzedBy", () => {
-    const bulk = readFileSync(BULK_ROUTE, "utf8");
+    const bulk = readFileSync(BULK_INGEST, "utf8");
     assert.match(bulk, /export async function ingestBulkExamFile/);
     assert.match(bulk, /analyzedBy:\s*userId/);
     const ownerAt = bulk.indexOf("analyzedBy: userId");

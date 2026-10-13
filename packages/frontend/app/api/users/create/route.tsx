@@ -26,7 +26,7 @@ export async function POST(req: Request) {
         name: user.fullName || "",
         role: resolveSelfServiceRole(role),
         profilePic: user.imageUrl || "",
-        status: "active",
+        status: "active" as const,
         branch: "",
         currentAllocatedExams: [],
         submissionHistory: [],

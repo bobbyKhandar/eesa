@@ -1,10 +1,19 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   eslint: {
-    ignoreDuringBuilds: true,
+    ignoreDuringBuilds: false,
   },
   typescript: {
-    ignoreBuildErrors: true,
+    ignoreBuildErrors: false,
+  },
+  // Backend source uses Node ESM specifiers (`./file.js`) for `.ts` files.
+  // Webpack must follow those the same way `tsc` does, or API routes that
+  // import `@/backend/src` fail to compile.
+  experimental: {
+    extensionAlias: {
+      ".js": [".ts", ".tsx", ".js"],
+      ".jsx": [".tsx", ".jsx"],
+    },
   },
   images: {
     unoptimized: true,

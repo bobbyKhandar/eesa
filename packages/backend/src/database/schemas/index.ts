@@ -110,6 +110,7 @@ export {
 // Analysis Reports (Published Question Banks)
 export type {
   AnalysisReport,
+  AnalysisReportInput,
   AnalysisReportWithId,
 } from "./analysisReportZod";
 
