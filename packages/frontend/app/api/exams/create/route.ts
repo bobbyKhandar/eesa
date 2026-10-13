@@ -4,6 +4,7 @@ import { auth } from "@clerk/nextjs/server";
 import { examRepo, promptRepo, userRepo } from "@/backend/dist/database/repositories/index";
 import { buildStoredQuestionOptions } from "@/backend/src/services/mcqAlignment";
 import {
+  authoredQuestionType,
   computeNegativeMarks,
   confirmedStudentAssignees,
   dedupeExamUserIds,
@@ -132,7 +133,7 @@ export async function POST(req: Request) {
         promptId: promptsResult.promptIds![index],
         marks: q.marks,
         negativeMarks: computeNegativeMarks(q.marks, negativeMarking === true, negativeMarkingPercentage),
-        questionType: q.type?.toUpperCase() || 'TEXT',
+        questionType: authoredQuestionType(q) ?? "TEXT",
         answer: stored.answer ?? '',
         options: stored.options,
       };
