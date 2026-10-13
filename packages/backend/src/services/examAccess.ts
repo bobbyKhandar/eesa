@@ -50,12 +50,18 @@ export function selfUserWriteDecision(
  * Question content requires an authenticated examinee assigned to the exam,
  * the exam creator, or an admin. Answer keys are revealed only to the creator
  * and admins; assigned examinees receive a stripped payload.
+ *
+ * An assigned examinee who is not the creator or an admin cannot read that
+ * content before `scheduledAt`. Creators and admins may preview early. A
+ * missing or unparseable schedule does not delay access.
  */
 export function examContentAccessDecision(input: {
   callerId: string | null;
   callerRole?: string | null;
   assignedUsers?: string[] | null;
   createdBy?: string | null;
+  scheduledAt?: unknown;
+  now?: Date;
 }): ExamContentDecision {
   if (!input.callerId) {
     return { allowed: false, status: 401, error: "Unauthorized", revealAnswerKey: false };
@@ -71,7 +77,60 @@ export function examContentAccessDecision(input: {
       revealAnswerKey: false,
     };
   }
+  if (!isAdmin && !isCreator && examStartsInFuture(input.scheduledAt, input.now)) {
+    return {
+      allowed: false,
+      status: 403,
+      error: EXAM_NOT_STARTED_ERROR,
+      revealAnswerKey: false,
+    };
+  }
   return { allowed: true, status: 200, revealAnswerKey: isAdmin || isCreator };
+}
+
+export const EXAM_NOT_STARTED_ERROR = "This exam has not started yet";
+
+/**
+ * Opening an attempt starts the official server-side timer. Assigned users,
+ * including the creator, must wait until `scheduledAt`. A missing schedule
+ * does not delay the start.
+ */
+export function examAttemptStartDecision(input: {
+  callerId: string | null;
+  assignedUsers?: string[] | null;
+  scheduledAt?: unknown;
+  now?: Date;
+}): AccessDecision {
+  if (!input.callerId) {
+    return { allowed: false, status: 401, error: "Unauthorized" };
+  }
+  if (!(input.assignedUsers ?? []).includes(input.callerId)) {
+    return { allowed: false, status: 403, error: "You are not assigned to this exam" };
+  }
+  if (examStartsInFuture(input.scheduledAt, input.now)) {
+    return { allowed: false, status: 403, error: EXAM_NOT_STARTED_ERROR };
+  }
+  return { allowed: true, status: 200 };
+}
+
+function scheduledStartMs(scheduledAt: unknown): number | null {
+  if (scheduledAt == null || scheduledAt === "") return null;
+  const date =
+    scheduledAt instanceof Date
+      ? scheduledAt
+      : typeof scheduledAt === "string" || typeof scheduledAt === "number"
+        ? new Date(scheduledAt)
+        : null;
+  if (!date) return null;
+  const time = date.getTime();
+  return Number.isFinite(time) ? time : null;
+}
+
+function examStartsInFuture(scheduledAt: unknown, now?: Date): boolean {
+  const start = scheduledStartMs(scheduledAt);
+  if (start == null) return false;
+  const clock = now instanceof Date && Number.isFinite(now.getTime()) ? now : new Date();
+  return start > clock.getTime();
 }
 
 export function submissionAccessDecision(input: {

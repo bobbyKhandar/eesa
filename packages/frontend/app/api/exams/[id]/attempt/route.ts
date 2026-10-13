@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { ExamRepository } from "@/backend/dist/database/repositories/ExamRepository";
 import { ExamAttemptRepository } from "@/backend/src/database/repositories/ExamAttemptRepository";
+import { examAttemptStartDecision } from "@/backend/src/services/examAccess";
 import { attemptWindowDecision } from "@/frontend/lib/examResults";
 
 const examRepo = new ExamRepository();
@@ -11,6 +12,9 @@ const attemptRepo = new ExamAttemptRepository();
  * POST /api/exams/[id]/attempt
  * Record (or resume) the server-side start of an assigned student's attempt.
  * The countdown and the submit route both take their clock from this row.
+ * The row is not written before scheduledAt, so an early call cannot start
+ * the official timer. Question preview for creators and admins stays on the
+ * content routes.
  */
 export async function POST(
   _req: Request,
@@ -41,10 +45,15 @@ export async function POST(
       );
     }
 
-    if (!(exam.assignedUsers ?? []).includes(userId)) {
+    const start = examAttemptStartDecision({
+      callerId: userId,
+      assignedUsers: exam.assignedUsers,
+      scheduledAt: exam.scheduledAt,
+    });
+    if (!start.allowed) {
       return NextResponse.json(
-        { success: false, error: "You are not assigned to this exam" },
-        { status: 403 },
+        { success: false, error: start.error },
+        { status: start.status },
       );
     }
 
