@@ -7,9 +7,14 @@ from datetime import datetime
 from flask import request, jsonify
 
 from .question_retriever import get_job_questions
+from .service_auth import install_service_auth
 
 
 def register_routes(app, aws_manager, pipeline_manager):
+    # User ownership stays in the Next.js helpers. Every route except /health
+    # still requires the service token from a trusted address.
+    install_service_auth(app)
+
     # ------------------------------------------------------------------
     # Health
     # ------------------------------------------------------------------

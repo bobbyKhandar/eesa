@@ -1,10 +1,7 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
+import { buildAiPipelineUrl, withPipelineAuth } from "@/frontend/lib/aiPipeline";
 import { requireAdminCaller } from "@/frontend/lib/routeAccess";
-
-// AI Pipeline server URL (defaults to localhost:5000)
-const AI_PIPELINE_URL =
-  process.env.AI_PIPELINE_URL || "http://192.168.1.105:5000";
 
 export async function POST(req: NextRequest) {
   try {
@@ -31,11 +28,15 @@ export async function POST(req: NextRequest) {
       pipelineFormData.append("files", file as Blob);
     });
 
-    // Forward to AI pipeline server for processing
-    const response = await fetch(`${AI_PIPELINE_URL}/upload/question-papers`, {
-      method: "POST",
-      body: pipelineFormData,
-    });
+    // Forward to AI pipeline server for processing. Admin authorization
+    // already ran; withPipelineAuth only proves this server is the caller.
+    const response = await fetch(
+      buildAiPipelineUrl("/upload/question-papers"),
+      withPipelineAuth({
+        method: "POST",
+        body: pipelineFormData,
+      })
+    );
 
     if (!response.ok) {
       const errorText = await response.text();

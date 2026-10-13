@@ -19,7 +19,7 @@ Express has been deprecated and removed. All backend CRUD APIs now live in `pack
 MongoDB is accessed via `packages/backend/src/database/connect.ts` using ready-state caching to prevent pool exhaustion. Never generate raw `mongoose.connect()` calls inside individual API routes. Call the shared `connect()` function instead.
 
 ### AI/Python Boundary
-The Next.js frontend NEVER talks to AWS Textract or Bedrock directly. It must send POST requests to the Flask AI Pipeline (`http://127.0.0.1:5000`). The AI pipeline owns all AWS integration.
+The Next.js frontend NEVER talks to AWS Textract or Bedrock directly. It must send requests to the Flask AI Pipeline (`http://127.0.0.1:5000`) with `Authorization: Bearer $AI_PIPELINE_TOKEN`. The AI pipeline owns all AWS integration. User authorization for job reads and uploads stays in the Next.js helpers; the token identifies the Next.js server.
 
 ### Package-Specific Rules
 See the `context.md` file inside each package for domain-specific rules:

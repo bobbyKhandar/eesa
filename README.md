@@ -243,6 +243,7 @@ Each package has its own `.env` file:
 | `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` | Clerk publishable key |
 | `CLERK_SECRET_KEY` | Clerk secret key |
 | `AI_PIPELINE_URL` | AI Pipeline server URL (`http://127.0.0.1:5000`) |
+| `AI_PIPELINE_TOKEN` | Shared secret sent as `Authorization: Bearer` to every AI pipeline route except `/health`. Set the same value in `packages/ai-pipeline/.env`. |
 
 **`packages/ai-pipeline/.env`**
 | Variable | Description |
@@ -251,6 +252,10 @@ Each package has its own `.env` file:
 | `APPLICATION_EMAIL_PASSWORD` | Email app password |
 | `APPLICATION_ADMIN` | Admin email address |
 | `aws_location` | AWS region (e.g. `ap-south-1`) |
+| `AI_PIPELINE_TOKEN` | Shared secret required on every route except `GET /health`. Must match the frontend value. |
+| `AI_PIPELINE_BIND` | Gunicorn bind address (default `127.0.0.1:5000`). Public binds need `AI_PIPELINE_ALLOW_PUBLIC_BIND=1`. |
+| `AI_PIPELINE_TRUSTED_HOSTS` | Comma-separated client IPs allowed to call sensitive routes, in addition to loopback. |
+| `AI_PIPELINE_ALLOW_REMOTE` | Set to `1` to skip the client-address check. The token is still required. |
 
 The Eesa database is `test`. Set the server-side `mongodb_url` to `mongodb+srv://bobby:<URL_ENCODED_PASSWORD>@cluster0.yuld0s6.mongodb.net/test?appName=Cluster0`; URL-encode the database-user password and keep credentials in ignored environment files. Use the same URI in the root `.env` (for root-run scripts) and `packages/backend/.env` (for the shared connection helper). An inherited `mongodb_url` takes precedence over dotenv files, so update any deployment environment that supplies it and restart the app. A local database migration does not verify a production switch; verify the deployed environment and running app separately.
 
@@ -305,8 +310,8 @@ All routes registered on the canonical server at `src/api/server.py`. See `packa
 
 | Route | Method | Description |
 |-------|--------|-------------|
-| `/health` | GET | Health check |
-| `/process` | POST | Start a single AWS pipeline job |
+| `/health` | GET | Health check (no credential) |
+| `/process` | POST | Start a single AWS pipeline job. Requires `Authorization: Bearer $AI_PIPELINE_TOKEN` from loopback or `AI_PIPELINE_TRUSTED_HOSTS`. The same credential applies to every route below. |
 | `/process/batch` | POST | Batch process multiple AWS jobs |
 | `/job/<id>/status` | GET | AWS job full stage details (from S3 metadata) |
 | `/job/<id>/metadata` | GET | Alias for `/job/<id>/status` |
