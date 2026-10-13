@@ -440,9 +440,26 @@ def parse_chunk(chunk_text: str, chunk_metadata: Dict, retry_count: int = 0) -> 
         return None
 
 
-def parse_chunked_document(chunks: List[Dict], job_id: str, filename: str) -> Optional[Dict]:
+def _failed_chunk_record(chunk: Dict, index: int, chunk_result: Optional[Dict]) -> Dict:
+    """Identify one chunk that did not parse, without dropping its id."""
+    error = "Chunk failed to parse"
+    if isinstance(chunk_result, dict) and chunk_result.get("error"):
+        error = chunk_result["error"]
+    return {
+        "chunk_id": chunk.get("chunk_id"),
+        "index": index,
+        "error": error,
+    }
+
+
+def parse_chunked_document(chunks: List[Dict], job_id: str, filename: str) -> Dict:
     """
-    Parse a document that has been split into chunks
+    Parse a document that has been split into chunks.
+
+    A clean result has ``status`` ``success`` only when every chunk parses.
+    Chunks that fail are listed in ``failed_chunks``. Some failures set
+    ``status`` ``partial`` and still return the chunks that parsed. Every
+    chunk failing sets ``status`` ``failed``.
     
     Args:
         chunks: List of chunks from intelligent_chunking module
@@ -450,7 +467,7 @@ def parse_chunked_document(chunks: List[Dict], job_id: str, filename: str) -> Op
         filename: Original filename
     
     Returns:
-        Merged parsing result or None
+        Parsing result. ``failed_chunks`` is empty only on a clean success.
     """
     print(f"\n{'='*60}")
     print(f"Parsing Chunked Document: {filename}")
@@ -458,22 +475,37 @@ def parse_chunked_document(chunks: List[Dict], job_id: str, filename: str) -> Op
     print(f"{'='*60}")
     
     parsed_chunks = []
+    failed_chunks = []
     total_cost = 0
     
     # Parse each chunk
-    for chunk in chunks:
+    for index, chunk in enumerate(chunks):
         chunk_result = parse_chunk(chunk['text'], chunk)
         
         if chunk_result and not chunk_result.get('error'):
             parsed_chunks.append(chunk_result)
             total_cost += chunk_result.get('parsing_cost', 0)
         else:
+            failed_chunks.append(_failed_chunk_record(chunk, index, chunk_result))
             print(f"⚠ Chunk {chunk.get('chunk_id')} failed to parse")
-            # Continue with other chunks
+            # Continue with other chunks so a later failure is still reported
     
     if not parsed_chunks:
         print("✗ All chunks failed to parse")
-        return None
+        return {
+            'job_id': job_id,
+            'filename': filename,
+            'success': False,
+            'status': 'failed',
+            'error': 'All chunks failed to parse',
+            'failed_chunks': failed_chunks,
+            'chunks_processed': 0,
+            'chunks_failed': len(failed_chunks),
+            'total_exams': 0,
+            'total_questions': 0,
+            'processing_cost': total_cost,
+            'is_chunked': True,
+        }
     
     print(f"\n� Saving {len(parsed_chunks)} parsed chunks individually...")
     
@@ -500,7 +532,8 @@ def parse_chunked_document(chunks: List[Dict], job_id: str, filename: str) -> Op
         'total_chunks': len(parsed_chunks),
         'chunk_keys': chunk_keys,
         'filename': filename,
-        'job_id': job_id
+        'job_id': job_id,
+        'failed_chunks': failed_chunks,
     }
     
     metadata_key = f"{S3_JOBS_PREFIX}{job_id}/parsed_chunks/_metadata.json"
@@ -520,19 +553,37 @@ def parse_chunked_document(chunks: List[Dict], job_id: str, filename: str) -> Op
     
     print(f"\n📊 Chunked Parsing Complete:")
     print(f"   Chunks: {len(parsed_chunks)}")
+    print(f"   Failed chunks: {len(failed_chunks)}")
     print(f"   Total Questions: {total_questions}")
     print(f"   ⚠ Merge will happen AFTER enrichment")
-    
-    return {
+
+    result = {
         'job_id': job_id,
         'filename': filename,
         'total_exams': total_exams,
         'total_questions': total_questions,
         'processing_cost': total_cost,
         'chunks_processed': len(parsed_chunks),
+        'chunks_failed': len(failed_chunks),
+        'failed_chunks': failed_chunks,
         'is_chunked': True,
-        'chunk_metadata_key': metadata_key
+        'chunk_metadata_key': metadata_key,
     }
+    if failed_chunks:
+        result['success'] = False
+        result['status'] = 'partial'
+        named = ", ".join(
+            f"chunk {record.get('chunk_id')} ({record.get('error')})"
+            for record in failed_chunks
+        )
+        result['error'] = (
+            f"{len(failed_chunks)} of {len(chunks)} chunks failed to parse: {named}"
+        )
+        return result
+
+    result['success'] = True
+    result['status'] = 'success'
+    return result
 
 
 if __name__ == "__main__":
