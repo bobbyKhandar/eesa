@@ -83,7 +83,7 @@
 | `ocrService.ts` | HTTP client for AI Pipeline OCR service (axios). Polls `completed` and `partial`. `interpretOcrFileResult` (`ocrFileResult.ts`) keeps text from successful pages, records `failedPages`, and returns `status: "partial"` instead of a clean success. It returns `status: "failed"` when no text remains, including when every page failed. |
 | `ec2OcrClient.ts` | Axios client for EC2-based AI Pipeline |
 | `publishAnalysisService.ts` | Orchestrates AnalysisReport, Prompt, UniqueQuestion creation |
-| `questionSimilarityService.ts` | Bidirectional similarity linking between prompts (MongoDB) |
+| `questionSimilarityService.ts` | Bidirectional similarity linking between prompts (MongoDB). `findSimilarQuestionsInDB` treats a missing `isActive` as active and matches stored `questionText`. Public-bank exclusion of unpublished `generateVia: "user"` exam drafts stays in `publicQuestionBank.ts` / `PromptRepository.findBySubject()`. |
 | `s3CleanupService.ts` | Validates S3 files, marks expired jobs in MongoDB |
 | `examOcrService.ts` | EC2 OCR + exam analysis workflow |
 | `generateBloomsAnatomy.ts` | Bloom's taxonomy classification (mostly commented out) |

@@ -5,6 +5,7 @@
 
 import { getPromptModel } from '../database/mongooseSchemas';
 import { Types } from 'mongoose';
+import { buildSimilarQuestionsFilter } from './similarQuestionQuery';
 
 export interface SimilarityUpdateResult {
   success: boolean;
@@ -25,22 +26,15 @@ export async function findSimilarQuestionsInDB(
 ): Promise<string[]> {
   try {
     const PromptModel = getPromptModel();
-    
-    // Normalize question text for comparison
-    const normalizedText = normalizeQuestionText(questionText);
-    const keywords = extractKeywords(normalizedText);
-    
-    // Search for similar questions
+    const filter = buildSimilarQuestionsFilter(questionText, subject, excludeIds);
+
+    // Missing isActive is active. Match questionText; prompts do not store a
+    // separate normalized copy of the stem.
     const similarQuestions = await PromptModel.find({
-      subject: subject,
-      _id: { $nin: excludeIds.map(id => new Types.ObjectId(id)) },
-      isActive: true,
-      $or: [
-        // Text search on question text
-        { questionText: { $regex: keywords.join('|'), $options: 'i' } },
-        // Match on normalized text
-        { normalizedText: { $regex: normalizedText.slice(0, 100), $options: 'i' } }
-      ]
+      subject: filter.subject,
+      _id: { $nin: filter.excludedIds.map(id => new Types.ObjectId(id)) },
+      isActive: filter.isActive,
+      ...(filter.questionText ? { questionText: filter.questionText } : {}),
     })
     .limit(limit)
     .select('_id questionText')
@@ -193,25 +187,3 @@ export async function mapPipelineSimilarityToMongoDB(
   return [];
 }
 
-/**
- * Normalize question text for comparison
- */
-function normalizeQuestionText(text: string): string {
-  return text
-    .toLowerCase()
-    .replace(/[^\w\s]/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-}
-
-/**
- * Extract keywords from question text
- */
-function extractKeywords(text: string, minLength: number = 4): string[] {
-  const words = text.split(/\s+/);
-  const stopWords = new Set(['what', 'how', 'why', 'when', 'where', 'which', 'who', 'explain', 'describe', 'define', 'with']);
-  
-  return words
-    .filter(word => word.length >= minLength && !stopWords.has(word))
-    .slice(0, 10); // Top 10 keywords
-}
