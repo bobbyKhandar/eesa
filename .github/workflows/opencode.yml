@@ -12,12 +12,43 @@ on:
         required: true
         type: string
 
+# Comment events run in the base repository. Keep that token read-only until a
+# trusted writer is confirmed; only the gated job below receives write scopes.
+permissions:
+  contents: read
+
 jobs:
-  opencode:
+  authorize:
     if: |
       github.event_name == 'workflow_dispatch' ||
-      contains(github.event.comment.body, '/oc') ||
-      contains(github.event.comment.body, '/opencode')
+      (
+        contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association) &&
+        (
+          contains(github.event.comment.body, '/oc') ||
+          contains(github.event.comment.body, '/opencode')
+        )
+      )
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      allowed: ${{ steps.policy.outputs.allowed }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Decide whether OpenCode may run
+        id: policy
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node scripts/opencode-gate.mjs
+
+  opencode:
+    needs: authorize
+    if: needs.authorize.result == 'success' && needs.authorize.outputs.allowed == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: write
