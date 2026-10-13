@@ -45,6 +45,7 @@ export async function requireExamContentAccess(exam: {
   assignedUsers?: string[] | null;
   createdBy?: string | null;
   scheduledAt?: unknown;
+  deletedAt?: unknown;
 }) {
   const caller = await getCaller();
   const decision = examContentAccessDecision({
@@ -53,6 +54,7 @@ export async function requireExamContentAccess(exam: {
     assignedUsers: exam.assignedUsers,
     createdBy: exam.createdBy,
     scheduledAt: exam.scheduledAt,
+    deletedAt: exam.deletedAt,
   });
   return { caller, decision, denied: deny(decision) };
 }

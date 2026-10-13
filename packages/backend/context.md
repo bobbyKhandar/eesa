@@ -62,7 +62,7 @@
 
 | Repository | Model Source | Key Methods |
 |---|---|---|
-| `ExamRepository` | `mongooseSchemas.ts` | `createWithPrompts()`, `getWithFullDetails()`, `assignToUsers()`, standard CRUD |
+| `ExamRepository` | `mongooseSchemas.ts` | `createWithPrompts()`, `getWithFullDetails()`, `assignToUsers()`, standard CRUD. `delete()` soft-deletes (`deletedAt`) and clears user allocations. It keeps the exam and its questions so saved submissions can still join them. Listing queries use `activeExamQuery()` and omit deleted exams. `getById()` and `getWithFullDetails()` still return a deleted exam for historical reads. |
 | `ExamSubmissionRepository` | `mongooseSchemas.ts` | `create()`, `updateResponses()`, `getByExamAndUser()`, `getByScoreRange()` |
 | `ExamQuestionRepository` | `mongooseSchemas.ts` | `create()`, `createBulk()`, `getWithPrompt()`, `getExamsUsingPrompt()` |
 | `ExamAnalysisRepository` | `newFeatureModels.ts` | `create()`, `getByUser()`, `publish()`, `getPublicAnalyses()` |

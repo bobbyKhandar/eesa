@@ -49,6 +49,7 @@ export async function POST(
       callerId: userId,
       assignedUsers: exam.assignedUsers,
       scheduledAt: exam.scheduledAt,
+      deletedAt: exam.deletedAt,
     });
     if (!start.allowed) {
       return NextResponse.json(

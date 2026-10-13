@@ -174,7 +174,7 @@ examRepo.getById(id)
 examRepo.getBySubject(subjectId)
 examRepo.getByCreator(creatorId)
 examRepo.update(id, updates)
-examRepo.delete(id)
+examRepo.delete(id)                      // Soft-delete; submissions stay readable
 ```
 
 ### ExamSubmissionRepository (8 methods)

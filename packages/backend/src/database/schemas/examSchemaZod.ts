@@ -20,6 +20,9 @@ export const examZodSchema = z.object({
   scheduledAt: z.date().optional(),         // Scheduled start time
   createdBy: z.string(),                    // User ID of creator
   createdAt: z.date().default(() => new Date()),
+  // Soft-delete timestamp. The exam and its questions stay so saved
+  // submissions can still be opened. Listings and new attempts exclude it.
+  deletedAt: z.date().optional(),
   
   // Array of ExamQuestion IDs (references to examQuestionSchemaZod)
   questions: z.array(z.string()),
