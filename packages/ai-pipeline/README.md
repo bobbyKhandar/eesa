@@ -125,8 +125,8 @@ AI Pipeline is a comprehensive OCR (Optical Character Recognition) processing sy
 
 1. **Submission** - Client submits batch of PDF files with options
 2. **Queuing** - Batch metadata stored in Redis, batch ID added to queue
-3. **Processing** - Pipeline Manager picks up batch, processes each PDF
-4. **PDF Extraction** - PDFHandler extracts pages as images
+3. **Processing** - Pipeline Manager picks up batch and routes each file. DOCX uploads (`.docx` or `options.file_type == "docx"`) are text-extracted from the document XML. PDF and image files continue through OCR.
+4. **PDF Extraction** - PDFHandler extracts pages as images for PDF and image files
 5. **Preprocessing** - ImageProcessor optimizes images for OCR
 6. **Text Extraction** - OCREngine performs text recognition
 7. **Result Compilation** - Results aggregated and stored in Redis

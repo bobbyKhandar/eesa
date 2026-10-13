@@ -25,11 +25,13 @@ try:
     from .local_ocr_engine import OCREngine
     from .local_image_processor_pipeline import ImageProcessor
     from .pdf_handler import PDFHandler
+    from .docx_handler import extract_docx_result, should_extract_docx
 except ImportError:
     import redis_client
     from local_ocr_engine import OCREngine
     from local_image_processor_pipeline  import ImageProcessor
     from pdf_handler import PDFHandler
+    from docx_handler import extract_docx_result, should_extract_docx
 
 
 class JobStatus(Enum):
@@ -117,10 +119,10 @@ class PipelineManager:
     
     def submit_batch(self, file_locations: List[str], options: Dict[str, Any] = None) -> str:
         """
-        Submit a batch of PDF files for processing
+        Submit a batch of PDF, DOCX, or image files for processing
         
         Args:
-            file_locations: List of PDF file paths to process
+            file_locations: List of file paths to process
             options: Optional processing parameters
             
         Returns:
@@ -252,20 +254,23 @@ class PipelineManager:
             redis_client.hash_set(f"batch:{batch_id}", "metadata", metadata)
             
             file_locations = metadata["file_locations"]
+            options = metadata.get("options") or {}
             batch_results = {}
             batch_errors = []
             processed_files = 0
             failed_files = 0
             
-            print(f"📄 Processing {len(file_locations)} PDF files in batch {batch_id}")
+            print(f"📄 Processing {len(file_locations)} files in batch {batch_id}")
             
-            # Process each PDF file
+            # DOCX is born-digital text. PDF and images stay on the OCR path.
             for i, file_location in enumerate(file_locations):
                 try:
                     print(f"  📖 Processing file {i+1}/{len(file_locations)}: {file_location}")
                     
-                    # Process the PDF file
-                    file_result = self._process_pdf_file(file_location, batch_id)
+                    if should_extract_docx(file_location, options):
+                        file_result = self._process_docx_file(file_location)
+                    else:
+                        file_result = self._process_pdf_file(file_location, batch_id)
                     
                     if file_result["success"]:
                         batch_results[file_location] = file_result
@@ -340,6 +345,10 @@ class PipelineManager:
             except Exception as cleanup_error:
                 print(f"Error during cleanup: {cleanup_error}")
     
+    def _process_docx_file(self, file_location: str) -> Dict[str, Any]:
+        """Extract text from a DOCX upload without opening it as a PDF."""
+        return extract_docx_result(file_location)
+
     def _process_pdf_file(self, file_location: str, batch_id: Optional[str] = None) -> Dict[str, Any]:
         """Process a single PDF file through the OCR pipeline"""
         try:
