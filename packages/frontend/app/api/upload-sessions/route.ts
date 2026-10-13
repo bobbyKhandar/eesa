@@ -3,6 +3,7 @@ import { auth } from "@clerk/nextjs/server";
 import { UploadSessionRepository } from "@/backend/src/database/repositories/UploadSessionRepository";
 import { JobMetadataRepository } from "@/backend/src/database/repositories/JobMetadataRepository";
 import { connect } from "@/backend/src/database/connect";
+import { foreignStoredJobIds, parseJobIdList } from "@/frontend/lib/uploadSessionJobs";
 
 const sessionRepo = new UploadSessionRepository();
 const jobRepo = new JobMetadataRepository();
@@ -71,13 +72,30 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const parsedJobIds = parseJobIdList(job_ids, "job_ids");
+    if (!parsedJobIds.ok) {
+      return NextResponse.json(
+        { error: parsedJobIds.error },
+        { status: 400 }
+      );
+    }
+
+    const storedJobs = await jobRepo.findByJobIds(parsedJobIds.ids);
+    const foreignJobIds = foreignStoredJobIds(userId, parsedJobIds.ids, storedJobs);
+    if (foreignJobIds.length > 0) {
+      return NextResponse.json(
+        { error: "One or more jobs are not owned by the current user" },
+        { status: 403 }
+      );
+    }
+
     const result = await sessionRepo.create({
       session_id,
       clerk_user_id: userId,
-      job_ids: job_ids || [],
+      job_ids: parsedJobIds.ids,
       upload_to_subjects: upload_to_subjects || false,
-      total_jobs: (job_ids || []).length,
-      in_progress_jobs: (job_ids || []).length,
+      total_jobs: parsedJobIds.ids.length,
+      in_progress_jobs: parsedJobIds.ids.length,
       completed_jobs: 0,
       failed_jobs: 0,
       is_active: true,

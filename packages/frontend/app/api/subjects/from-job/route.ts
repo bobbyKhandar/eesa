@@ -661,7 +661,8 @@ export async function POST(request: NextRequest) {
           total_questions: totalQuestions,
           subjects: subjects,
           s3_expired: false,
-          retention_days: 90
+          retention_days: 90,
+          uploaded_by: userId
         });
         
         console.log(`[Subjects Upload] Job metadata saved to MongoDB for ${job_id}`);

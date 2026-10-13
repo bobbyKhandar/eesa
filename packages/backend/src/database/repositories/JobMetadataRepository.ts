@@ -63,6 +63,21 @@ export class JobMetadataRepository {
   }
 
   /**
+   * Find jobs by job_id. Errors propagate so callers can fail closed
+   * instead of treating a lookup failure as "job does not exist".
+   */
+  async findByJobIds(jobIds: string[]): Promise<JobMetadata[]> {
+    if (jobIds.length === 0) {
+      return [];
+    }
+
+    await connect();
+    const uniqueIds = [...new Set(jobIds)];
+    const jobs = await this.model.find({ job_id: { $in: uniqueIds } }).lean();
+    return jobs;
+  }
+
+  /**
    * Update job status and metadata
    */
   async updateStatus(
