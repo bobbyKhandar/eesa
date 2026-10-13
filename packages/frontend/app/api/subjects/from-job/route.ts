@@ -12,6 +12,7 @@ import {
   updateSimilarityRelationships,
   findAndLinkSimilarQuestions 
 } from "@/backend/src/services/questionSimilarityService";
+import { buildAiPipelineUrl, withPipelineAuth } from "@/frontend/lib/aiPipeline";
 import {
   buildAutoSubjectDocument,
   canImportFromJob,
@@ -79,8 +80,6 @@ interface ExamAnalysis {
   isPublic?: boolean;
   metadata?: any;
 }
-
-const AI_PIPELINE_URL = process.env.AI_PIPELINE_URL || "http://192.168.1.105:5000";
 
 /**
  * Calculate similarity between two strings (0-1, where 1 is identical)
@@ -217,7 +216,10 @@ export async function POST(request: NextRequest) {
     console.log(`[Subjects Upload] Fetching enriched data for job ${job_id}...`);
     
     // Fetch from questions endpoint (returns flat list)
-    const questionsRes = await fetch(`${AI_PIPELINE_URL}/job/${job_id}/questions`);
+    const questionsRes = await fetch(
+      buildAiPipelineUrl(`/job/${encodeURIComponent(job_id)}/questions`),
+      withPipelineAuth()
+    );
     
     if (!questionsRes.ok) {
       const errorText = await questionsRes.text();
@@ -631,7 +633,10 @@ export async function POST(request: NextRequest) {
     // Save job metadata to MongoDB for session persistence
     try {
       console.log(`[Subjects Upload] Fetching job metadata for ${job_id}...`);
-      const metadataRes = await fetch(`${AI_PIPELINE_URL}/job/${job_id}/status`);
+      const metadataRes = await fetch(
+        buildAiPipelineUrl(`/job/${encodeURIComponent(job_id)}/status`),
+        withPipelineAuth()
+      );
       
       if (metadataRes.ok) {
         const jobMetadata = await metadataRes.json();

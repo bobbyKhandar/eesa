@@ -16,6 +16,7 @@ from flask_cors import CORS
 
 from .aws_manager import AWSPipelineManager
 from .routes import register_routes
+from .service_auth import assert_trusted_bind
 
 # Add parent directory to Python path for pipeline module imports
 current_dir = Path(__file__).parent.parent
@@ -74,14 +75,16 @@ class AIServer:
     def start(self):
         if self.is_running:
             return
+        assert_trusted_bind(self.host)
         self.is_running = True
         self.server_thread = threading.Thread(target=self._run_server, daemon=True)
         self.server_thread.start()
         print(f"AI Pipeline Server starting on http://{self.host}:{self.port}")
 
     def _run_server(self):
+        host = assert_trusted_bind(self.host)
         try:
-            app.run(host=self.host, port=self.port, debug=False, use_reloader=False, threaded=True)
+            app.run(host=host, port=self.port, debug=False, use_reloader=False, threaded=True)
         except Exception as e:
             print(f"Server error: {e}")
         finally:

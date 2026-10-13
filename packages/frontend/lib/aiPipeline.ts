@@ -25,6 +25,22 @@ export function buildAiPipelineUrl(path: string, baseUrl: string = getAiPipeline
 }
 
 /**
+ * Attach the server-side pipeline credential. A caller-supplied Authorization
+ * header is replaced so a browser request cannot choose the credential.
+ * The token is read from AI_PIPELINE_TOKEN and is never a public env var.
+ */
+export function withPipelineAuth(init: RequestInit = {}): RequestInit {
+  const headers = new Headers(init.headers);
+  const token = process.env.AI_PIPELINE_TOKEN?.trim() ?? "";
+  if (token) {
+    headers.set("Authorization", `Bearer ${token}`);
+  } else {
+    headers.delete("Authorization");
+  }
+  return { ...init, headers };
+}
+
+/**
  * Fetch from the pipeline with a hard timeout.
  * Returns `null` when the pipeline is unreachable/timing out so callers can fall
  * back to cached data instead of failing the whole request.
@@ -39,7 +55,7 @@ export async function fetchFromAiPipeline(
 
   try {
     return await fetch(buildAiPipelineUrl(path), {
-      ...init,
+      ...withPipelineAuth(init),
       signal: controller.signal,
       cache: "no-store",
     });

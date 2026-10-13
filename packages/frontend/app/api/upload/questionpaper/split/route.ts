@@ -1,10 +1,8 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { PDFDocument } from 'pdf-lib';
+import { buildAiPipelineUrl, withPipelineAuth } from "@/frontend/lib/aiPipeline";
 import { requireAdminCaller } from "@/frontend/lib/routeAccess";
-
-// AI Pipeline server URL
-const AI_PIPELINE_URL = process.env.AI_PIPELINE_URL || "http://localhost:5000";
 
 export async function POST(req: NextRequest) {
   try {
@@ -60,10 +58,13 @@ export async function POST(req: NextRequest) {
         const partFormData = new FormData();
         partFormData.append('files', blob, partName);
 
-        const response = await fetch(`${AI_PIPELINE_URL}/upload/question-papers`, {
-          method: "POST",
-          body: partFormData,
-        });
+        const response = await fetch(
+          buildAiPipelineUrl("/upload/question-papers"),
+          withPipelineAuth({
+            method: "POST",
+            body: partFormData,
+          })
+        );
 
         if (response.ok) {
           const result = await response.json();

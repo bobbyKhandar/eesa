@@ -3,7 +3,8 @@
 ## Framework & Setup
 - **Framework:** Flask (Python 3.10+). No blueprints — routes are registered directly on the `app` object.
 - **Dependencies:** Listed in `requirements-ocr.txt`. Key packages: `opencv-python`, `easyocr`, `pdf2image`, `PyMuPDF`, `Pillow`, `numpy`, `redis`, `lancedb`, `hdbscan`, `pyarrow`, `boto3`.
-- **CORS:** `flask-cors` — all servers enable `CORS(app)`.
+- **CORS:** `flask-cors` — all servers enable `CORS(app)`. CORS does not authenticate callers.
+- **Service auth:** Every route except `GET /health` requires `Authorization: Bearer $AI_PIPELINE_TOKEN` and a loopback (or `AI_PIPELINE_TRUSTED_HOSTS`) address. User and role checks stay in the Next.js helpers (`jobContentAccessDecision`, upload-session ownership, `requireAdminCaller`). The production listener binds to `127.0.0.1` unless `AI_PIPELINE_ALLOW_PUBLIC_BIND=1`.
 
 ## Server Entry Point
 
@@ -15,7 +16,8 @@
 - **Job persistence:** S3-backed metadata with in-memory LRU cache (100-job limit with eviction).
 - **Startup:** `python src/api/server.py` (blocking), `start_server()` (non-blocking), or via `wsgi.py` (Gunicorn).
 - **Used by:** `wsgi.py` (production), `start_server.py` (development), `src/server.py` (bootstrap re-exporter).
-- **Routes:** `/health`, `/process`, `/process/batch`, `/job/<id>/status`, `/job/<id>/metadata`, `/job/<id>/questions`, `/jobs/active`, `/submit-local`, `/submit` (legacy), `/submit-aws`, `/status-aws/<job_id>`, `/status/<batch_id>`, `/result/<batch_id>`, `/upload/question-papers`.
+- **Routes:** `/health` (no credential), and authenticated `/process`, `/process/batch`, `/job/<id>/status`, `/job/<id>/metadata`, `/job/<id>/questions`, `/jobs/active`, `/submit-local`, `/submit` (legacy), `/submit-aws`, `/status-aws/<job_id>`, `/status/<batch_id>`, `/result/<batch_id>`, `/upload/question-papers`.
+- **Listener:** `AIServer` and `gunicorn.conf.py` bind to loopback. `AI_PIPELINE_ALLOW_REMOTE=1` allows non-local clients that still present the token.
 
 > Note: Root `server.py` is a deprecated backward-compat shim. Do not use for new code.
 
