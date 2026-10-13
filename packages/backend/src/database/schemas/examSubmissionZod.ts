@@ -21,14 +21,19 @@ export const questionEvaluationZodSchema = z.object({
   suggestions: z.array(z.string())
 });
 
-// NEW: Exam submission document schema (COMPLETED SUBMISSIONS ONLY)
-// No draft/in-progress state - all submissions are complete with mandatory scores
+// Exam submission document.
+// `gradingStatus: "pending"` is a short-lived unique-index claim taken before
+// Gemini grading, not a student draft. It is deleted if grading fails.
+// `"complete"` (and a missing status on older rows) is a finished result.
+// Placeholder scores on a pending row are replaced when grading finishes.
+// The legacy `answers` map is not part of this schema and must not be unset.
 export const examSubmissionDocumentZodSchema = z.object({
   examId: z.string(),
   userId: z.string(),
   submittedAt: z.date().default(() => new Date()),
   timeSpent: z.number(), // Time in seconds - MANDATORY
   autoSubmitted: z.boolean().default(false),
+  gradingStatus: z.enum(["pending", "complete"]).default("complete"),
   
   // Score fields - ALL MANDATORY
   maxMarks: z.number(), // Maximum marks possible for the exam

@@ -430,6 +430,26 @@ export function duplicateSubmissionOutcome(existing?: {
 }
 
 /**
+ * Conflict for a second submit of the same exam.
+ *
+ * A finished row (including a legacy submission with no grading status) carries
+ * its id so the client can open the result. A pending claim does not: that row
+ * is only a lock around grading and has no score yet.
+ */
+export function submissionConflictOutcome(existing?: {
+  _id?: unknown
+  gradingStatus?: string | null
+} | null): { status: number; error: string; submissionId?: string } {
+  if (existing?.gradingStatus === "pending") {
+    return {
+      status: 409,
+      error: "This exam submission is already being graded",
+    }
+  }
+  return duplicateSubmissionOutcome(existing)
+}
+
+/**
  * How long after the official end a submit that is already in flight may
  * still land. Anything later is rejected. The client clock is not consulted.
  */

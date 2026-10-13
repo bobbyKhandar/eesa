@@ -11,6 +11,16 @@ import type { Model } from "mongoose";
 import { connect } from "../connect.js";
 import { getExamSubmissionModel, getUserModel } from "../mongooseSchemas.js";
 import type { ExamSubmissionDocument } from "../schemas/examSubmissionZod.js";
+import {
+  claimSubmissionSlot,
+  gradedSubmissionFilter,
+  gradedSubmissionUpdate,
+  isDuplicateKeyError,
+  isVisibleSubmission,
+  pendingClaimFilter,
+  type ClaimOutcome,
+  type GradedExamSubmission,
+} from "../../services/examSubmissionClaim.js";
 
 /** Lean Mongo rows include `_id`, which the Zod document schema does not describe. */
 type StoredExamSubmission = ExamSubmissionDocument & { _id: { toString(): string } };
@@ -62,11 +72,13 @@ export class ExamSubmissionRepository {
         };
       }
 
-      // Create submission document with manual ObjectId
+      // Create submission document with manual ObjectId.
+      // Direct creates are already graded, so they are complete rather than a claim.
       const submissionDoc: any = {
         ...data,
         submittedAt: new Date(),
-        emailSent: false
+        emailSent: false,
+        gradingStatus: "complete",
       };
       submissionDoc._id = new Types.ObjectId();
 
@@ -87,8 +99,127 @@ export class ExamSubmissionRepository {
 
       return { success: true, submissionId };
     } catch (error) {
+      if (isDuplicateKeyError(error)) {
+        try {
+          const existingSubmission = await this.model.findOne({
+            examId: data.examId,
+            userId: data.userId,
+          });
+          return {
+            success: false,
+            error: 'Exam submission already exists for this user and exam',
+            ...(existingSubmission ? { submissionId: existingSubmission._id.toString() } : {}),
+          };
+        } catch (lookupError) {
+          console.error('Error reading submission after duplicate key:', lookupError);
+          return {
+            success: false,
+            error: 'Exam submission already exists for this user and exam',
+          };
+        }
+      }
       console.error('Error creating exam submission:', error);
       return { success: false, error: 'Failed to create exam submission' };
+    }
+  }
+
+  /**
+   * Reserve the one submission for this user and exam before grading.
+   * The unique (examId, userId) index makes the insert the lock. Placeholder
+   * scores are replaced by `completePending` and are not a result.
+   */
+  async claimPending(data: {
+    examId: string;
+    userId: string;
+    timeSpent: number;
+    autoSubmitted?: boolean;
+  }): Promise<ClaimOutcome> {
+    try {
+      await connect();
+      const submittedAt = new Date();
+      return await claimSubmissionSlot({
+        insertPending: async () => {
+          const submissionId = new Types.ObjectId();
+          const pendingDoc: any = {
+            _id: submissionId,
+            examId: data.examId,
+            userId: data.userId,
+            submittedAt,
+            timeSpent: data.timeSpent,
+            autoSubmitted: data.autoSubmitted ?? false,
+            maxMarks: 0,
+            marksAchieved: 0,
+            responses: [],
+            emailSent: false,
+            gradingStatus: "pending",
+          };
+          await this.model.insertMany([pendingDoc]);
+          return submissionId.toString();
+        },
+        findByExamAndUser: async () => {
+          const existing = await this.model.findOne({ examId: data.examId, userId: data.userId }).lean();
+          return existing;
+        },
+      });
+    } catch (error) {
+      console.error('Error claiming exam submission:', error);
+      return { status: "failed", error: "Failed to claim exam submission" };
+    }
+  }
+
+  /**
+   * Store the grade on the pending claim. Does not unset `answers`.
+   * User history is updated only after the row is complete.
+   */
+  async completePending(
+    submissionId: string,
+    data: {
+      examId: string;
+      userId: string;
+    } & GradedExamSubmission,
+  ): Promise<{ success: boolean; error?: string }> {
+    try {
+      await connect();
+      const submissionObjectId = Types.ObjectId.createFromHexString(submissionId);
+      const result = await this.model.updateOne(
+        pendingClaimFilter(submissionObjectId),
+        gradedSubmissionUpdate(data),
+      );
+      if (result.matchedCount === 0) {
+        return { success: false, error: "Pending submission was not found" };
+      }
+
+      try {
+        const UserModel = getUserModel();
+        await UserModel.updateOne(
+          { _id: data.userId },
+          {
+            $pull: { currentAllocatedExams: data.examId },
+            $addToSet: { submissionHistory: submissionId },
+          },
+        );
+      } catch (historyError) {
+        console.error('Error updating user after submission claim completed:', historyError);
+      }
+
+      return { success: true };
+    } catch (error) {
+      console.error('Error completing exam submission:', error);
+      return { success: false, error: 'Failed to create exam submission' };
+    }
+  }
+
+  /**
+   * Delete a claim that never finished grading. A completed row is left alone,
+   * including any legacy `answers` map stored on it.
+   */
+  async releasePending(submissionId: string): Promise<void> {
+    try {
+      await connect();
+      const submissionObjectId = Types.ObjectId.createFromHexString(submissionId);
+      await this.model.deleteOne(pendingClaimFilter(submissionObjectId));
+    } catch (error) {
+      console.error('Error releasing exam submission claim:', error);
     }
   }
 
@@ -156,6 +287,7 @@ export class ExamSubmissionRepository {
       await connect();
       const submissionObjectId = Types.ObjectId.createFromHexString(submissionId);
       const submission = await this.model.findById(submissionObjectId).lean();
+      if (!submission || !isVisibleSubmission(submission)) return null;
       return submission as StoredExamSubmission | null;
     } catch (error) {
       console.error('Error getting submission:', error);
@@ -169,7 +301,7 @@ export class ExamSubmissionRepository {
   async getByExam(examId: string): Promise<ExamSubmissionDocument[]> {
     try {
       await connect();
-      const submissions = await this.model.find({ examId })
+      const submissions = await this.model.find(gradedSubmissionFilter({ examId }))
         .sort({ submittedAt: -1 })
         .lean();
       return submissions;
@@ -185,7 +317,7 @@ export class ExamSubmissionRepository {
   async getByUser(userId: string): Promise<ExamSubmissionDocument[]> {
     try {
       await connect();
-      const submissions = await this.model.find({ userId })
+      const submissions = await this.model.find(gradedSubmissionFilter({ userId }))
         .sort({ submittedAt: -1 })
         .lean();
       return submissions;
@@ -215,9 +347,9 @@ export class ExamSubmissionRepository {
   async getByScoreRange(minMarks: number, maxMarks: number): Promise<ExamSubmissionDocument[]> {
     try {
       await connect();
-      const submissions = await this.model.find({
+      const submissions = await this.model.find(gradedSubmissionFilter({
         marksAchieved: { $gte: minMarks, $lte: maxMarks }
-      })
+      }))
       .sort({ marksAchieved: -1 })
       .lean();
       return submissions;
