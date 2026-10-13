@@ -16,7 +16,7 @@
 - **Job persistence:** S3-backed metadata with in-memory LRU cache (100-job limit with eviction).
 - **Startup:** `python src/api/server.py` (blocking), `start_server()` (non-blocking), or via `wsgi.py` (Gunicorn).
 - **Used by:** `wsgi.py` (production), `start_server.py` (development), `src/server.py` (bootstrap re-exporter).
-- **Routes:** `/health` (no credential), and authenticated `/process`, `/process/batch`, `/job/<id>/status`, `/job/<id>/metadata`, `/job/<id>/questions`, `/jobs/active`, `/submit-local`, `/submit` (legacy), `/submit-aws`, `/status-aws/<job_id>`, `/status/<batch_id>`, `/result/<batch_id>`, `/upload/question-papers`.
+- **Routes:** `/health` (no credential), and authenticated `/process`, `/process/batch`, `/job/<id>/status`, `/job/<id>/metadata`, `/job/<id>/questions`, `/job/<id>/retry`, `/jobs/active`, `/submit-local`, `/submit` (legacy), `/submit-aws`, `/status-aws/<job_id>`, `/status/<batch_id>`, `/result/<batch_id>`, `/upload/question-papers`. `POST /job/<id>/retry` re-queues a `failed` or `partial_success` job from its original S3 PDF and marks the metadata `in_progress` before the worker starts.
 - **Listener:** `AIServer` and `gunicorn.conf.py` bind to loopback. `AI_PIPELINE_ALLOW_REMOTE=1` allows non-local clients that still present the token.
 
 > Note: Root `server.py` is a deprecated backward-compat shim. Do not use for new code.
@@ -67,7 +67,8 @@
 |---|---|
 | `__init__.py` | Exports `create_app`, `start_server`, `stop_server`, `AWSPipelineManager` |
 | `server.py` | Module-level Flask app with CORS, route registration, `AIServer` class for thread lifecycle |
-| `routes.py` | Route definitions via `register_routes()` function — 14 routes covering production + legacy paths |
+| `routes.py` | Route definitions via `register_routes()` function — 15 routes covering production + legacy paths |
+| `job_retry.py` | Decides whether a failed job can be re-queued from its stored PDF |
 | `aws_manager.py` | `AWSPipelineManager` — full 5-stage pipeline orchestration, S3 metadata persistence, bounded thread pool |
 | `question_retriever.py` | Question retrieval with 3-level S3 fallback (organized → enriched → parsed), Bloom's taxonomy stats |
 

@@ -6,6 +6,7 @@ import time
 from datetime import datetime
 from flask import request, jsonify
 
+from .job_retry import plan_job_retry
 from .question_retriever import get_job_questions
 from .service_auth import install_service_auth
 
@@ -136,6 +137,49 @@ def register_routes(app, aws_manager, pipeline_manager):
             import traceback
             traceback.print_exc()
             return jsonify({'error': str(e)}), 500
+
+    @app.route('/job/<job_id>/retry', methods=['POST'])
+    def retry_aws_job(job_id):
+        """Re-queue a failed job from the PDF already stored in S3."""
+        if not aws_manager.is_aws_available():
+            return jsonify({'success': False, 'error': 'AWS pipeline not configured'}), 503
+        try:
+            metadata = aws_manager.load_job_metadata(job_id)
+            plan = plan_job_retry(metadata, job_id, aws_manager.s3_jobs_prefix)
+            if not plan['ok']:
+                return jsonify({'success': False, 'error': plan['error']}), plan['status']
+            try:
+                aws_manager.s3_client.head_object(
+                    Bucket=aws_manager.s3_bucket,
+                    Key=plan['s3_key'],
+                )
+            except Exception:
+                return jsonify({
+                    'success': False,
+                    'error': 'File not found in S3: {}'.format(plan['s3_key']),
+                }), 404
+            metadata_to_save = dict(plan['metadata'])
+            metadata_to_save['started_at'] = datetime.now().isoformat()
+            if not aws_manager.save_job_metadata(job_id, metadata_to_save):
+                return jsonify({'success': False, 'error': 'Failed to record retry'}), 500
+            aws_manager.executor.submit(
+                aws_manager.process_aws_job_pipeline,
+                job_id,
+                plan['s3_key'],
+                plan['filename'],
+            )
+            return jsonify({
+                'success': True,
+                'message': 'Job retry started',
+                'job': {
+                    'job_id': job_id,
+                    'filename': plan['filename'],
+                    'status': 'in_progress',
+                    's3_key': plan['s3_key'],
+                },
+            }), 202
+        except Exception as e:
+            return jsonify({'success': False, 'error': str(e)}), 500
 
     @app.route('/jobs/active', methods=['GET'])
     def get_active_aws_jobs():

@@ -47,13 +47,13 @@
 - Server side: `import { auth } from "@clerk/nextjs/server"` in API routes. Returns `userId`.
 - Client side: `useUser()`, `<SignInButton/>`, `<SignUpButton/>`, `<UserButton/>`.
 - Middleware: `app/middleware.ts` — protects all routes via `clerkMiddleware()`.
-- `GET /api/jobs/[jobId]/status` and `GET /api/jobs/[jobId]/questions` require a signed-in owner or an admin (`jobContentAccessDecision` in `lib/uploadSessionJobs.ts`). Ownership is `uploaded_by` via `callerOwnsStoredJob`. The check runs before a MongoDB payload is returned and before either route calls the AI pipeline. A stored job with no uploader, and a job that is not stored yet, are not readable by a non-admin.
+- `GET /api/jobs/[jobId]/status`, `GET /api/jobs/[jobId]/questions`, and `POST /api/jobs/[jobId]/retry` require a signed-in owner or an admin (`jobContentAccessDecision` in `lib/uploadSessionJobs.ts`). Ownership is `uploaded_by` via `callerOwnsStoredJob`. The check runs before a MongoDB payload is returned and before any of these routes calls the AI pipeline. A stored job with no uploader, and a job that is not stored yet, are not readable or retryable by a non-admin. Retry calls `POST /job/<id>/retry` through `fetchFromAiPipeline`. After the pipeline accepts, a stored `failed` or `partial_success` row is reopened to `in_progress` so status polls follow the new run.
 - `POST /api/exam-analysis/upload-bulk-zip` requires a signed-in user. It extracts PDFs from the `zipFile` field and ingests each one through `ingestBulkExamFile`, which stores that user as `analyzedBy` and starts analysis in the background. This route does not call the AI pipeline. `ingestBulkExamFile` returns `status: "pending"` before analysis finishes. The single-file bulk page and the ZIP route both record an accepted file as UI status `processing` via `statusesFromBulkResponse`, not success. The upload-status page polls `GET /api/exam-analysis/:id` and offers Publish All only after each analysis is `completed`.
 
 ## AI Pipeline Communication
 - Frontend API routes call the Python Flask AI pipeline via `fetchFromAiPipeline` / `withPipelineAuth` (`lib/aiPipeline.ts`).
 - `AI_PIPELINE_URL` defaults to `http://127.0.0.1:5000`. `AI_PIPELINE_TOKEN` is a server-only shared secret sent as `Authorization: Bearer`. Do not use a `NEXT_PUBLIC_` variable for it.
-- Job status and question proxies authorize with `jobContentAccessDecision` before calling the pipeline. Upload routes use `requireAdminCaller`. Those helpers are the user checks; the token only identifies this server to Flask.
+- Job status, question, and retry proxies authorize with `jobContentAccessDecision` before calling the pipeline. Upload routes use `requireAdminCaller`. Those helpers are the user checks; the token only identifies this server to Flask.
 - **Never call AWS Textract/Bedrock directly from the frontend** — always go through the AI pipeline.
 
 ## Key Packages
