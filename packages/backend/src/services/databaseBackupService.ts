@@ -1,4 +1,6 @@
 import { S3Client, PutObjectCommand, GetObjectCommand, ListObjectsV2Command, DeleteObjectsCommand, _Object } from "@aws-sdk/client-s3";
+import mongoose from "mongoose";
+import type { Model } from "mongoose";
 import { connect } from "../database/connect";
 import { getManagedCollections } from "../database/managedCollectionModels";
 import type { ManagedCollection } from "../database/managedCollectionModels";
@@ -12,6 +14,14 @@ import {
   RESTORE_BATCH_SIZE,
   summarizeBackupReads,
 } from "./backupPlan";
+import {
+  applyStagedRestore,
+  createRestoreToken,
+  createStagedRestoreOps,
+  toRestoreResult,
+  type RestoreCollectionBinding,
+  type RestoreDatabase,
+} from "./stagedRestore";
 
 const S3_BACKUP_BUCKET = process.env.S3_BACKUP_BUCKET || process.env.S3_BUCKET || 'eesa-pipeline-storage';
 const S3_REGION = process.env.AWS_REGION || 'ap-south-1';
@@ -261,69 +271,32 @@ export async function restoreBackup(id: string): Promise<RestoreResult> {
 
   const backupData: Record<string, any[]> = JSON.parse(body);
   const plan = planRestore(backupData, MANAGED_COLLECTION_NAMES);
+  const database = mongoose.connection.db as RestoreDatabase | undefined;
+  if (!database) {
+    throw new Error('Database connection is not ready');
+  }
+
   const models = new Map<string, ManagedCollection['model']>(
     getAllCollections().map(({ name, model }) => [name, model])
   );
-
-  const collectionCounts: Record<string, number> = {};
-  const errors: Record<string, string> = {};
-
-  for (const { name, docs, presentInBackup } of plan) {
-    const model = models.get(name);
-    if (!model) {
-      errors[name] = 'No model registered for this collection';
-      continue;
-    }
-
-    try {
-      // Always clear first: a restore must leave the database in the exact
-      // state of the backup, including collections missing from the payload.
-      await model.deleteMany({});
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Unknown error';
-      console.error(`[DatabaseBackupService] Failed to clear ${name} during restore:`, message);
-      errors[name] = `Failed to clear collection: ${message}`;
-      continue;
-    }
-
-    if (!presentInBackup) {
-      collectionCounts[name] = 0;
-      continue;
-    }
-
-    if (docs.length === 0) {
-      collectionCounts[name] = 0;
-      continue;
-    }
-
-    let inserted = 0;
-    for (const batch of chunkDocuments(docs, RESTORE_BATCH_SIZE)) {
-      try {
-        // ordered: false keeps a single invalid document from aborting the whole
-        // batch (and from re-inserting documents the retry already wrote).
-        const result = await model.insertMany(batch, { ordered: false });
-        inserted += result?.insertedCount ?? batch.length;
-      } catch (err) {
-        const message = err instanceof Error ? err.message : 'Unknown error';
-        console.error(`[DatabaseBackupService] Restore batch failed for ${name}:`, message);
-        errors[name] = `Failed to insert documents: ${message}`;
-      }
-    }
-
-    collectionCounts[name] = inserted;
+  // Stage every collection, then rename it into place. Deleting first and
+  // inserting afterwards drops live documents when a later batch fails.
+  const bindings = plan.map((entry) =>
+    bindingForCollection(entry.name, models.get(entry.name))
+  );
+  const outcome = await applyStagedRestore(
+    plan,
+    createStagedRestoreOps(database, bindings, createRestoreToken())
+  );
+  if (!outcome.applied) {
+    console.error(
+      outcome.liveDataPreserved
+        ? '[DatabaseBackupService] Restore failed; live data was left unchanged:'
+        : '[DatabaseBackupService] Restore failed and could not fully roll back live data:',
+      outcome.errors
+    );
   }
-
-  const totalRestored = Object.values(collectionCounts).reduce((a, b) => a + b, 0);
-  const success = Object.keys(errors).length === 0;
-
-  return {
-    success,
-    message: success
-      ? `Restored ${totalRestored} documents across ${Object.keys(collectionCounts).length} collections`
-      : `Restored ${totalRestored} documents with errors in ${Object.keys(errors).length} collection(s)`,
-    collectionCounts,
-    errors,
-  };
+  return toRestoreResult(outcome);
 }
 
 export async function deleteBackup(id: string): Promise<{ success: boolean; deletedObjects: number }> {
@@ -361,6 +334,67 @@ export async function deleteBackup(id: string): Promise<{ success: boolean; dele
     success: true,
     deletedObjects: keys.length,
   };
+}
+
+function bindingForCollection(
+  name: string,
+  model: Model<any> | undefined
+): RestoreCollectionBinding {
+  // Registry keys are not always the MongoDB collection. Subject is stored in
+  // featureSubjects; renaming the registry key would miss the live data.
+  const physicalName = model?.collection.collectionName || name;
+  return {
+    name,
+    physicalName,
+    validate: async (docs) => {
+      if (!model) throw new Error('No model registered for this collection');
+      await validateBackupDocuments(model, docs);
+    },
+    insertInto: async (stagingCollection, docs) => {
+      if (!model) throw new Error('No model registered for this collection');
+      return insertIntoStagingCollection(model, stagingCollection, docs);
+    },
+  };
+}
+
+async function validateBackupDocuments(model: Model<any>, docs: unknown[]): Promise<void> {
+  for (let index = 0; index < docs.length; index += 1) {
+    const doc = docs[index];
+    if (!doc || typeof doc !== 'object' || Array.isArray(doc)) {
+      throw new Error(`Document ${index} is not an object`);
+    }
+    try {
+      await new model(doc).validate();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      throw new Error(`Document ${index} failed validation: ${message}`);
+    }
+  }
+}
+
+async function insertIntoStagingCollection(
+  model: Model<any>,
+  stagingCollection: string,
+  docs: unknown[]
+): Promise<number> {
+  const schema = model.schema.clone();
+  schema.set('autoIndex', false);
+  schema.set('autoCreate', false);
+  const modelName = `EesaRestoreStaging_${stagingCollection.replace(/[^A-Za-z0-9]/g, '_')}`;
+  const stagingModel = mongoose.model(modelName, schema, stagingCollection);
+  try {
+    let inserted = 0;
+    for (const batch of chunkDocuments(docs, RESTORE_BATCH_SIZE)) {
+      const result = await stagingModel.insertMany(batch, { ordered: true });
+      inserted += Array.isArray(result) ? result.length : batch.length;
+    }
+    if (inserted !== docs.length) {
+      throw new Error(`Staged ${inserted} of ${docs.length} documents`);
+    }
+    return inserted;
+  } finally {
+    mongoose.deleteModel(modelName);
+  }
 }
 
 function isNotFoundError(error: any): boolean {

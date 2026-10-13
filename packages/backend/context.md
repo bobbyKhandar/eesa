@@ -86,6 +86,7 @@
 | `publishAnalysisService.ts` | Orchestrates AnalysisReport, Prompt, UniqueQuestion creation. Publication is a pending → complete state machine (`publishAnalysisMachine.ts`): only a completed report counts as already published, and a retry resumes the pending report instead of inserting another one. |
 | `questionSimilarityService.ts` | Bidirectional similarity linking between prompts (MongoDB). `findSimilarQuestionsInDB` treats a missing `isActive` as active and matches stored `questionText`. Public-bank exclusion of unpublished `generateVia: "user"` exam drafts stays in `publicQuestionBank.ts` / `PromptRepository.findBySubject()`. |
 | `s3CleanupService.ts` | Validates S3 files, marks expired jobs in MongoDB |
+| `databaseBackupService.ts` | S3 backup and restore of the managed collections. Restore writes every collection into a side collection and renames it into place only after the full payload is staged, so a failed insert or publish leaves live data unchanged (or rolls a partial publish back). A backup whose metadata status is `failed` is refused before any write. |
 | `examOcrService.ts` | EC2 OCR + exam analysis workflow |
 | `generateBloomsAnatomy.ts` | Bloom's taxonomy classification (mostly commented out) |
 

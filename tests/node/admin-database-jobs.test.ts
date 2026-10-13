@@ -426,17 +426,23 @@ describe("admin database + jobs surfaces", () => {
     const nextExport = source.indexOf("\nexport ", restoreStart + 1);
     const restoreFn = source.slice(restoreStart, nextExport === -1 ? undefined : nextExport);
     const gate = restoreFn.search(/assessBackupRestore\(/);
-    const wipe = restoreFn.indexOf("deleteMany");
+    const publish = restoreFn.search(/applyStagedRestore\s*\(/);
     assert.ok(gate >= 0, "restoreBackup must consult assessBackupRestore");
-    assert.ok(wipe >= 0, "restore still replaces collection contents");
+    assert.ok(publish >= 0, "restore must publish through the staged restore");
     assert.ok(
-      gate < wipe,
-      "the failed-backup check must run before any collection is cleared"
+      gate < publish,
+      "the failed-backup check must run before any collection is staged or swapped"
     );
     assert.match(restoreFn, /BackupNotRestorableError/);
+    assert.match(source, /collection\.collectionName/);
+    assert.doesNotMatch(
+      restoreFn,
+      /deleteMany\s*\(/,
+      "restore must not clear a live collection before the staged data is ready"
+    );
     assert.doesNotMatch(
       restoreFn.slice(0, gate),
-      /deleteMany|insertMany/,
+      /deleteMany|insertMany|applyStagedRestore|createStagedRestoreOps/,
       "no writes may happen before the restore decision"
     );
   });
