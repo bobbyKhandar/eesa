@@ -200,17 +200,18 @@ describe("extractZipPdfs", () => {
 });
 
 describe("statusesFromBulkResponse", () => {
-  it("maps a single-subject upload onto one success row", () => {
+  it("maps a single-subject upload onto one processing row", () => {
     const rows = statusesFromBulkResponse("paper.pdf", {
       success: true,
       analysisId: "an-1",
+      status: "pending",
       extractedMetadata: { subjectName: "Physics", year: "2024", semester: "S3" },
     });
     assert.equal(rows.length, 1);
-    assert.equal(rows[0].status, "success");
+    assert.equal(rows[0].status, "processing");
     assert.equal(rows[0].fileName, "paper.pdf");
     assert.equal(rows[0].analysisId, "an-1");
-    assert.equal(rows[0].progress, 100);
+    assert.equal(rows[0].progress, undefined);
     assert.equal(rows[0].extractedMetadata?.subjectName, "Physics");
   });
 
@@ -226,8 +227,8 @@ describe("statusesFromBulkResponse", () => {
     assert.deepEqual(
       rows.map((row) => ({ fileName: row.fileName, analysisId: row.analysisId, status: row.status })),
       [
-        { fileName: "bundle.pdf - Physics", analysisId: "a", status: "success" },
-        { fileName: "bundle.pdf - Maths", analysisId: "b", status: "success" },
+        { fileName: "bundle.pdf - Physics", analysisId: "a", status: "processing" },
+        { fileName: "bundle.pdf - Maths", analysisId: "b", status: "processing" },
       ]
     );
   });
@@ -287,10 +288,10 @@ describe("collectZipResults", () => {
     assert.deepEqual(
       results.map((row) => ({ fileName: row.fileName, status: row.status, error: row.error })),
       [
-        { fileName: "ok.pdf", status: "success", error: undefined },
+        { fileName: "ok.pdf", status: "processing", error: undefined },
         { fileName: "bad.pdf", status: "error", error: "disk full" },
-        { fileName: "split.pdf - Physics", status: "success", error: undefined },
-        { fileName: "split.pdf - Maths", status: "success", error: undefined },
+        { fileName: "split.pdf - Physics", status: "processing", error: undefined },
+        { fileName: "split.pdf - Maths", status: "processing", error: undefined },
         { fileName: "empty.pdf", status: "error", error: "PDF is empty" },
       ]
     );

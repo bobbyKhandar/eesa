@@ -1,25 +1,65 @@
 "use client"
 
 import type React from "react"
-import { use, useState, useEffect } from "react"
+import { use, useState, useEffect, useRef } from "react"
 import { useRouter } from "next/navigation"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/frontend/components/ui/card"
 import { Button } from "@/frontend/components/ui/button"
 import { Loader2, CheckCircle2, XCircle, AlertCircle, Split, FileText, ArrowLeft, RefreshCw } from "lucide-react"
 import { Badge } from "@/frontend/components/ui/badge"
 import { Progress } from "@/frontend/components/ui/progress"
+import {
+  analysisIdsToPoll,
+  applyAnalysisPollResults,
+  isUploadSessionActive,
+  publishableAnalysisIds,
+  type AnalysisPollResult,
+  type UploadStatus,
+} from "@/frontend/lib/bulkUploadStatus"
 
-interface UploadStatus {
-  fileName: string
-  status: "pending" | "uploading" | "processing" | "success" | "error"
-  analysisId?: string
-  error?: string
-  progress?: number
-  extractedMetadata?: {
-    subjectName?: string
-    year?: string
-    semester?: string
+async function readAnalysisStatus(analysisId: string): Promise<AnalysisPollResult> {
+  try {
+    const response = await fetch(`/api/exam-analysis/${analysisId}`)
+    const data = await response.json().catch(() => null)
+    if (response.status === 404) {
+      return { analysisId, status: "missing" }
+    }
+    const status = data?.analysis?.status
+    if (!response.ok || typeof status !== "string") {
+      return { analysisId, status: "unavailable" }
+    }
+    if (
+      status === "pending" ||
+      status === "processing" ||
+      status === "completed" ||
+      status === "failed" ||
+      status === "published"
+    ) {
+      const processingError = data.analysis.processingError
+      return {
+        analysisId,
+        status,
+        processingError: typeof processingError === "string" ? processingError : undefined,
+      }
+    }
+    return { analysisId, status: "unavailable" }
+  } catch {
+    return { analysisId, status: "unavailable" }
   }
+}
+
+function sameUploadStatuses(left: UploadStatus[], right: UploadStatus[]): boolean {
+  if (left.length !== right.length) return false
+  return left.every((row, index) => {
+    const other = right[index]
+    return (
+      row.fileName === other.fileName &&
+      row.status === other.status &&
+      row.analysisId === other.analysisId &&
+      row.error === other.error &&
+      row.progress === other.progress
+    )
+  })
 }
 
 interface UploadSession {
@@ -40,44 +80,79 @@ export default function UploadStatusPage({ params }: { params: Promise<{ session
   const [autoRefresh, setAutoRefresh] = useState(true)
   const [isPublishing, setIsPublishing] = useState(false)
   const [publishResult, setPublishResult] = useState<{ success: boolean; message: string } | null>(null)
+  const pollingRef = useRef(false)
+  const pollGeneration = useRef(0)
 
-  // Load session from localStorage
+  // Load session from localStorage and, while analysis is unfinished, ask the
+  // server. The upload request returns as soon as the record is created.
   useEffect(() => {
-    loadSession()
-    
-    // Auto-refresh every 2 seconds if there are pending/processing uploads
+    const generation = pollGeneration.current + 1
+    pollGeneration.current = generation
+
+    const tick = () => {
+      if (pollGeneration.current !== generation) return
+      void loadSession(generation)
+    }
+
+    tick()
+
     const interval = setInterval(() => {
-      if (autoRefresh) {
-        loadSession()
-      }
+      if (autoRefresh) tick()
     }, 2000)
-    
-    return () => clearInterval(interval)
+
+    return () => {
+      if (pollGeneration.current === generation) pollGeneration.current += 1
+      clearInterval(interval)
+    }
   }, [sessionId, autoRefresh])
 
-  const loadSession = () => {
+  const loadSession = async (generation = pollGeneration.current) => {
+    const stillCurrent = () => pollGeneration.current === generation
     try {
       const storedSession = localStorage.getItem(`upload-session-${sessionId}`)
-      if (storedSession) {
-        const session: UploadSession = JSON.parse(storedSession)
-        setUploadSession(session)
-        
-        // Stop auto-refresh if all uploads are complete
-        const hasActiveUploads = session.statuses.some(
-          s => s.status === "uploading" || s.status === "processing" || s.status === "pending"
-        )
-        if (!hasActiveUploads) {
-          setAutoRefresh(false)
+      if (!storedSession) {
+        if (stillCurrent()) setUploadSession(null)
+        return
+      }
+
+      let session: UploadSession = JSON.parse(storedSession)
+      if (!stillCurrent()) return
+      setUploadSession(session)
+
+      const ids = analysisIdsToPoll(session.statuses)
+      if (ids.length > 0 && !pollingRef.current) {
+        pollingRef.current = true
+        try {
+          const results = await Promise.all(ids.map((analysisId) => readAnalysisStatus(analysisId)))
+          // Re-read so a file that finished uploading during the poll is not overwritten.
+          let fresh: UploadSession = session
+          try {
+            const freshRaw = localStorage.getItem(`upload-session-${sessionId}`)
+            if (freshRaw) fresh = JSON.parse(freshRaw)
+          } catch {
+            fresh = session
+          }
+          const nextStatuses = applyAnalysisPollResults(fresh.statuses, results)
+          if (!sameUploadStatuses(fresh.statuses, nextStatuses)) {
+            fresh.statuses = nextStatuses
+            localStorage.setItem(`upload-session-${sessionId}`, JSON.stringify(fresh))
+          }
+          session = { ...fresh, statuses: nextStatuses }
+          if (!stillCurrent()) return
+          setUploadSession(session)
+        } finally {
+          pollingRef.current = false
         }
-      } else {
-        // Session not found
-        setUploadSession(null)
+      }
+
+      if (stillCurrent() && !isUploadSessionActive(session.statuses)) {
+        setAutoRefresh(false)
       }
     } catch (error) {
       console.error("Error loading session:", error)
-      setUploadSession(null)
+      if (stillCurrent()) setUploadSession(null)
     } finally {
-      setIsLoading(false)
+      if (stillCurrent()) setIsLoading(false)
     }
   }
 
@@ -91,9 +166,7 @@ export default function UploadStatusPage({ params }: { params: Promise<{ session
   const handlePublishAll = async () => {
     if (!uploadSession) return
 
-    const successfulAnalyses = uploadSession.statuses
-      .filter(s => s.status === "success" && s.analysisId)
-      .map(s => s.analysisId!)
+    const successfulAnalyses = publishableAnalysisIds(uploadSession.statuses)
 
     if (successfulAnalyses.length === 0) {
       alert("No successful analyses to publish")
@@ -204,7 +277,8 @@ export default function UploadStatusPage({ params }: { params: Promise<{ session
     (s) => s.status === "uploading" || s.status === "processing" || s.status === "pending"
   ).length
 
-  const isComplete = processingCount === 0
+  const isComplete = !isUploadSessionActive(uploadSession.statuses)
+  const readyToPublish = publishableAnalysisIds(uploadSession.statuses)
 
   return (
     <div className="mx-auto w-full max-w-4xl">
@@ -253,7 +327,7 @@ export default function UploadStatusPage({ params }: { params: Promise<{ session
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={loadSession}
+                onClick={() => void loadSession()}
               >
                 <RefreshCw className="h-4 w-4" />
               </Button>
@@ -329,7 +403,7 @@ export default function UploadStatusPage({ params }: { params: Promise<{ session
             })}
           </div>
 
-          {isComplete && successCount > 0 && (
+          {isComplete && readyToPublish.length > 0 && (
             <div className="mt-4 pt-4 border-t space-y-3">
               {publishResult && (
                 <div className={`p-3 rounded-lg ${publishResult.success ? 'bg-green-50 border border-green-200 text-green-800' : 'bg-red-50 border border-red-200 text-red-800'}`}>

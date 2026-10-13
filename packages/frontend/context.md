@@ -48,7 +48,7 @@
 - Client side: `useUser()`, `<SignInButton/>`, `<SignUpButton/>`, `<UserButton/>`.
 - Middleware: `app/middleware.ts` — protects all routes via `clerkMiddleware()`.
 - `GET /api/jobs/[jobId]/status` and `GET /api/jobs/[jobId]/questions` require a signed-in owner or an admin (`jobContentAccessDecision` in `lib/uploadSessionJobs.ts`). Ownership is `uploaded_by` via `callerOwnsStoredJob`. The check runs before a MongoDB payload is returned and before either route calls the AI pipeline. A stored job with no uploader, and a job that is not stored yet, are not readable by a non-admin.
-- `POST /api/exam-analysis/upload-bulk-zip` requires a signed-in user. It extracts PDFs from the `zipFile` field and ingests each one through `ingestBulkExamFile`, which stores that user as `analyzedBy`. This route does not call the AI pipeline.
+- `POST /api/exam-analysis/upload-bulk-zip` requires a signed-in user. It extracts PDFs from the `zipFile` field and ingests each one through `ingestBulkExamFile`, which stores that user as `analyzedBy` and starts analysis in the background. This route does not call the AI pipeline. `ingestBulkExamFile` returns `status: "pending"` before analysis finishes. The single-file bulk page and the ZIP route both record an accepted file as UI status `processing` via `statusesFromBulkResponse`, not success. The upload-status page polls `GET /api/exam-analysis/:id` and offers Publish All only after each analysis is `completed`.
 
 ## AI Pipeline Communication
 - Frontend API routes call the Python Flask AI pipeline via `fetchFromAiPipeline` / `withPipelineAuth` (`lib/aiPipeline.ts`).
