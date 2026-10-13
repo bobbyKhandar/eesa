@@ -3,6 +3,11 @@ import { auth } from "@clerk/nextjs/server";
 import { UploadSessionRepository } from "@/backend/src/database/repositories/UploadSessionRepository";
 import { JobMetadataRepository } from "@/backend/src/database/repositories/JobMetadataRepository";
 import { connect } from "@/backend/src/database/connect";
+import {
+  foreignStoredJobIds,
+  parseJobIdList,
+  visibleSessionJob,
+} from "@/frontend/lib/uploadSessionJobs";
 
 const sessionRepo = new UploadSessionRepository();
 const jobRepo = new JobMetadataRepository();
@@ -46,16 +51,12 @@ export async function GET(
       );
     }
 
-    // Fetch job details for each job_id
-    const jobs = await Promise.all(
-      session.job_ids.map(async (jobId) => {
-        const job = await jobRepo.findById(jobId);
-        return job || {
-          job_id: jobId,
-          status: 'unknown',
-          error: 'Job not found in database'
-        };
-      })
+    // Return full documents only for jobs this user uploaded. Other stored
+    // jobs use the same placeholder as a missing job so the response does
+    // not disclose another user's metadata.
+    const storedJobs = await jobRepo.findByJobIds(session.job_ids);
+    const jobs = session.job_ids.map((jobId) =>
+      visibleSessionJob(jobId, storedJobs, userId)
     );
 
     return NextResponse.json({
@@ -114,9 +115,28 @@ export async function PATCH(
       );
     }
 
-    // Add jobs if provided
-    if (add_job_ids && Array.isArray(add_job_ids) && add_job_ids.length > 0) {
-      await sessionRepo.addJobs(sessionId, add_job_ids);
+    // Add jobs if provided. A stored job may be attached only by its uploader.
+    if (add_job_ids !== undefined && add_job_ids !== null) {
+      const parsedJobIds = parseJobIdList(add_job_ids, "add_job_ids");
+      if (!parsedJobIds.ok) {
+        return NextResponse.json(
+          { error: parsedJobIds.error },
+          { status: 400 }
+        );
+      }
+
+      if (parsedJobIds.ids.length > 0) {
+        const storedJobs = await jobRepo.findByJobIds(parsedJobIds.ids);
+        const foreignJobIds = foreignStoredJobIds(userId, parsedJobIds.ids, storedJobs);
+        if (foreignJobIds.length > 0) {
+          return NextResponse.json(
+            { error: "One or more jobs are not owned by the current user" },
+            { status: 403 }
+          );
+        }
+
+        await sessionRepo.addJobs(sessionId, parsedJobIds.ids);
+      }
     }
 
     // Update stats if provided
