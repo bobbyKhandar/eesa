@@ -4,12 +4,13 @@ import { ExamSubmissionRepository } from "@/backend/dist/database/repositories/E
 import { ExamRepository } from "@/backend/dist/database/repositories/ExamRepository";
 import { UserRepository } from "@/backend/dist/database/repositories/UserRepository";
 import { evaluateExamSubmission } from "@/backend/src/services/examEvaluationService";
+import { submitExamAfterWindow } from "@/backend/src/services/examSubmissionClaim";
 import { ExamAttemptRepository } from "@/backend/src/database/repositories/ExamAttemptRepository";
 import { isExamDeleted } from "@/backend/src/database/examDeletion";
 import {
   attemptWindowDecision,
-  duplicateSubmissionOutcome,
   scorePercentage,
+  submissionConflictOutcome,
 } from "@/frontend/lib/examResults";
 
 const submissionRepo = new ExamSubmissionRepository();
@@ -56,14 +57,12 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // One submission per user per exam, and the check happens *before* grading.
-    // The old order ran the whole Gemini evaluation and only then hit the
-    // duplicate guard inside `create`, which reported a 500 "Exam submission
-    // already exists" with no submission id - an error the user could not act
-    // on and could not retry without paying for the grading twice.
+    // A finished submission (including a legacy row with no grading status) is
+    // a 409 before the attempt window is consulted. A pending row is the same
+    // status without an id, because that row is only a grading lock.
     const existing = await submissionRepo.getByExamAndUser(examId, userId);
     if (existing) {
-      const outcome = duplicateSubmissionOutcome(existing);
+      const outcome = submissionConflictOutcome(existing);
       return NextResponse.json(
         { success: false, error: outcome.error, submissionId: outcome.submissionId },
         { status: outcome.status }
@@ -86,47 +85,73 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    console.log("Starting AI evaluation for submission...");
-    const evaluation = await evaluateExamSubmission(exam.questionDetails || [], responses);
-    if ("error" in evaluation) {
+    // Insert the pending submission before Gemini runs. The unique
+    // (examId, userId) index is the lock, so a second in-flight request cannot
+    // grade. A failed grade deletes that pending row and can be retried.
+    const result = await submitExamAfterWindow({
+      claim: () =>
+        submissionRepo.claimPending({
+          examId,
+          userId,
+          timeSpent: attempt.timeSpent,
+          autoSubmitted: attempt.autoSubmitted,
+        }),
+      grade: async () => {
+        console.log("Starting AI evaluation for submission...");
+        const evaluation = await evaluateExamSubmission(exam.questionDetails || [], responses);
+        if (!("error" in evaluation)) {
+          const percentage = scorePercentage(evaluation.marksAchieved, evaluation.maxMarks);
+          console.log(
+            `Evaluation complete: ${evaluation.marksAchieved}/${evaluation.maxMarks} (${percentage.toFixed(2)}%)`
+          );
+        }
+        return evaluation;
+      },
+      complete: (submissionId, evaluation) =>
+        submissionRepo.completePending(submissionId, {
+          examId,
+          userId,
+          responses: evaluation.responses,
+          marksAchieved: evaluation.marksAchieved,
+          maxMarks: evaluation.maxMarks,
+        }),
+      release: (submissionId) => submissionRepo.releasePending(submissionId),
+    });
+
+    if (result.status === "duplicate" || result.status === "in_progress") {
+      const outcome = submissionConflictOutcome(
+        result.status === "duplicate" ? result.submission : { gradingStatus: "pending" }
+      );
       return NextResponse.json(
-        { success: false, error: evaluation.error },
+        { success: false, error: outcome.error, submissionId: outcome.submissionId },
+        { status: outcome.status }
+      );
+    }
+
+    if (result.status === "invalid") {
+      return NextResponse.json(
+        { success: false, error: result.error },
         { status: 400 }
       );
     }
 
-    const { responses: evaluatedResponses, marksAchieved: totalMarks, maxMarks: maxTotalMarks } = evaluation;
-    const percentage = scorePercentage(totalMarks, maxTotalMarks);
-
-    console.log(`Evaluation complete: ${totalMarks}/${maxTotalMarks} (${percentage.toFixed(2)}%)`);
-
-    // Create submission with AI-evaluated responses
-    const submissionResult = await submissionRepo.create({
-      examId,
-      userId,
-      responses: evaluatedResponses,
-      submittedAt: new Date(),
-      timeSpent: attempt.timeSpent,
-      marksAchieved: totalMarks,
-      maxMarks: maxTotalMarks,
-      autoSubmitted: attempt.autoSubmitted
-    });
-
-    if (!submissionResult.success || !submissionResult.submissionId) {
+    if (result.status === "failed") {
       return NextResponse.json(
-        { success: false, error: submissionResult.error || "Failed to create submission" },
+        { success: false, error: result.error || "Failed to create submission" },
         { status: 500 }
       );
     }
 
-    // Add submission to user's history
-    await userRepo.addSubmissionToHistory(userId, submissionResult.submissionId);
+    const percentage = scorePercentage(result.totalMarks, result.maxTotalMarks);
+
+    // Add submission to user's history. `completePending` also records it.
+    await userRepo.addSubmissionToHistory(userId, result.submissionId);
 
     return NextResponse.json({
       success: true,
-      submissionId: submissionResult.submissionId,
-      totalMarks,
-      maxTotalMarks,
+      submissionId: result.submissionId,
+      totalMarks: result.totalMarks,
+      maxTotalMarks: result.maxTotalMarks,
       percentage: percentage.toFixed(2),
       message: "Exam submitted and evaluated successfully!"
     });
