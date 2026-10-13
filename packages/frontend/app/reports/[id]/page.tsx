@@ -1,7 +1,7 @@
 "use client"
 
 import type React from "react"
-import { use, useState, useEffect } from "react"
+import { use, useState, useEffect, useRef } from "react"
 import { useRouter } from "next/navigation"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/frontend/components/ui/card"
 import { Button } from "@/frontend/components/ui/button"
@@ -10,6 +10,13 @@ import { Separator } from "@/frontend/components/ui/separator"
 import { Loader2, ArrowLeft, FileText, Calendar, BarChart3, BookOpen, Download, Share2 } from "lucide-react"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/frontend/components/ui/tabs"
 import { toBloomRows } from "@/frontend/lib/bloomDistribution"
+import {
+  copyPageLink,
+  reportDownload,
+  shareButtonLabel,
+  triggerTextDownload,
+  type ShareCopyStatus,
+} from "@/frontend/lib/resultExport"
 
 interface Question {
   _id: string
@@ -60,6 +67,14 @@ export default function ReportDetailPage({ params }: { params: Promise<{ id: str
   const [report, setReport] = useState<ReportData | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [shareStatus, setShareStatus] = useState<ShareCopyStatus>("idle")
+  const shareTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  useEffect(() => {
+    return () => {
+      if (shareTimer.current) clearTimeout(shareTimer.current)
+    }
+  }, [])
 
   useEffect(() => {
     fetchReport()
@@ -123,6 +138,18 @@ export default function ReportDetailPage({ params }: { params: Promise<{ id: str
     return colors[level] || "secondary"
   }
 
+  const sharePage = async () => {
+    const status = await copyPageLink(window.location.href, navigator.clipboard)
+    setShareStatus(status)
+    if (shareTimer.current) clearTimeout(shareTimer.current)
+    shareTimer.current = setTimeout(() => setShareStatus("idle"), 2000)
+  }
+
+  const downloadReport = () => {
+    if (!report) return
+    triggerTextDownload(reportDownload(report))
+  }
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
@@ -178,11 +205,22 @@ export default function ReportDetailPage({ params }: { params: Promise<{ id: str
           </div>
 
           <div className="flex gap-2">
-            <Button variant="outline" size="sm">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => void sharePage()}
+              aria-live="polite"
+              title="Copy a link to this report"
+            >
               <Share2 className="mr-2 h-4 w-4" />
-              Share
+              {shareButtonLabel(shareStatus)}
             </Button>
-            <Button variant="outline" size="sm">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={downloadReport}
+              title="Download this report as a text file"
+            >
               <Download className="mr-2 h-4 w-4" />
               Download
             </Button>

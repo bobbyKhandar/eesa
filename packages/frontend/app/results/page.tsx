@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import Link from "next/link"
 import { useUser } from "@clerk/nextjs"
 import { Button } from "@/frontend/components/ui/button"
@@ -26,6 +26,14 @@ import {
   Cell,
 } from "recharts"
 import { isWithinDateWindow, type DateFilter } from "@/frontend/lib/examResults"
+import {
+  copyPageLink,
+  resultCsvFileName,
+  resultsDownload,
+  shareButtonLabel,
+  triggerTextDownload,
+  type ShareCopyStatus,
+} from "@/frontend/lib/resultExport"
 import {
   Award,
   TrendingUp,
@@ -87,6 +95,14 @@ export default function ResultsPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [data, setData] = useState<ResultsData | null>(null)
+  const [shareStatus, setShareStatus] = useState<ShareCopyStatus>("idle")
+  const shareTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  useEffect(() => {
+    return () => {
+      if (shareTimer.current) clearTimeout(shareTimer.current)
+    }
+  }, [])
 
   useEffect(() => {
     if (!isLoaded || !isSignedIn) {
@@ -219,6 +235,21 @@ export default function ResultsPage() {
   // Get stats and chart data from API response
   const { stats, performanceData, subjectPerformance, gradeDistribution } = data
 
+  const sharePage = async () => {
+    const status = await copyPageLink(window.location.href, navigator.clipboard)
+    setShareStatus(status)
+    if (shareTimer.current) clearTimeout(shareTimer.current)
+    shareTimer.current = setTimeout(() => setShareStatus("idle"), 2000)
+  }
+
+  const exportFilteredResults = () => {
+    triggerTextDownload(resultsDownload(filteredResults, "exam-results.csv"))
+  }
+
+  const downloadResultRow = (result: ExamResult) => {
+    triggerTextDownload(resultsDownload([result], resultCsvFileName(result.examName)))
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -227,13 +258,31 @@ export default function ResultsPage() {
           <p className="text-gray-500 dark:text-gray-400">Track your academic performance and progress</p>
         </div>
         <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" className="gap-1 bg-transparent">
+          <Button
+            variant="outline"
+            size="sm"
+            className="gap-1 bg-transparent"
+            onClick={exportFilteredResults}
+            disabled={filteredResults.length === 0}
+            title={
+              filteredResults.length === 0
+                ? "No results match the current filters"
+                : "Download the current results as CSV"
+            }
+          >
             <Download className="h-4 w-4" />
             Export Results
           </Button>
-          <Button variant="outline" size="sm" className="gap-1 bg-transparent">
+          <Button
+            variant="outline"
+            size="sm"
+            className="gap-1 bg-transparent"
+            onClick={() => void sharePage()}
+            aria-live="polite"
+            title="Copy a link to this page"
+          >
             <Share2 className="h-4 w-4" />
-            Share
+            {shareButtonLabel(shareStatus)}
           </Button>
         </div>
       </div>
@@ -519,7 +568,13 @@ export default function ResultsPage() {
                                 <Eye className="h-4 w-4" />
                               </Link>
                             </Button>
-                            <Button variant="ghost" size="sm">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              aria-label={`Download ${result.examName} as CSV`}
+                              title="Download this result as CSV"
+                              onClick={() => downloadResultRow(result)}
+                            >
                               <Download className="h-4 w-4" />
                             </Button>
                           </div>
