@@ -80,6 +80,7 @@
 |---|---|
 | `geminiAi.js` | Google Gemini AI integration (458 lines) — postAnswers, getBloomsAnatomy, refineSyllabus, sendEmail |
 | `examAnalysisService.ts` | Gemini-powered exam analysis — extracts questions, classifies Bloom's, maps to syllabus |
+| `examEvaluationService.ts` | Grades a submission. Objective items use the answer key. Free-text grading keeps instructions in the Gemini system instruction and puts the question, rubric, and student response in delimited untrusted-data blocks. Client `maxMarks` is ignored; allotted marks are clamped to the server mark. |
 | `ocrService.ts` | HTTP client for AI Pipeline OCR service (axios). Polls `completed` and `partial`. `interpretOcrFileResult` (`ocrFileResult.ts`) keeps text from successful pages, records `failedPages`, and returns `status: "partial"` instead of a clean success. It returns `status: "failed"` when no text remains, including when every page failed. |
 | `ec2OcrClient.ts` | Axios client for EC2-based AI Pipeline |
 | `publishAnalysisService.ts` | Orchestrates AnalysisReport, Prompt, UniqueQuestion creation |
