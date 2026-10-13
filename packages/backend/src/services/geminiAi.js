@@ -4,7 +4,38 @@ import fs from "fs";
 dotenv.config();
 import JSON5 from "json5";
 import json5 from "json5";
-// console.log(process.env.gemini_api_key);
+
+const SECRET_ENV_NAMES = [
+  "user_email",
+  "user_password",
+  "gemini_api_key",
+  "GEMINI_API_KEY",
+];
+
+function configuredSecretValues() {
+  return SECRET_ENV_NAMES.map((name) => process.env[name])
+    .filter((value) => typeof value === "string" && value.length > 0)
+    .sort((left, right) => right.length - left.length);
+}
+
+function redactSecrets(value) {
+  let text;
+  if (typeof value === "string") {
+    text = value;
+  } else if (value instanceof Error) {
+    text = value.stack || `${value.name}: ${value.message}`;
+  } else {
+    try {
+      text = JSON.stringify(value);
+    } catch {
+      text = String(value);
+    }
+  }
+  for (const secret of configuredSecretValues()) {
+    text = text.split(secret).join("[redacted]");
+  }
+  return text;
+}
 
 const genAI = new GoogleGenerativeAI(process.env.gemini_api_key);
 const model = genAI.getGenerativeModel({
@@ -78,7 +109,7 @@ export async function uploadsyllabusalt(base64e, marks) {
 
     return jsonresponse;
   } catch (error) {
-    console.log(error);
+    console.log(redactSecrets(error));
   }
 }
 
@@ -105,9 +136,6 @@ export async function refinePyqs(data) {
   console.log(result.response);
   return jsonresponse;
 }
-
-console.log(process.env.user_email);
-console.log(process.env.user_password);
 
 export { postAnswers };
 
@@ -343,7 +371,7 @@ export async function refineQuestions(data, subjectName) {
         .replace(/^```[\w]*\s*|\s*```$/g, "");
       return trimmedResponse;
     } catch (error) {
-      console.log("error" + error);
+      console.log("error" + redactSecrets(error));
       prompt +=
         "\n YOU ARE GENERATING QUESTION OUTSIDE THE SCOPE OF GIVEN PROMPT CAUSING THE SERVER HANDLING YOU TO GIVE ERROR THE AMOUNT OF TIMES YOU SEE THIS MESSAGE IS THE AMOUNT OF TIME YOU HAVE GAVE ERROR DONT DO STUFF NOT PERMITED TO YOU !!!";
       retryLimit++;
