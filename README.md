@@ -312,8 +312,8 @@ All routes registered on the canonical server at `src/api/server.py`. See `packa
 | Route | Method | Description |
 |-------|--------|-------------|
 | `/health` | GET | Health check (no credential) |
-| `/process` | POST | Start a single AWS pipeline job. Requires `Authorization: Bearer $AI_PIPELINE_TOKEN` from loopback or `AI_PIPELINE_TRUSTED_HOSTS`. The same credential applies to every route below. |
-| `/process/batch` | POST | Batch process multiple AWS jobs |
+| `/process` | POST | Start a single AWS pipeline job. Optional `s3_bucket` selects the bucket `head_object` checks and the worker reads; omitted or blank uses `S3_BUCKET`. Requires `Authorization: Bearer $AI_PIPELINE_TOKEN` from loopback or `AI_PIPELINE_TRUSTED_HOSTS`. The same credential applies to every route below. |
+| `/process/batch` | POST | Batch process multiple AWS jobs. Optional `s3_bucket` is passed into each job; omitted or blank uses `S3_BUCKET`. |
 | `/job/<id>/status` | GET | AWS job full stage details (from S3 metadata) |
 | `/job/<id>/metadata` | GET | Alias for `/job/<id>/status` |
 | `/job/<id>/questions` | GET | Processed questions with 3-level S3 fallback + Bloom's stats |

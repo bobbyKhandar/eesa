@@ -91,7 +91,7 @@
 - **boto3 clients:** Created per-module with `boto3.client('service', region_name='ap-south-1')`. Standard credential chain (env vars, `~/.aws/credentials`, IAM role).
 - **Bedrock models:** `google.gemma-3-27b-it` (parsing, enrichment), `amazon.titan-embed-text-v2:0` (embeddings for clustering).
 - **Config:** `read_timeout=300`, `connect_timeout=60`, retries `adaptive`.
-- **S3 bucket:** `eesa-pipeline-storage` (from env `S3_BUCKET` or default).
+- **S3 bucket:** `eesa-pipeline-storage` (from env `S3_BUCKET` or default). `POST /process` and `POST /process/batch` read the source PDF from the request `s3_bucket` when one is given, after `/process` has verified that object with `head_object`. A missing or blank `s3_bucket` uses the configured bucket. `process_aws_job_pipeline` takes that bucket and passes it to Textract. Later stage output still lands in the configured bucket.
 - **Region:** `ap-south-1` from `.env` var `aws_location`.
 
 ## Testing
