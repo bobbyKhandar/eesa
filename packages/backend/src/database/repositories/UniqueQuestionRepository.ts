@@ -24,8 +24,11 @@ export class UniqueQuestionRepository {
   private model = getUniqueQuestionModel();
 
   /**
-   * Find or create a unique question
-   * Returns existing question if found (based on normalized text and subject)
+   * Upsert a unique question and link it to one analysis report.
+   *
+   * Repeating the call for the same report (a publication retry) does not
+   * increment `occurrenceCount` or duplicate the appearance. A different
+   * report still counts as another occurrence.
    */
   async findOrCreate(data: UniqueQuestionInsert & { 
     analysisReportId: string;
@@ -33,54 +36,106 @@ export class UniqueQuestionRepository {
     semester: string;
     examType: "main" | "kt";
   }): Promise<{ question: any; isNew: boolean }> {
-    const existing = await this.model.findOne({
+    const now = new Date();
+    const appearance = {
+      year: data.year,
+      semester: data.semester,
+      examType: data.examType,
+      analysisReportId: data.analysisReportId,
+    };
+    const promptIds = data.promptIds || [];
+
+    const insert: Record<string, unknown> = {
+      questionText: data.questionText,
       normalizedText: data.normalizedText,
       subject: data.subject,
-    });
+      topics: data.topics ?? [],
+      tags: data.tags ?? [],
+      isVerified: data.isVerified ?? false,
+      isActive: data.isActive ?? true,
+      sourceReports: [],
+      promptIds: [],
+      appearances: [],
+      // Linked exactly once below, including on the insert path.
+      occurrenceCount: 0,
+      firstSeenAt: data.firstSeenAt ?? now,
+      lastSeenAt: now,
+    };
+    if (data.subjectCode !== undefined) insert.subjectCode = data.subjectCode;
+    if (data.bloomsLevel !== undefined) insert.bloomsLevel = data.bloomsLevel;
+    if (data.estimatedMarks !== undefined) insert.estimatedMarks = data.estimatedMarks;
 
-    if (existing) {
-      // Update existing question
-      const updatedQuestion = await this.model.findByIdAndUpdate(
-        existing._id,
-        {
-          $addToSet: {
-            sourceReports: data.analysisReportId,
-            promptIds: { $each: data.promptIds || [] },
-            appearances: {
-              year: data.year,
-              semester: data.semester,
-              examType: data.examType,
-              analysisReportId: data.analysisReportId,
-            },
-          },
-          $inc: { occurrenceCount: 1 },
-          $set: { 
-            lastSeenAt: new Date(),
-            updatedAt: new Date(),
-          },
+    const identity = {
+      normalizedText: data.normalizedText,
+      subject: data.subject,
+    };
+
+    const upserted = await this.model.updateOne(
+      identity,
+      { $setOnInsert: insert },
+      // Schema defaults would also write occurrenceCount (1) into $setOnInsert.
+      // Keep the explicit 0 so the following link is the only increment.
+      { upsert: true, setDefaultsOnInsert: false }
+    );
+    const wasInserted = Boolean(upserted.upsertedCount || upserted.upsertedId);
+
+    const linked = await this.model.findOneAndUpdate(
+      {
+        ...identity,
+        sourceReports: { $ne: data.analysisReportId },
+      },
+      {
+        $addToSet: {
+          sourceReports: data.analysisReportId,
+          promptIds: { $each: promptIds },
+          appearances: appearance,
         },
-        { new: true }
-      );
+        $inc: { occurrenceCount: 1 },
+        $set: {
+          lastSeenAt: now,
+          updatedAt: now,
+        },
+      },
+      { new: true }
+    );
 
-      return { question: updatedQuestion, isNew: false };
+    if (linked) {
+      return { question: linked, isNew: wasInserted };
     }
 
-    // Create new unique question
-    const newQuestion = await this.model.create({
-      ...data,
+    // This report is already linked. Refresh prompt ids without counting again.
+    const existing = await this.model.findOneAndUpdate(
+      {
+        ...identity,
+        sourceReports: data.analysisReportId,
+      },
+      {
+        $addToSet: { promptIds: { $each: promptIds } },
+        $set: { updatedAt: now },
+      },
+      { new: true }
+    );
+
+    if (existing) {
+      return { question: existing, isNew: false };
+    }
+
+    const raced = await this.model.findOne(identity);
+    if (raced) {
+      return { question: raced, isNew: false };
+    }
+
+    const created = await this.model.create({
+      ...insert,
       sourceReports: [data.analysisReportId],
-      appearances: [{
-        year: data.year,
-        semester: data.semester,
-        examType: data.examType,
-        analysisReportId: data.analysisReportId,
-      }],
+      promptIds,
+      appearances: [appearance],
       occurrenceCount: 1,
-      firstSeenAt: new Date(),
-      lastSeenAt: new Date(),
+      firstSeenAt: now,
+      lastSeenAt: now,
     });
 
-    return { question: newQuestion, isNew: true };
+    return { question: created, isNew: true };
   }
 
   /**

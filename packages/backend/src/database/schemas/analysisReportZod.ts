@@ -52,6 +52,15 @@ export const analysisReportZodSchema = z.object({
   // Publishing info
   publishedBy: z.string().optional(), // User ID who published
   publishedAt: z.date().default(() => new Date()),
+  /**
+   * `pending` means the report row exists but unique questions (or the
+   * analysis status flip) did not finish. Only `complete` is published.
+   * Missing values are legacy rows from before this field existed; those are
+   * treated as complete only when the exam analysis was marked published.
+   * The default is `complete` so import scripts that create a finished report
+   * in one shot stay visible.
+   */
+  publishStatus: z.enum(["pending", "complete"]).default("complete"),
   
   // Metadata
   tags: z.array(z.string()).default([]),

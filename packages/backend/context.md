@@ -66,13 +66,13 @@
 | `ExamSubmissionRepository` | `mongooseSchemas.ts` | `create()`, `updateResponses()`, `getByExamAndUser()`, `getByScoreRange()` |
 | `ExamQuestionRepository` | `mongooseSchemas.ts` | `create()`, `createBulk()`, `getWithPrompt()`, `getExamsUsingPrompt()` |
 | `ExamAnalysisRepository` | `newFeatureModels.ts` | `create()`, `getByUser()`, `publish()`, `getPublicAnalyses()` |
-| `AnalysisReportRepository` | `newFeatureModels.ts` | `create()`, `findBySubject()`, `getSubjectsSummary()`, `getRecentReports()` |
+| `AnalysisReportRepository` | `newFeatureModels.ts` | `create()`, `update()`, `findBySubject()`, `getSubjectsSummary()`, `getRecentReports()`. Public reads use `publicAnalysisReportFilter()` so `publishStatus: "pending"` stays out of the question bank. |
 | `SubjectRepository` | `newFeatureModels.ts` | `create()`, `getByCode()`, `getAll(filters)`, `getStatistics()` |
 | `UserRepository` | `mongooseSchemas.ts` | `create()`, `getByIds()`, `getAllocatedExams()`, `assignExam()`, `assignExamToMany()`, `getByRole()` |
 | `PromptRepository` | `mongooseSchemas.ts` | `create()`, `createBulk()`, `search()`, `getLowConfidenceOcr()`, `findBySubject()` (public bank only; excludes unpublished `generateVia: "user"` exam prompts) |
 | `JobMetadataRepository` | `mongooseSchemas.ts` | `create()`, `findById()`, `findByJobIds()`, `updateStatus()`, `findOlderThan()` |
 | `UploadSessionRepository` | `mongooseSchemas.ts` | `create()`, `findById()`, `addJobs()`, `updateJobStats()` |
-| `UniqueQuestionRepository` | `newFeatureModels.ts` | `findOrCreate()`, `findBySubject()`, `getMostFrequent()`, `searchByText()` |
+| `UniqueQuestionRepository` | `newFeatureModels.ts` | `findOrCreate()` upserts by normalized text + subject and links each analysis report once (a retry does not increment `occurrenceCount`), `findBySubject()`, `getMostFrequent()`, `searchByText()` |
 
 ## Services (`src/services/`)
 
@@ -83,7 +83,7 @@
 | `examEvaluationService.ts` | Grades a submission. Objective items use the answer key. Free-text grading keeps instructions in the Gemini system instruction and puts the question, rubric, and student response in delimited untrusted-data blocks. Client `maxMarks` is ignored; allotted marks are clamped to the server mark. |
 | `ocrService.ts` | HTTP client for AI Pipeline OCR service (axios). Polls `completed` and `partial`. `interpretOcrFileResult` (`ocrFileResult.ts`) keeps text from successful pages, records `failedPages`, and returns `status: "partial"` instead of a clean success. It returns `status: "failed"` when no text remains, including when every page failed. |
 | `ec2OcrClient.ts` | Axios client for EC2-based AI Pipeline |
-| `publishAnalysisService.ts` | Orchestrates AnalysisReport, Prompt, UniqueQuestion creation |
+| `publishAnalysisService.ts` | Orchestrates AnalysisReport, Prompt, UniqueQuestion creation. Publication is a pending → complete state machine (`publishAnalysisMachine.ts`): only a completed report counts as already published, and a retry resumes the pending report instead of inserting another one. |
 | `questionSimilarityService.ts` | Bidirectional similarity linking between prompts (MongoDB). `findSimilarQuestionsInDB` treats a missing `isActive` as active and matches stored `questionText`. Public-bank exclusion of unpublished `generateVia: "user"` exam drafts stays in `publicQuestionBank.ts` / `PromptRepository.findBySubject()`. |
 | `s3CleanupService.ts` | Validates S3 files, marks expired jobs in MongoDB |
 | `examOcrService.ts` | EC2 OCR + exam analysis workflow |

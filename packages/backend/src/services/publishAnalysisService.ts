@@ -2,18 +2,22 @@ import { AnalysisReportRepository } from "../database/repositories/AnalysisRepor
 import { ExamAnalysisRepository } from "../database/repositories/ExamAnalysisRepository";
 import { PromptRepository } from "../database/repositories/PromptRepository";
 import { UniqueQuestionRepository } from "../database/repositories/UniqueQuestionRepository";
-import type { AnalysisReport } from "../database/schemas/index";
 import { getSubjectModel } from "../database/mongooseSchemas";
 import { connect } from "../database/connect";
 import {
-  appendCreatedPrompt,
-  buildPromptPayload,
   mapBloomLevelToPromptFormat,
   normalizeQuestionText,
-  sanitizeBloomDistribution,
-  type CreatedPrompt,
-  type PromptCreateResult,
 } from "./analysisHelpers";
+import {
+  publishExamAnalysisWithPorts,
+  type PublishAnalysisPorts,
+} from "./publishAnalysisMachine";
+
+export type { PublishAnalysisPorts } from "./publishAnalysisMachine";
+export {
+  isPublicationComplete,
+  publishExamAnalysisWithPorts,
+} from "./publishAnalysisMachine";
 
 export {
   mapBloomLevelToPromptFormat,
@@ -27,8 +31,11 @@ const uniqueQuestionRepo = new UniqueQuestionRepository();
 const SubjectModel = getSubjectModel();
 
 /**
- * Publish an exam analysis as an analysis report
- * This makes it available in the subject-wise question bank
+ * Publish an exam analysis as an analysis report.
+ * This makes it available in the subject-wise question bank.
+ *
+ * See `publishAnalysisMachine.ts` for why this is a pending/complete state
+ * machine instead of a multi-document transaction.
  */
 export async function publishExamAnalysis(
   examAnalysisId: string,
@@ -38,177 +45,23 @@ export async function publishExamAnalysis(
   reportId?: string;
   error?: string;
 }> {
-  try {
-    // Ensure database connection
-    await connect();
-    
-    // Check if already published
-    const existingReport = await analysisReportRepo.findByExamAnalysisId(examAnalysisId);
-    if (existingReport) {
-      return {
-        success: false,
-        error: "This analysis has already been published",
-      };
-    }
+  const ports: PublishAnalysisPorts = {
+    connect,
+    findAnalysis: (id) => examAnalysisRepo.findById(id),
+    updateAnalysis: (id, patch) => examAnalysisRepo.update(id, patch),
+    findReport: (id) => analysisReportRepo.findByExamAnalysisId(id),
+    createReport: (data) => analysisReportRepo.create(data),
+    updateReport: (id, patch) => analysisReportRepo.update(id, patch),
+    createPrompt: (data) => promptRepo.create(data),
+    findPrompt: async (id) => {
+      const prompt = await promptRepo.findById(id);
+      return prompt ? { questionText: prompt.questionText } : null;
+    },
+    findOrCreateUnique: (data) => uniqueQuestionRepo.findOrCreate(data),
+    addReportToSubject,
+  };
 
-    // Get the exam analysis
-    const analysis = await examAnalysisRepo.findById(examAnalysisId);
-    if (!analysis) {
-      return {
-        success: false,
-        error: "Exam analysis not found",
-      };
-    }
-
-    if (analysis.status !== "completed") {
-      return {
-        success: false,
-        error: "Only completed analyses can be published",
-      };
-    }
-
-    // Ownership check: a user may only publish analyses they own.
-    // Previously the route trusted a client-supplied user id, which allowed
-    // anyone signed in to publish someone else's analysis.
-    if (analysis.analyzedBy && analysis.analyzedBy !== publishedBy) {
-      return {
-        success: false,
-        error: "Unauthorized - you do not own this analysis",
-      };
-    }
-
-    const analysisQuestions = Array.isArray(analysis.questions) ? analysis.questions : [];
-
-    if (analysisQuestions.length === 0) {
-      return {
-        success: false,
-        error: "This analysis has no questions to publish",
-      };
-    }
-
-    // Upload questions to Prompt table.
-    // `publishedQuestions` keeps each prompt ID paired with the question it came from,
-    // so a failed prompt creation cannot shift the IDs of later questions.
-    let publishedQuestions: CreatedPrompt<any>[] = [];
-
-    for (const question of analysisQuestions) {
-      const promptData = buildPromptPayload(question, {
-        subject: analysis.subjectName,
-        source: analysis.originalFile?.fileName,
-      });
-
-      if (!promptData) {
-        console.warn(`Skipping question with empty text in analysis ${examAnalysisId}`);
-        continue;
-      }
-
-      const result = await promptRepo.create({
-        ...promptData,
-        createdBy: publishedBy,
-      });
-
-      if (!result.success || !result.promptId) {
-        console.error(
-          `Failed to create prompt for a question in analysis ${examAnalysisId}: ${result.error}`
-        );
-        continue;
-      }
-
-      publishedQuestions = appendCreatedPrompt(
-        publishedQuestions,
-        question,
-        result as PromptCreateResult
-      );
-    }
-
-    const questionIds = publishedQuestions.map((entry) => entry.promptId);
-
-    if (publishedQuestions.length === 0) {
-      return {
-        success: false,
-        error: "No questions could be added to the question bank",
-      };
-    }
-
-    // Create analysis report
-    const reportData: AnalysisReport = {
-      examAnalysisId,
-      subjectCode: analysis.subjectCode,
-      subjectName: analysis.subjectName,
-      branch: analysis.branch,
-      year: analysis.year,
-      semester: analysis.semester,
-      examType: analysis.examType,
-      questionIds,
-      totalQuestions: publishedQuestions.length,
-      totalMarks: analysis.totalMarks,
-      // Guarded: a partial/failed analysis could otherwise fail schema validation.
-      bloomDistribution: sanitizeBloomDistribution(analysis.bloomDistribution),
-      overallAssessment: analysis.overallAssessment,
-      originalFileName: analysis.originalFile?.fileName ?? analysis.subjectName,
-      originalFileUrl: analysis.originalFile?.fileUrl,
-      publishedBy,
-      publishedAt: new Date(),
-      tags: analysis.tags || [],
-      viewCount: 0,
-      isPublic: true,
-    };
-
-    const report = await analysisReportRepo.create(reportData);
-
-    // Now add questions to unique questions table, reusing the prompt/question pairing
-    for (const { question, promptId } of publishedQuestions) {
-      const questionText = String(question.questionText);
-      // Normalize question text for deduplication
-      const normalizedText = normalizeQuestionText(questionText);
-
-      await uniqueQuestionRepo.findOrCreate({
-        questionText,
-        normalizedText,
-        subject: analysis.subjectName,
-        subjectCode: analysis.subjectCode,
-        topics: Array.isArray(question.keywords) ? question.keywords : [],
-        bloomsLevel: mapBloomLevelToPromptFormat(question.bloomLevel),
-        promptIds: [promptId],
-        tags: analysis.tags || [],
-        isVerified: false,
-        isActive: true,
-        sourceReports: [],
-        occurrenceCount: 1,
-        firstSeenAt: new Date(),
-        lastSeenAt: new Date(),
-        appearances: [],
-        analysisReportId: report._id,
-        year: analysis.year,
-        semester: analysis.semester,
-        examType: analysis.examType,
-        estimatedMarks: question.marks,
-      });
-    }
-
-    // Update exam analysis status to published
-    await examAnalysisRepo.update(examAnalysisId, {
-      status: "published",
-      isPublished: true,
-      publishedAt: new Date(),
-    });
-
-    // Add report to subject table
-    await addReportToSubject(report._id, analysis.subjectName, analysis.subjectCode);
-
-    console.log(`Successfully published analysis ${examAnalysisId} as report ${report._id}`);
-
-    return {
-      success: true,
-      reportId: report._id,
-    };
-  } catch (error: any) {
-    console.error("Error publishing exam analysis:", error);
-    return {
-      success: false,
-      error: error.message || "Failed to publish analysis",
-    };
-  }
+  return publishExamAnalysisWithPorts(ports, examAnalysisId, publishedBy);
 }
 
 /**

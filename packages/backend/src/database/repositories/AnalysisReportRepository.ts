@@ -5,6 +5,20 @@ import { connect } from "../connect";
 import { normalizeSubjectSummaries } from "./subjectSummary";
 
 /**
+ * Question-bank reads hide in-progress publications. A missing `publishStatus`
+ * is a legacy report written before the field existed and stays visible.
+ */
+export function publicAnalysisReportFilter(
+  criteria: Record<string, unknown> = {}
+): Record<string, unknown> {
+  return {
+    ...criteria,
+    isPublic: true,
+    publishStatus: { $ne: "pending" },
+  };
+}
+
+/**
  * Repository for Analysis Reports - Published Exam Analysis Question Banks
  */
 export class AnalysisReportRepository {
@@ -22,6 +36,25 @@ export class AnalysisReportRepository {
     const report = await this.model.create(reportData);
     return {
       ...report.toObject(),
+      _id: report._id.toString(),
+    };
+  }
+
+  /**
+   * Patch a report. Used to finish a publication that was left `pending`.
+   */
+  async update(
+    id: string,
+    patch: Partial<AnalysisReport>
+  ): Promise<AnalysisReportWithId | null> {
+    await connect();
+    const report = await this.model
+      .findByIdAndUpdate(id, { $set: patch }, { new: true })
+      .lean();
+    if (!report) return null;
+
+    return {
+      ...report,
       _id: report._id.toString(),
     };
   }
@@ -76,7 +109,7 @@ export class AnalysisReportRepository {
     options?: { year?: string; semester?: string; examType?: "main" | "kt" }
   ): Promise<AnalysisReportWithId[]> {
     await connect();
-    const query: any = { subjectName, isPublic: true };
+    const query: any = publicAnalysisReportFilter({ subjectName });
     
     if (options?.year) query.year = options.year;
     if (options?.semester) query.semester = options.semester;
@@ -103,7 +136,7 @@ export class AnalysisReportRepository {
     examType?: "main" | "kt";
     branch?: string;
   }): Promise<AnalysisReportWithId[]> {
-    const query: any = { isPublic: true };
+    const query: any = publicAnalysisReportFilter();
     
     if (filters?.subjectCode) query.subjectCode = filters.subjectCode;
     if (filters?.year) query.year = filters.year;
@@ -142,7 +175,7 @@ export class AnalysisReportRepository {
   }>> {
     await connect();
     const results = await this.model.aggregate([
-      { $match: { isPublic: true } },
+      { $match: publicAnalysisReportFilter() },
       // Newest report first so $first below picks the current code/branch.
       { $sort: { subjectName: 1, year: -1, publishedAt: -1 } },
       {
@@ -195,7 +228,7 @@ export class AnalysisReportRepository {
   }>> {
     await connect();
     const results = await this.model.aggregate([
-      { $match: { isPublic: true } },
+      { $match: publicAnalysisReportFilter() },
       {
         $group: {
           _id: {
@@ -255,7 +288,7 @@ export class AnalysisReportRepository {
    */
   async getRecentReports(limit: number = 10): Promise<AnalysisReportWithId[]> {
     const reports = await this.model
-      .find({ isPublic: true })
+      .find(publicAnalysisReportFilter())
       .sort({ publishedAt: -1 })
       .limit(limit)
       .lean();
