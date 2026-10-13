@@ -7,13 +7,20 @@
  * 1. Copy existing questions to Prompt collection (with generateVia: 'user')
  * 2. Create ExamQuestion instances for each exam's questions
  * 3. Update Exam documents with ExamQuestion IDs
- * 4. Update ExamSubmission documents (email → userId)
+ * 4. Update ExamSubmission documents (email → userId) and translate answers
  * 5. Verify data integrity
  *
  * ExamQuestion documents use questionType (MCQ, TEXT, TRUE_FALSE) plus the
  * legacy options, answer, and marks. Exams that already store ExamQuestion
  * ids are skipped, so assignees, createdBy, and deletedAt stay as they are.
  * A failed exam is not rewritten. Re-running upserts the same ExamQuestion ids.
+ *
+ * Submission responses are translated from legacy answers, evaluations, or
+ * response objects before the document is written. A submission that cannot
+ * be mapped is left unchanged and reported. The answers field is not removed.
+ * A re-run restores responses when they are empty and that answers field is
+ * still present. After each submission write, the stored document is checked;
+ * a mismatch is rolled back to the previous userId and responses.
  *
  * Repair for a database already touched by the old script: that run could
  * create Prompt documents, fail ExamQuestion validation, and still print
@@ -45,11 +52,17 @@ import { Types } from 'mongoose';
 import {
   documentId,
   formatMigrationReport,
+  legacyQuestionLinks,
   legacyQuestionSource,
   migrationExitCode,
   planExamConversion,
+  planSubmissionConversion,
+  submissionRollbackUpdate,
+  submissionWriteLanded,
+  type LegacyQuestionLink,
   type MigrationFailure,
   type PromptLink,
+  type SubmissionRollback,
 } from '../examSchemaMigration.js';
 
 // Parse command line arguments
@@ -164,7 +177,9 @@ async function migrateQuestionsToPrompts(failures: MigrationFailure[]): Promise<
  */
 async function createExamQuestions(
   questionToPromptMap: Map<string, PromptLink>,
-  failures: MigrationFailure[]
+  failures: MigrationFailure[],
+  submissionLinks: Map<string, ReadonlyMap<string, LegacyQuestionLink>>,
+  migratedExamQuestionIds: Map<string, string[]>
 ): Promise<Map<string, string[]>> {
   console.log('\n[Step 2] Creating ExamQuestion instances...\n');
   
@@ -198,6 +213,10 @@ async function createExamQuestions(
       if (plan.status === "skip-empty") {
         console.log(`  ⏭️  Exam ${exam._id} has no questions, skipping...`);
       } else if (plan.status === "skip-migrated") {
+        const ids = Array.isArray(exam.questions)
+          ? exam.questions.map((entry) => documentId(entry)).filter((id) => id.length > 0)
+          : [];
+        if (ids.length > 0) migratedExamQuestionIds.set(examKey, ids);
         console.log(`  ⏭️  Exam ${exam._id} already references ExamQuestion ids, skipping...`);
       } else if (plan.status === "failed" || !plan.questions || !plan.examUpdate) {
         const error = plan.error ?? "Exam conversion failed";
@@ -216,6 +235,8 @@ async function createExamQuestions(
             await doc.save();
           }
           examQuestionMap.set(examKey, plan.examUpdate.questions);
+          const links = legacyQuestionLinks(plan.questions);
+          if (links) submissionLinks.set(examKey, links);
           console.log(`  ✅ Prepared ${plan.questions.length} ExamQuestions for exam ${exam._id}`);
         } catch (error) {
           const message = (error as Error).message;
@@ -225,6 +246,8 @@ async function createExamQuestions(
         }
       } else {
         examQuestionMap.set(examKey, plan.examUpdate.questions);
+        const links = legacyQuestionLinks(plan.questions);
+        if (links) submissionLinks.set(examKey, links);
         console.log(`  ✅ Prepared ${plan.questions.length} ExamQuestions for exam ${exam._id}`);
       }
       
@@ -278,10 +301,43 @@ async function updateExams(
   console.log(`\n✅ Step 3 Complete: ${updated} exams updated`);
 }
 
+async function rollbackSubmissionWrite(
+  submissionId: unknown,
+  rollback: SubmissionRollback
+): Promise<void> {
+  const restore = submissionRollbackUpdate(rollback);
+  const update: Record<string, unknown> = {};
+  if (Object.keys(restore.set).length > 0) update.$set = restore.set;
+  if (Object.keys(restore.unset).length > 0) update.$unset = restore.unset;
+  if (Object.keys(update).length === 0) return;
+  const ExamSubmissionModel = getExamSubmissionModel();
+  await ExamSubmissionModel.updateOne({ _id: submissionId }, update);
+}
+
 /**
- * Step 4: Update ExamSubmissions (email → userId)
+ * Step 4: Update ExamSubmissions (email → userId) and translate answers.
+ * The whole update is planned before the write. A submission that cannot be
+ * mapped is left unchanged. answers is not removed, so a re-run can recover
+ * responses that an older run cleared.
  */
-async function updateExamSubmissions(): Promise<void> {
+async function marksForExamQuestions(ids: readonly string[]): Promise<Map<string, number>> {
+  const ExamQuestionModel = getExamQuestionModel();
+  const objectIds = ids.filter((id) => /^[a-f0-9]{24}$/i.test(id)).map((id) => new Types.ObjectId(id));
+  if (objectIds.length === 0) return new Map();
+  const docs = await ExamQuestionModel.find({ _id: { $in: objectIds } }).select("marks").lean();
+  const marks = new Map<string, number>();
+  for (const doc of docs) {
+    const id = documentId(doc._id);
+    if (id && typeof doc.marks === "number") marks.set(id, doc.marks);
+  }
+  return marks;
+}
+
+async function updateExamSubmissions(
+  submissionLinks: Map<string, ReadonlyMap<string, LegacyQuestionLink>>,
+  migratedExamQuestionIds: Map<string, string[]>,
+  failures: MigrationFailure[]
+): Promise<void> {
   console.log('\n[Step 4] Updating ExamSubmission documents...\n');
   
   const ExamSubmissionModel = getExamSubmissionModel();
@@ -297,6 +353,7 @@ async function updateExamSubmissions(): Promise<void> {
   
   let processed = 0;
   let updated = 0;
+  const marksByExam = new Map<string, Map<string, number>>();
   
   while (processed < totalSubmissions) {
     const submissions = await ExamSubmissionModel.find()
@@ -307,43 +364,77 @@ async function updateExamSubmissions(): Promise<void> {
     if (submissions.length === 0) break;
     
     for (const submission of submissions) {
+      const submissionKey = documentId(submission._id) || String(submission._id);
       try {
-        // Skip if already has userId
-        if (submission.userId) {
-          console.log(`  ⏭️  Submission ${submission._id} already has userId, skipping...`);
-          processed++;
-          continue;
+        const userId = typeof submission.userId === "string" ? submission.userId.trim() : documentId(submission.userId);
+        let resolvedUserId: string | null | undefined;
+        if (!userId) {
+          const email = typeof submission.studentEmail === "string" ? submission.studentEmail.trim() : "";
+          if (!email) {
+            resolvedUserId = null;
+          } else {
+            const user = await UserModel.findOne({ email: submission.studentEmail });
+            resolvedUserId = user ? documentId(user._id) || null : null;
+          }
         }
-        
-        // Find user by email
-        const user = await UserModel.findOne({ email: submission.studentEmail });
-        
-        if (!user) {
-          console.error(`  ⚠️  No user found for email ${submission.studentEmail}`);
-          processed++;
-          continue;
-        }
-        
-        // Update submission with userId
-        if (!isDryRun) {
-          await ExamSubmissionModel.updateOne(
-            { _id: submission._id },
-            {
-              $set: {
-                userId: user._id.toString(),
-                status: submission.evaluated ? 'EVALUATED' as const : 
-                       submission.submittedAt ? 'SUBMITTED' as const : 'IN_PROGRESS' as const,
-                responses: [] // Would need to be populated from answers field
-              }
+
+        const examId = documentId(submission.examId);
+        const questionLinks = examId ? submissionLinks.get(examId) : undefined;
+        const examQuestionIds = !questionLinks && examId ? migratedExamQuestionIds.get(examId) : undefined;
+        let marksByExamQuestionId: Map<string, number> | undefined;
+        if (examQuestionIds && examId) {
+          marksByExamQuestionId = marksByExam.get(examId);
+          if (!marksByExamQuestionId) {
+            try {
+              marksByExamQuestionId = await marksForExamQuestions(examQuestionIds);
+            } catch (error) {
+              console.error(
+                `  ⚠️  Could not read ExamQuestion marks for exam ${examId}:`,
+                (error as Error).message
+              );
+              marksByExamQuestionId = new Map();
             }
-          );
+            marksByExam.set(examId, marksByExamQuestionId);
+          }
         }
-        
-        console.log(`  ✅ Updated submission ${submission._id} with userId ${user._id}`);
-        updated++;
-        
+        const plan = planSubmissionConversion(submission, {
+          resolvedUserId,
+          questionLinks,
+          examQuestionIds,
+          marksByExamQuestionId,
+        });
+
+        if (plan.status === "skip") {
+          console.log(`  ⏭️  Submission ${submission._id} already preserves its answers, skipping...`);
+        } else if (plan.status === "failed" || !plan.update || !plan.rollback) {
+          const error = plan.error ?? "Submission conversion failed";
+          console.error(`  ❌ Submission ${submission._id}: ${error}`);
+          failures.push({ step: "submissions", id: submissionKey, error });
+        } else if (!isDryRun) {
+          const $set: Record<string, unknown> = {};
+          if (plan.update.userId) $set.userId = plan.update.userId;
+          if (plan.update.responses) $set.responses = plan.update.responses;
+          await ExamSubmissionModel.updateOne({ _id: submission._id }, { $set });
+          const stored = await ExamSubmissionModel.findById(submission._id).lean();
+          if (!stored || !submissionWriteLanded(stored, plan.update)) {
+            await rollbackSubmissionWrite(submission._id, plan.rollback);
+            const error = "Translated submission did not match the stored document; changes were rolled back";
+            console.error(`  ❌ Submission ${submission._id}: ${error}`);
+            failures.push({ step: "submissions", id: submissionKey, error });
+          } else {
+            const kept = plan.update.responses?.length ?? 0;
+            console.log(`  ✅ Updated submission ${submission._id} and kept ${kept} answer(s)`);
+            updated++;
+          }
+        } else {
+          const kept = plan.update.responses?.length ?? 0;
+          console.log(`  ✅ Would update submission ${submission._id} and keep ${kept} answer(s)`);
+          updated++;
+        }
       } catch (error) {
-        console.error(`  ❌ Error updating submission ${submission._id}:`, (error as Error).message);
+        const message = (error as Error).message;
+        console.error(`  ❌ Error updating submission ${submission._id}:`, message);
+        failures.push({ step: "submissions", id: submissionKey, error: message });
       }
       
       processed++;
@@ -405,9 +496,16 @@ async function runMigration(): Promise<void> {
     
     // Run migration steps
     const questionToPromptMap = await migrateQuestionsToPrompts(failures);
-    const examQuestionMap = await createExamQuestions(questionToPromptMap, failures);
+    const submissionLinks = new Map<string, ReadonlyMap<string, LegacyQuestionLink>>();
+    const migratedExamQuestionIds = new Map<string, string[]>();
+    const examQuestionMap = await createExamQuestions(
+      questionToPromptMap,
+      failures,
+      submissionLinks,
+      migratedExamQuestionIds
+    );
     await updateExams(examQuestionMap, failures);
-    await updateExamSubmissions();
+    await updateExamSubmissions(submissionLinks, migratedExamQuestionIds, failures);
     
     if (!isDryRun) {
       await verifyMigration();

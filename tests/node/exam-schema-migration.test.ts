@@ -2,12 +2,17 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { describe, it } from "node:test";
 import { examQuestionZodSchema } from "../../packages/backend/src/database/schemas/examQuestionSchemaZod.ts";
+import { submissionResponseZodSchema } from "../../packages/backend/src/database/schemas/examSubmissionZod.ts";
 import {
   buildExamQuestionPayload,
   formatMigrationReport,
+  legacyQuestionLinks,
   migrationExitCode,
   migratedExamQuestionId,
   planExamConversion,
+  planSubmissionConversion,
+  submissionRollbackUpdate,
+  submissionWriteLanded,
   type LegacyQuestionSource,
   type PromptLink,
 } from "../../packages/backend/src/database/examSchemaMigration.ts";
@@ -183,6 +188,10 @@ describe("planExamConversion", () => {
       plan.questions?.map((question) => question.data.questionType),
       ["MCQ", "TEXT"]
     );
+    assert.deepEqual(
+      plan.questions?.map((question) => question.legacyQuestionId),
+      ["q-mcq", "q-theory"]
+    );
     assert.deepEqual(plan.examUpdate, {
       questions: plan.questions?.map((question) => question.id),
     });
@@ -314,10 +323,310 @@ describe("migrate-schema script", () => {
 
   it("plans ExamQuestion documents and fails the run when any exam cannot be converted", () => {
     assert.match(source, /planExamConversion/);
+    assert.match(source, /planSubmissionConversion/);
     assert.match(source, /migrationExitCode/);
     assert.equal(source.includes("answerType"), false);
     assert.equal(source.includes("assignedUsers: []"), false);
     assert.equal(source.includes("createdBy: 'system'"), false);
+    assert.equal(source.includes("responses: []"), false);
     assert.match(source, /\{\s*\$set:\s*\{\s*questions:/);
+  });
+});
+
+describe("planSubmissionConversion", () => {
+  const legacySubmission = {
+    _id: "sub-1",
+    examId: "exam-1",
+    studentEmail: "student@example.com",
+    evaluated: true,
+    submittedAt: new Date("2024-05-01T00:00:00.000Z"),
+    answers: {
+      "q-mcq": "Mars",
+      "q-theory": "Plants convert light into chemical energy.",
+    },
+  };
+
+  const questionLinks = new Map([
+    ["q-mcq", { examQuestionId: "eq-mcq", marks: 5 }],
+    ["q-theory", { examQuestionId: "eq-theory", marks: 8 }],
+  ]);
+
+  it("translates a legacy answers map into responses and resolves the user", () => {
+    const plan = planSubmissionConversion(legacySubmission, {
+      resolvedUserId: "user-1",
+      questionLinks,
+    });
+
+    assert.equal(plan.status, "convert");
+    assert.equal(plan.update?.userId, "user-1");
+    assert.deepEqual(
+      plan.update?.responses?.map((response) => response.questionId),
+      ["eq-mcq", "eq-theory"]
+    );
+    assert.equal(plan.update?.responses?.[0].userResponse, "Mars");
+    assert.equal(plan.update?.responses?.[0].maxMarks, 5);
+    assert.equal(plan.update?.responses?.[0].allottedMarks, 0);
+    assert.equal(
+      plan.update?.responses?.[1].userResponse,
+      "Plants convert light into chemical energy."
+    );
+    assert.equal(plan.update?.responses?.[1].maxMarks, 8);
+    assert.deepEqual(Object.keys(plan.update ?? {}).sort(), ["responses", "userId"]);
+    for (const response of plan.update?.responses ?? []) {
+      assert.equal(submissionResponseZodSchema.safeParse(response).success, true);
+    }
+    assert.deepEqual(plan.rollback?.answers, legacySubmission.answers);
+  });
+
+  it("keeps evaluated legacy answers, including zero marks", () => {
+    const plan = planSubmissionConversion(
+      {
+        _id: "sub-eval",
+        userId: "user-1",
+        responses: [],
+        questionEvaluations: [
+          {
+            questionId: "q-theory",
+            questionText: "Explain photosynthesis.",
+            answer: "Plants convert light.",
+            marks: 0,
+            allocatedMarks: 0,
+            feedback: "Incomplete",
+            suggestions: ["Name the pigment"],
+          },
+        ],
+      },
+      {}
+    );
+
+    assert.equal(plan.status, "convert");
+    assert.equal(plan.update?.userId, undefined);
+    assert.deepEqual(plan.update?.responses, [
+      {
+        questionId: "q-theory",
+        userResponse: "Plants convert light.",
+        maxMarks: 0,
+        allottedMarks: 0,
+        feedback: "Incomplete",
+        suggestions: ["Name the pigment"],
+      },
+    ]);
+  });
+
+  it("translates legacy response objects instead of replacing them", () => {
+    const plan = planSubmissionConversion(
+      {
+        _id: "sub-legacy-responses",
+        studentEmail: "student@example.com",
+        responses: [
+          { examQuestionId: "q-mcq", response: "Mars", maxMarks: 5, allottedMarks: 5, feedback: "Correct" },
+        ],
+        answers: { "q-mcq": "should-not-replace-the-stored-response" },
+      },
+      { resolvedUserId: "user-1", questionLinks }
+    );
+
+    assert.equal(plan.status, "convert");
+    assert.equal(plan.update?.responses?.[0].questionId, "eq-mcq");
+    assert.equal(plan.update?.responses?.[0].userResponse, "Mars");
+    assert.equal(plan.update?.responses?.[0].allottedMarks, 5);
+    assert.equal(plan.update?.responses?.[0].feedback, "Correct");
+  });
+
+  it("keeps numeric and boolean answers as text", () => {
+    const plan = planSubmissionConversion(
+      {
+        _id: "sub-scalars",
+        userId: "user-1",
+        answers: { "q-index": 1, "q-flag": false, "q-multi": ["Venus", "Mars"] },
+      },
+      {}
+    );
+
+    assert.equal(plan.status, "convert");
+    assert.deepEqual(
+      plan.update?.responses?.map((response) => response.userResponse),
+      ["1", "false", JSON.stringify(["Venus", "Mars"])]
+    );
+  });
+
+  it("does not write a submission whose user or answer payload cannot be mapped", () => {
+    const missingUser = planSubmissionConversion(legacySubmission, {
+      resolvedUserId: null,
+      questionLinks,
+    });
+    const unsafeAnswers = planSubmissionConversion(
+      {
+        ...legacySubmission,
+        answers: { "q-mcq": { unexpected: true } },
+      },
+      { resolvedUserId: "user-1", questionLinks }
+    );
+    const conflictingMarks = planSubmissionConversion(
+      {
+        _id: "sub-marks",
+        userId: "user-1",
+        responses: [{ questionId: "q-mcq", response: "Mars", marks: 1, maxMarks: 5, allottedMarks: 5 }],
+      },
+      {}
+    );
+
+    assert.equal(missingUser.status, "failed");
+    assert.match(missingUser.error ?? "", /student@example.com/);
+    assert.match(missingUser.error ?? "", /unchanged/i);
+    assert.equal(missingUser.update, undefined);
+    assert.equal(unsafeAnswers.status, "failed");
+    assert.equal(unsafeAnswers.update, undefined);
+    assert.equal(conflictingMarks.status, "failed");
+    assert.equal(conflictingMarks.update, undefined);
+  });
+
+  it("sets only userId when responses are already stored", () => {
+    const responses = [
+      { questionId: "eq-mcq", userResponse: "Mars", maxMarks: 5, allottedMarks: 5 },
+    ];
+    const plan = planSubmissionConversion(
+      {
+        _id: "sub-ready",
+        studentEmail: "student@example.com",
+        responses,
+        answers: { "q-mcq": "other" },
+      },
+      { resolvedUserId: "user-1" }
+    );
+
+    assert.equal(plan.status, "convert");
+    assert.equal(plan.update?.userId, "user-1");
+    assert.equal(plan.update?.responses, undefined);
+    assert.deepEqual(plan.rollback?.responses, responses);
+  });
+
+  it("reattaches wiped answers to ExamQuestion ids already stored on the exam", () => {
+    const examQuestionId = migratedExamQuestionId("exam-1", "q-mcq", 0);
+    const plan = planSubmissionConversion(
+      {
+        _id: "sub-relink",
+        examId: "exam-1",
+        userId: "user-1",
+        responses: [],
+        answers: { "q-mcq": "Mars", "q-unknown": "still here" },
+      },
+      {
+        examQuestionIds: [examQuestionId],
+        marksByExamQuestionId: new Map([[examQuestionId, 5]]),
+      }
+    );
+
+    assert.equal(plan.status, "convert");
+    assert.deepEqual(
+      plan.update?.responses?.map((response) => [response.questionId, response.userResponse, response.maxMarks]),
+      [
+        [examQuestionId, "Mars", 5],
+        ["q-unknown", "still here", 0],
+      ]
+    );
+  });
+
+  it("restores responses from a surviving answers field after they were wiped", () => {
+    const damaged = {
+      _id: "sub-damaged",
+      examId: "exam-1",
+      userId: "user-1",
+      studentEmail: "student@example.com",
+      responses: [] as unknown[],
+      answers: { "q-mcq": "Mars" },
+    };
+
+    const recovered = planSubmissionConversion(damaged, { questionLinks });
+    assert.equal(recovered.status, "convert");
+    assert.equal(recovered.update?.userId, undefined);
+    assert.equal(recovered.update?.responses?.[0].userResponse, "Mars");
+    assert.equal(recovered.update?.responses?.[0].questionId, "eq-mcq");
+
+    const stored = {
+      ...damaged,
+      responses: recovered.update?.responses,
+    };
+    const rerun = planSubmissionConversion(stored, { questionLinks });
+    assert.equal(rerun.status, "skip");
+    assert.equal(rerun.update, undefined);
+    assert.deepEqual(stored.answers, damaged.answers);
+    assert.equal(stored.responses?.[0].userResponse, "Mars");
+  });
+
+  it("detects a stored submission that lost the planned answers", () => {
+    const update = {
+      userId: "user-1",
+      responses: [{ questionId: "eq-mcq", userResponse: "Mars", maxMarks: 5, allottedMarks: 0 }],
+    };
+    assert.equal(
+      submissionWriteLanded({ userId: "user-1", responses: update.responses }, update),
+      true
+    );
+    assert.equal(submissionWriteLanded({ userId: "user-1", responses: [] }, update), false);
+  });
+
+  it("rolls a converted submission back to the fields it had before the write", () => {
+    const plan = planSubmissionConversion(legacySubmission, {
+      resolvedUserId: "user-1",
+      questionLinks,
+    });
+    const rollback = submissionRollbackUpdate(plan.rollback!);
+
+    assert.deepEqual(rollback.set, {});
+    assert.deepEqual(rollback.unset, { userId: "", responses: "" });
+    assert.equal("answers" in rollback.set, false);
+    assert.equal("answers" in rollback.unset, false);
+  });
+
+  it("is idempotent and leaves an answers map in place for a later recovery", () => {
+    const state: {
+      _id: string;
+      examId: string;
+      studentEmail: string;
+      answers: Record<string, string>;
+      userId?: string;
+      responses?: unknown;
+    } = { ...legacySubmission, answers: { ...legacySubmission.answers } };
+
+    const apply = () => {
+      const plan = planSubmissionConversion(state, {
+        resolvedUserId: state.userId ?? "user-1",
+        questionLinks,
+      });
+      if (plan.status === "convert" && plan.update) {
+        if (plan.update.userId) state.userId = plan.update.userId;
+        if (plan.update.responses) state.responses = plan.update.responses;
+      }
+      return plan;
+    };
+
+    const first = apply();
+    const responses = state.responses;
+    const second = apply();
+
+    assert.equal(first.status, "convert");
+    assert.equal(second.status, "skip");
+    assert.equal(state.userId, "user-1");
+    assert.deepEqual(state.responses, responses);
+    assert.deepEqual(state.answers, legacySubmission.answers);
+    assert.notDeepEqual(state.responses, []);
+  });
+});
+
+describe("legacyQuestionLinks", () => {
+  it("refuses an ambiguous legacy question id", () => {
+    const data = {
+      promptId: "prompt-mcq",
+      questionType: "MCQ" as const,
+      marks: 1,
+      negativeMarks: 0,
+      answer: "",
+    };
+    const links = legacyQuestionLinks([
+      { id: "eq-a", legacyQuestionId: "q-mcq", data },
+      { id: "eq-b", legacyQuestionId: "q-mcq", data: { ...data, marks: 2 } },
+    ]);
+    assert.equal(links, undefined);
   });
 });
