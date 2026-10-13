@@ -39,6 +39,7 @@
 
 ### Local Pipeline (Development/Testing)
 - **Engine:** EasyOCR via `OCREngine` class (`src/local_ocr_engine.py`).
+- **OCR sanitization:** `OCREngine.sanitize_text` keeps mathematical and scientific symbols (`+ = / * < > ^ % [ ] { }`, Unicode math such as `× ÷ ≤ ≥ ≠ √`, Greek letters, and the degree sign) and still strips control characters and other junk.
 - **Image processing:** `ImageProcessor` class (`src/local_image_processor_pipeline.py`).
 - **PDF handling:** `PDFHandler` class using PyMuPDF (`src/pdf_handler.py`).
 - **DOCX handling:** `should_extract_docx` / `extract_docx_result` in `src/docx_handler.py`. A batch file whose `options.file_type` is `docx`, or whose path ends in `.docx`, is read from `word/document.xml`. It is not sent through `PDFHandler`. PDF and image uploads stay on the OCR path. Legacy `.doc` files fail with an error asking for `.docx`.

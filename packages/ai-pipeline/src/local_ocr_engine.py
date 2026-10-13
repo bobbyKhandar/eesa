@@ -4,10 +4,19 @@ Clean implementation focused only on OCR processing
 """
 
 import re
+import unicodedata
 import torch
 import easyocr
 from typing import Dict, Any, Optional
 import numpy as np
+
+# Punctuation the previous allowlist kept, plus ASCII operators and brackets
+# that change the meaning of a formula. Unicode math symbols (category Sm,
+# such as × ÷ ≤ ≥ ≠ √) are kept in sanitize_text. These extra marks are
+# science notation that is not category Sm.
+_KEPT_PUNCTUATION = frozenset(".,;:!?-()+=/*<>^%[]{}")
+_KEPT_SCIENCE = frozenset("°·′″‰")
+_WORD_CHAR = re.compile(r"\w")
 
 
 class OCREngine:
@@ -122,27 +131,36 @@ class OCREngine:
     
     def sanitize_text(self, text: str) -> str:
         """
-        Clean and sanitize extracted text
-        
+        Clean and sanitize extracted text.
+
+        Keeps letters, numbers, whitespace, basic punctuation, and
+        mathematical or scientific symbols. Control characters and other
+        junk are replaced with spaces so formulas such as ``E = mc^2``
+        stay intact.
+
         Args:
             text: Raw text from OCR
-            
+
         Returns:
             Cleaned text
         """
         if not text:
             return ""
-        
-        # Remove special characters but keep basic punctuation
-        cleaned = re.sub(r'[^\w\s\.\,\;\:\!\?\-\(\)]', ' ', text)
-        
-        # Normalize whitespace
-        cleaned = re.sub(r'\s+', ' ', cleaned)
-        
-        # Remove leading/trailing whitespace
-        cleaned = cleaned.strip()
-        
-        return cleaned
+
+        def keep(ch: str) -> str:
+            if (
+                ch in _KEPT_PUNCTUATION
+                or ch in _KEPT_SCIENCE
+                or ch.isspace()
+                or _WORD_CHAR.fullmatch(ch)
+                or unicodedata.category(ch) == "Sm"
+            ):
+                return ch
+            return " "
+
+        cleaned = "".join(keep(ch) for ch in text)
+        cleaned = re.sub(r"\s+", " ", cleaned)
+        return cleaned.strip()
     
     def get_engine_info(self) -> Dict[str, Any]:
         """Get information about the OCR engine configuration"""
