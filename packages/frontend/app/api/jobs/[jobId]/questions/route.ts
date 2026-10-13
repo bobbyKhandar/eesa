@@ -1,11 +1,19 @@
 import { NextRequest, NextResponse } from "next/server";
+import { connect } from "@/backend/src/database/connect";
+import { JobMetadataRepository } from "@/backend/src/database/repositories/JobMetadataRepository";
 import { fetchFromAiPipeline } from "@/frontend/lib/aiPipeline";
+import { jobContentAccessDecision } from "@/frontend/lib/uploadSessionJobs";
+import { deny, getCaller } from "@/frontend/lib/requestAuth";
+
+const jobRepo = new JobMetadataRepository();
 
 /**
  * GET /api/jobs/[jobId]/questions
  * Proxy to the AI pipeline so the browser never talks to Flask directly
  * (the upload UI used to fetch http://localhost:5000 from the browser, which
  * only works on a developer machine).
+ *
+ * The caller must own the stored job, or be an admin, before the proxy runs.
  */
 export async function GET(
   _request: NextRequest,
@@ -17,6 +25,18 @@ export async function GET(
     if (!jobId || jobId.trim().length === 0) {
       return NextResponse.json({ error: "Invalid job id" }, { status: 400 });
     }
+
+    const caller = await getCaller();
+    await connect();
+    const storedJobs = await jobRepo.findByJobIds([jobId]);
+    const denied = deny(
+      jobContentAccessDecision({
+        callerId: caller.userId,
+        callerRole: caller.role,
+        jobs: storedJobs,
+      })
+    );
+    if (denied) return denied;
 
     const response = await fetchFromAiPipeline(`/job/${encodeURIComponent(jobId)}/questions`, {
       method: 'GET',

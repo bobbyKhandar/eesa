@@ -47,6 +47,7 @@
 - Server side: `import { auth } from "@clerk/nextjs/server"` in API routes. Returns `userId`.
 - Client side: `useUser()`, `<SignInButton/>`, `<SignUpButton/>`, `<UserButton/>`.
 - Middleware: `app/middleware.ts` — protects all routes via `clerkMiddleware()`.
+- `GET /api/jobs/[jobId]/status` and `GET /api/jobs/[jobId]/questions` require a signed-in owner or an admin (`jobContentAccessDecision` in `lib/uploadSessionJobs.ts`). Ownership is `uploaded_by` via `callerOwnsStoredJob`. The check runs before a MongoDB payload is returned and before either route calls the AI pipeline. A stored job with no uploader, and a job that is not stored yet, are not readable by a non-admin.
 
 ## AI Pipeline Communication
 - Frontend API routes call the Python Flask AI pipeline via `fetch(AI_PIPELINE_URL + "/endpoint")`.

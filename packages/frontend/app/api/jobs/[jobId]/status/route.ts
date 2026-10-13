@@ -2,18 +2,21 @@ import { NextRequest, NextResponse } from "next/server";
 import { JobMetadataRepository } from "@/backend/src/database/repositories/JobMetadataRepository";
 import { connect } from "@/backend/src/database/connect";
 import { fetchFromAiPipeline } from "@/frontend/lib/aiPipeline";
+import { jobContentAccessDecision } from "@/frontend/lib/uploadSessionJobs";
 import {
   buildJobStatusPayload,
   isTerminalJobStatus,
   JOB_STATUS_SOURCE,
 } from "@/frontend/lib/jobStatus";
+import { deny, getCaller } from "@/frontend/lib/requestAuth";
 
 const jobRepo = new JobMetadataRepository();
 
 /**
  * GET /api/jobs/[jobId]/status
- * Get job status - queries MongoDB first, falls back to Python server
- * This enables persistent job tracking even after server restarts
+ * Get job status - queries MongoDB first, falls back to Python server.
+ * The caller must own the stored job, or be an admin, before either source
+ * is returned. A job id alone is not authorization.
  */
 export async function GET(
   _request: NextRequest,
@@ -26,10 +29,21 @@ export async function GET(
       return NextResponse.json({ error: "Invalid job id" }, { status: 400 });
     }
 
+    const caller = await getCaller();
     await connect();
+    // findByJobIds throws on lookup failure so a database error cannot be
+    // treated as "no owner" and then proxied to the pipeline.
+    const storedJobs = await jobRepo.findByJobIds([jobId]);
+    const denied = deny(
+      jobContentAccessDecision({
+        callerId: caller.userId,
+        callerRole: caller.role,
+        jobs: storedJobs,
+      })
+    );
+    if (denied) return denied;
 
-    // Try MongoDB first for completed jobs
-    const jobMetadata = await jobRepo.findById(jobId);
+    const jobMetadata = storedJobs[0] ?? null;
 
     if (jobMetadata && isTerminalJobStatus(jobMetadata.status)) {
       // Terminal jobs never change again - never hit the pipeline for them.
