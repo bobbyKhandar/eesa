@@ -79,7 +79,7 @@ export default function UploadPage() {
         <div className="space-y-1">
           <h1 className="text-3xl font-bold tracking-tight">Upload & Analyze</h1>
           <p className="text-sm text-muted-foreground">
-            Upload an exam image/PDF/DOCX, provide metadata, and optionally compare to past papers.
+            Upload an exam image/PDF/DOCX and provide metadata. You can compare its Bloom distribution with your earlier analyses.
           </p>
         </div>
         <Button
@@ -196,7 +196,7 @@ export default function UploadPage() {
               <BookOpen className="h-5 w-5" />
               Analysis Options
             </CardTitle>
-            <CardDescription>Compare against past papers</CardDescription>
+            <CardDescription>Compare with earlier analyses</CardDescription>
           </CardHeader>
           <CardContent className="grid gap-6">
             <div className="flex items-start justify-between gap-4">
@@ -207,10 +207,10 @@ export default function UploadPage() {
                     checked={pastPaperComparison}
                     onCheckedChange={(v) => setPastPaperComparison(Boolean(v))}
                   />
-                  <Label htmlFor="past-paper">Compare with past papers</Label>
+                  <Label htmlFor="past-paper">Compare with earlier analyses</Label>
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  Identify deviations from historical distribution and topic coverage.
+                  Compare this exam&apos;s Bloom distribution with your completed or published analyses of the same subject.
                 </p>
               </div>
             </div>

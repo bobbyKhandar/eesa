@@ -138,10 +138,10 @@ All question analysis uses these 6 cognitive levels:
    └─ Identify missing topics
    
 5. Past Paper Comparison (if enabled)
-   ├─ Fetch relevant past papers
+   ├─ Load the same user's completed or published analyses of this subject
    ├─ Compare Bloom distributions
-   ├─ Find similar questions
-   └─ Calculate deviation trends
+   ├─ Record the largest shift and per-level trends
+   └─ Store those ExamAnalysis ids (the PastPaper collection is not queried)
    
 6. Generate Insights
    ├─ Overall assessment

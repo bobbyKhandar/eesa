@@ -8,6 +8,7 @@ import { Badge } from "@/frontend/components/ui/badge"
 import { Loader2, AlertCircle } from "lucide-react"
 import DistributionChart from "@/frontend/components/analysis/distribution-chart"
 import { toBloomRows } from "@/frontend/lib/bloomDistribution"
+import { pastPaperComparisonBadge } from "@/frontend/lib/pastPaperComparison"
 
 export default function AnalysisReportPage({ params }: { params: Promise<{ id: string }> }) {
   const router = useRouter()
@@ -336,22 +337,29 @@ export default function AnalysisReportPage({ params }: { params: Promise<{ id: s
             <Card>
               <CardHeader className="pb-2">
                 <CardTitle className="text-base">Past-Paper Comparison</CardTitle>
-                <CardDescription>Comparison with historical patterns</CardDescription>
+                <CardDescription>Bloom distribution versus your earlier analyses of this subject</CardDescription>
               </CardHeader>
               <CardContent className="flex items-start justify-between gap-4">
                 <div>
                   <p className="text-sm font-medium">{analysis.pastPaperComparison.status}</p>
                   <p className="text-sm text-muted-foreground">{analysis.pastPaperComparison.detail}</p>
+                  {analysis.pastPaperComparison.trends?.length > 0 && (
+                    <ul className="mt-2 list-inside list-disc text-sm text-muted-foreground">
+                      {analysis.pastPaperComparison.trends.map((trend: string) => (
+                        <li key={trend}>{trend}</li>
+                      ))}
+                    </ul>
+                  )}
                 </div>
                 <Badge variant="outline" className="shrink-0">
-                  {analysis.pastPaperComparison.tone === "neutral" ? "Aligned" : "Check"}
+                  {pastPaperComparisonBadge(analysis.pastPaperComparison.deviation)}
                 </Badge>
               </CardContent>
             </Card>
           )}
 
           {/* Overall Assessment */}
-          {!analysis.syllabusCoverage && !analysis.pastPaperComparison && analysis.overallAssessment && (
+          {!analysis.syllabusCoverage && analysis.overallAssessment && (
             <Card>
               <CardHeader className="pb-2">
                 <CardTitle className="text-base">Overall Assessment</CardTitle>

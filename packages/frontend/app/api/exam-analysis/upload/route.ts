@@ -12,6 +12,7 @@ import {
   generateAnalysisInsights 
 } from "@/backend/dist/services/examAnalysisService";
 import type { CreateExamAnalysisRequest } from "@/backend/dist/database/schemas/examAnalysisZod";
+import { compareBloomWithEarlierAnalyses } from "@/frontend/lib/pastPaperComparison";
 import {
   questionsWithoutComputedSyllabusAlignment,
   syllabusOptionsWithoutAlignment,
@@ -248,6 +249,31 @@ async function processExamAnalysis(
       strengths: insights.strengths,
       improvements: insights.improvements,
     };
+
+    const stored = await analysisRepo.getById(analysisId);
+    if (stored && stored.analysisOptions?.comparePastPapers) {
+      const earlier = await analysisRepo.getByUser(stored.analyzedBy);
+      const comparison = compareBloomWithEarlierAnalyses({
+        currentId: analysisId,
+        subjectName: stored.subjectName,
+        bloomDistribution,
+        earlierAnalyses: earlier.map((item) => ({
+          id: item._id,
+          subjectName: item.subjectName,
+          year: item.year,
+          status: item.status,
+          totalQuestions: item.totalQuestions,
+          bloomDistribution: item.bloomDistribution,
+        })),
+      });
+      updateData.pastPaperComparison = comparison.pastPaperComparison;
+      updateData.analysisOptions = {
+        ...(stored.analysisOptions ?? {}),
+        alignWithSyllabus: false,
+        comparePastPapers: true,
+        pastPaperIds: comparison.comparedAnalysisIds,
+      };
+    }
 
     await analysisRepo.update(analysisId, updateData);
 

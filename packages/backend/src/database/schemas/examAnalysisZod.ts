@@ -84,7 +84,7 @@ export const examAnalysisDocumentZodSchema = z.object({
     alignWithSyllabus: z.boolean().default(false),
     syllabusId: z.string().optional(), // Reference to Syllabus collection
     comparePastPapers: z.boolean().default(false),
-    pastPaperIds: z.array(z.string()).default([]), // References to PastPaper collection
+    pastPaperIds: z.array(z.string()).default([]), // ExamAnalysis ids compared for this subject
   }).default({}),
   
   // Extracted content
