@@ -12,6 +12,7 @@ tests/
 ├── test_ocr_engine.py             # OCR Engine unit tests
 ├── test_image_processor.py        # Image Processor unit tests  
 ├── test_pdf_handler.py            # PDF Handler unit tests
+├── test_docx_handler.py           # DOCX extraction and PDF-handler bypass
 ├── test_pipeline_manager.py       # Pipeline Manager unit tests
 ├── test_server.py                 # AI Server unit tests
 ├── test_redis_client.py           # Redis Client unit tests

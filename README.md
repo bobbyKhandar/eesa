@@ -185,6 +185,7 @@ packages/ai-pipeline/
 │   ├── local_ocr_engine.py          # EasyOCR-based local processing
 │   ├── local_image_processor_pipeline.py
 │   ├── pdf_handler.py
+│   ├── docx_handler.py              # DOCX text extraction (not OCR)
 │   ├── pipeline_manager.py
 │   ├── pipeline_orchestrator.py
 │   ├── batch_runner.py

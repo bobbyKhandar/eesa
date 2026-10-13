@@ -41,8 +41,9 @@
 - **Engine:** EasyOCR via `OCREngine` class (`src/local_ocr_engine.py`).
 - **Image processing:** `ImageProcessor` class (`src/local_image_processor_pipeline.py`).
 - **PDF handling:** `PDFHandler` class using PyMuPDF (`src/pdf_handler.py`).
+- **DOCX handling:** `should_extract_docx` / `extract_docx_result` in `src/docx_handler.py`. A batch file whose `options.file_type` is `docx`, or whose path ends in `.docx`, is read from `word/document.xml`. It is not sent through `PDFHandler`. PDF and image uploads stay on the OCR path. Legacy `.doc` files fail with an error asking for `.docx`.
 - **Queue management:** Redis via `redis_client.py` — required for local pipeline. Connection: `redis.Redis(host='localhost', port=6379, db=0, decode_responses=True)`.
-- **Pipeline manager:** `PipelineManager` singleton (`src/pipeline_manager.py`) — uses background thread for continuous batch processing.
+- **Pipeline manager:** `PipelineManager` singleton (`src/pipeline_manager.py`) — uses background thread for continuous batch processing. `_process_single_batch` branches to `_process_docx_file` before `_process_pdf_file`.
 
 ## Module Architecture
 
@@ -59,7 +60,8 @@
 | `src/local_ocr_engine.py` | EasyOCR-based OCR engine with GPU auto-detect |
 | `src/local_image_processor_pipeline.py` | Image preprocessing (denoise, sharpen, binarize, deskew, contrast enhancement) |
 | `src/pdf_handler.py` | PDF page extraction via PyMuPDF at configurable DPI |
-| `src/pipeline_manager.py` | Redis-backed local pipeline manager (singleton) |
+| `src/docx_handler.py` | Direct DOCX text extraction from Office Open XML (no OCR) |
+| `src/pipeline_manager.py` | Redis-backed local pipeline manager (singleton). DOCX uploads bypass the PDF handler |
 | `src/pipeline_orchestrator.py` | Orchestration layer — upload, process, download, save workflow |
 
 ### API Module (`src/api/`)
