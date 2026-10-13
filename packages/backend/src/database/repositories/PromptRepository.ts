@@ -9,6 +9,7 @@ import { connect } from "../connect";
 import { getPromptModel } from "../mongooseSchemas";
 import { promptZodSchema } from "../schemas/promptSchemaZod";
 import type { Prompt } from "../schemas/promptSchemaZod";
+import { publicPromptSubjectQuery } from "../../services/publicQuestionBank";
 
 export class PromptRepository {
   private model: Model<Prompt>;
@@ -303,13 +304,14 @@ export class PromptRepository {
   }
 
   /**
-   * Find all prompts by subject
-   * Used by: Unique questions fallback
+   * Prompts for a subject that are safe to show on the public question bank.
+   * Exam creation stores unpublished prompts in this collection with
+   * generateVia "user"; those are excluded. Used by the unique-questions fallback.
    */
   async findBySubject(subject: string): Promise<Prompt[]> {
     try {
       await connect();
-      return await this.model.find({ subject }).lean();
+      return await this.model.find(publicPromptSubjectQuery(subject)).lean();
     } catch (error) {
       console.error('Error finding prompts by subject:', error);
       return [];

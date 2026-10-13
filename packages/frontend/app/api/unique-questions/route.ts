@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { UniqueQuestionRepository } from "@/backend/src/database/repositories/UniqueQuestionRepository";
 import { PromptRepository } from "@/backend/src/database/repositories/PromptRepository";
 import { connect } from "@/backend/src/database/connect";
+import { publicQuestionBankPrompts } from "@/backend/src/services/publicQuestionBank";
 import {
   buildPromptStats,
   parseBoundedInt,
@@ -17,6 +18,16 @@ import {
 
 const uniqueQuestionRepo = new UniqueQuestionRepository();
 const promptRepo = new PromptRepository();
+
+/**
+ * Public fallback when UniqueQuestions has no rows. Exam drafts live in the
+ * same Prompt collection, so the repository filter is applied again here
+ * before any question text is projected into the response.
+ */
+async function loadPublicFallbackPrompts(subject: string): Promise<PromptLike[]> {
+  const prompts = (await promptRepo.findBySubject(subject)) as unknown as PromptLike[];
+  return publicQuestionBankPrompts(prompts);
+}
 
 export async function GET(request: NextRequest) {
   try {
@@ -54,7 +65,7 @@ export async function GET(request: NextRequest) {
       // If no questions in UniqueQuestions, use Prompts as fallback
       if (!stats || stats.totalUniqueQuestions === 0) {
         console.log("[Unique Questions API] UniqueQuestions empty, using Prompts as fallback");
-        const prompts = (await promptRepo.findBySubject(subject)) as unknown as PromptLike[];
+        const prompts = await loadPublicFallbackPrompts(subject);
         stats = buildPromptStats(prompts);
       }
 
@@ -69,7 +80,7 @@ export async function GET(request: NextRequest) {
       // Fallback to Prompts with highest appearance frequency
       if (questions.length === 0) {
         console.log("[Unique Questions API] Using Prompts for frequent questions");
-        const prompts = (await promptRepo.findBySubject(subject)) as unknown as PromptLike[];
+        const prompts = await loadPublicFallbackPrompts(subject);
         const matches = queryPrompts(prompts, {
           bloomsLevel: bloomsLevel ?? undefined,
           minOccurrence,
@@ -92,7 +103,7 @@ export async function GET(request: NextRequest) {
       // search silently drops an active filter.
       if (questions.length === 0) {
         console.log("[Unique Questions API] Using Prompts for search");
-        const prompts = (await promptRepo.findBySubject(subject)) as unknown as PromptLike[];
+        const prompts = await loadPublicFallbackPrompts(subject);
 
         const matches = queryPrompts(prompts, {
           bloomsLevel: bloomsLevel ?? undefined,
@@ -121,7 +132,7 @@ export async function GET(request: NextRequest) {
     // Fallback to Prompts
     if (questions.length === 0) {
       console.log("[Unique Questions API] Using Prompts for filtered list");
-      const prompts = (await promptRepo.findBySubject(subject)) as unknown as PromptLike[];
+      const prompts = await loadPublicFallbackPrompts(subject);
 
       const queryOptions: PromptQueryOptions = {
         bloomsLevel: bloomsLevel ?? undefined,
