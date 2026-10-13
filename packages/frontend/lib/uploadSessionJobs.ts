@@ -1,11 +1,15 @@
 /**
- * Ownership rules for upload-session job ids.
+ * Ownership rules for upload-session job ids and for job status / question reads.
  *
  * A session may store an id before the pipeline job is written to MongoDB,
  * because that id has no metadata yet. Once a job document exists, only the
  * user recorded in `uploaded_by` may attach it or receive the document.
  * A stored job with no uploader is not readable: missing ownership is not
  * the same as the caller's ownership.
+ *
+ * Status and extracted-question reads use the same stored-job rule. A job
+ * that is not stored yet has no owner, so only an admin may fall through to
+ * the AI pipeline.
  */
 
 export interface StoredJobOwner {
@@ -79,5 +83,44 @@ export function visibleSessionJob<T extends StoredJobOwner>(
   return {
     job_id: jobId,
     ...HIDDEN_JOB,
+  };
+}
+
+export interface JobContentAccessDecision {
+  allowed: boolean;
+  status: number;
+  error?: string;
+}
+
+/**
+ * Reading job status or extracted questions requires a signed-in caller.
+ *
+ * A non-admin may read a job only when every stored copy is owned by them.
+ * An admin may read a foreign job, a job with no uploader, or a job that is
+ * not stored yet (the upload UI polls the pipeline before MongoDB has a row).
+ */
+export function jobContentAccessDecision(input: {
+  callerId: string | null;
+  callerRole?: string | null;
+  jobs?: ReadonlyArray<{ uploaded_by?: string | null }> | null;
+}): JobContentAccessDecision {
+  if (!input.callerId) {
+    return { allowed: false, status: 401, error: "Unauthorized" };
+  }
+
+  if (input.callerRole === "admin") {
+    return { allowed: true, status: 200 };
+  }
+
+  const callerId = input.callerId;
+  const jobs = input.jobs ?? [];
+  if (jobs.length > 0 && jobs.every((job) => callerOwnsStoredJob(job, callerId))) {
+    return { allowed: true, status: 200 };
+  }
+
+  return {
+    allowed: false,
+    status: 403,
+    error: "You do not have access to this job",
   };
 }
