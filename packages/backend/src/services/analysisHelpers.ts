@@ -268,3 +268,40 @@ export function appendCreatedPrompt<T>(
   if (!result?.success || !result.promptId) return created;
   return [...created, { question, promptId: result.promptId }];
 }
+
+/**
+ * Re-attach saved prompt ids to the analysis questions they came from.
+ *
+ * A publication retry must reuse those ids. Prompt text is matched when the
+ * prompt document is still readable; otherwise the saved order is kept.
+ * Questions that never received a prompt are returned as `unmatched` so the
+ * caller can create just those.
+ */
+export function pairPublishedQuestions<T extends { questionText?: string | null }>(
+  questions: readonly T[],
+  promptIds: readonly string[],
+  promptTextById: ReadonlyMap<string, string | null | undefined>
+): { paired: CreatedPrompt<T>[]; unmatched: T[] } {
+  const remaining = questions.filter(
+    (question) => normalizeQuestionText(question?.questionText).length > 0
+  );
+  const paired: CreatedPrompt<T>[] = [];
+
+  for (const promptId of promptIds) {
+    if (remaining.length === 0) break;
+
+    const normalizedPrompt = normalizeQuestionText(promptTextById.get(promptId));
+    const index = normalizedPrompt
+      ? remaining.findIndex(
+          (question) => normalizeQuestionText(question.questionText) === normalizedPrompt
+        )
+      : 0;
+
+    if (index === -1) continue;
+
+    const [question] = remaining.splice(index, 1);
+    paired.push({ question, promptId });
+  }
+
+  return { paired, unmatched: remaining };
+}
