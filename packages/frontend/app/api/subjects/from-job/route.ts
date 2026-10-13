@@ -12,7 +12,7 @@ import {
   updateSimilarityRelationships,
   findAndLinkSimilarQuestions 
 } from "@/backend/src/services/questionSimilarityService";
-import { buildAiPipelineUrl, withPipelineAuth } from "@/frontend/lib/aiPipeline";
+import { fetchFromAiPipeline } from "@/frontend/lib/aiPipeline";
 import {
   buildAutoSubjectDocument,
   canImportFromJob,
@@ -215,11 +215,19 @@ export async function POST(request: NextRequest) {
     // Fetch enriched data from AI pipeline
     console.log(`[Subjects Upload] Fetching enriched data for job ${job_id}...`);
     
-    // Fetch from questions endpoint (returns flat list)
-    const questionsRes = await fetch(
-      buildAiPipelineUrl(`/job/${encodeURIComponent(job_id)}/questions`),
-      withPipelineAuth()
+    // Fetch from questions endpoint (returns flat list). fetchFromAiPipeline
+    // resolves AI_PIPELINE_URL and sends the service token.
+    const questionsRes = await fetchFromAiPipeline(
+      `/job/${encodeURIComponent(job_id)}/questions`
     );
+
+    if (!questionsRes) {
+      console.error(`[Subjects Upload] AI pipeline unavailable for job ${job_id}`);
+      return NextResponse.json(
+        { error: "Failed to fetch data from pipeline" },
+        { status: 502 }
+      );
+    }
     
     if (!questionsRes.ok) {
       const errorText = await questionsRes.text();
@@ -633,12 +641,11 @@ export async function POST(request: NextRequest) {
     // Save job metadata to MongoDB for session persistence
     try {
       console.log(`[Subjects Upload] Fetching job metadata for ${job_id}...`);
-      const metadataRes = await fetch(
-        buildAiPipelineUrl(`/job/${encodeURIComponent(job_id)}/status`),
-        withPipelineAuth()
+      const metadataRes = await fetchFromAiPipeline(
+        `/job/${encodeURIComponent(job_id)}/status`
       );
       
-      if (metadataRes.ok) {
+      if (metadataRes?.ok) {
         const jobMetadata = await metadataRes.json();
         const jobMetadataRepo = new JobMetadataRepository();
         
@@ -672,7 +679,8 @@ export async function POST(request: NextRequest) {
         
         console.log(`[Subjects Upload] Job metadata saved to MongoDB for ${job_id}`);
       } else {
-        console.warn(`[Subjects Upload] Could not fetch job metadata: ${metadataRes.statusText}`);
+        const reason = metadataRes ? metadataRes.statusText : "pipeline unavailable";
+        console.warn(`[Subjects Upload] Could not fetch job metadata: ${reason}`);
       }
     } catch (metadataError) {
       console.error(`[Subjects Upload] Error saving job metadata:`, metadataError);

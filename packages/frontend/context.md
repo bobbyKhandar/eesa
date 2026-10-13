@@ -53,6 +53,7 @@
 
 ## AI Pipeline Communication
 - Frontend API routes call the Python Flask AI pipeline via `fetchFromAiPipeline` / `withPipelineAuth` (`lib/aiPipeline.ts`).
+- `POST /api/upload/questionpaper/massupload` and `POST /api/subjects/from-job` use `fetchFromAiPipeline`. An unset `AI_PIPELINE_URL` resolves to `http://127.0.0.1:5000`. Mass upload passes a longer timeout because the pipeline stores each PDF in S3 before it responds.
 - `AI_PIPELINE_URL` defaults to `http://127.0.0.1:5000`. `AI_PIPELINE_TOKEN` is a server-only shared secret sent as `Authorization: Bearer`. Do not use a `NEXT_PUBLIC_` variable for it.
 - Job status, question, and retry proxies authorize with `jobContentAccessDecision` before calling the pipeline. Upload routes use `requireAdminCaller`. Those helpers are the user checks; the token only identifies this server to Flask.
 - **Never call AWS Textract/Bedrock directly from the frontend** — always go through the AI pipeline.
