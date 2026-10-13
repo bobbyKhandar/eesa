@@ -5,8 +5,11 @@ import { examRepo, promptRepo, userRepo } from "@/backend/dist/database/reposito
 import { buildStoredQuestionOptions } from "@/backend/src/services/mcqAlignment";
 import {
   computeNegativeMarks,
+  confirmedStudentAssignees,
+  dedupeExamUserIds,
   findInvalidQuestion,
   findInvalidSettings,
+  findMissingStudentAssignees,
   normalizeAssignedUsers,
   parseScheduledAt,
   resolveDuration,
@@ -79,6 +82,24 @@ export async function POST(req: Request) {
         { success: false, error: "scheduledAt must be a valid date" },
         { status: 400 }
       );
+    }
+
+    // Teacher exams must name real students. Reject that before any prompt is
+    // written so an empty recipient list cannot create an exam only the
+    // creator can start. scheduledAt is unchanged and still gates those students.
+    const requestedStudentIds = dedupeExamUserIds(examUsers);
+    let assignedUsersList = normalizeAssignedUsers(examUsers, userId);
+    if (examType === "teacher") {
+      const records = await userRepo.getByIds(requestedStudentIds);
+      const confirmedStudents = confirmedStudentAssignees(requestedStudentIds, records, userId);
+      const assigneeError = findMissingStudentAssignees(examType, confirmedStudents);
+      if (assigneeError) {
+        return NextResponse.json(
+          { success: false, error: assigneeError },
+          { status: 400 }
+        );
+      }
+      assignedUsersList = normalizeAssignedUsers(confirmedStudents, userId);
     }
 
     /* ------------- Step 1: Create Prompts (Central Question Library) ------------- */
@@ -158,9 +179,6 @@ export async function POST(req: Request) {
       }
     }
 
-    // Automatically assign the exam to the creator
-    const assignedUsersList = normalizeAssignedUsers(examUsers, userId);
-
     const examData = {
       examTitle,
       examDescription,
@@ -195,6 +213,14 @@ export async function POST(req: Request) {
     const allocation = await userRepo.assignExam(userId, examId);
     if (!allocation.success) {
       console.error(`Exam ${examId} created but the creator was not allocated:`, allocation.error);
+    }
+
+    const otherAssignees = assignedUsersList.filter((id) => id !== userId);
+    if (otherAssignees.length > 0) {
+      const studentAllocation = await userRepo.assignExamToMany(otherAssignees, examId);
+      if (!studentAllocation.success) {
+        console.error(`Exam ${examId} created but students were not allocated:`, studentAllocation.error);
+      }
     }
 
     return NextResponse.json(

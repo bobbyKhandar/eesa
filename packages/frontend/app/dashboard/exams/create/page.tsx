@@ -8,9 +8,9 @@ import { Input } from "@/frontend/components/ui/input"
 import { Label } from "@/frontend/components/ui/label"
 import { Textarea } from "@/frontend/components/ui/textarea"
 import { ArrowLeft, Upload } from "lucide-react"
-import { ExamTypeSelector, SyllabusTypeSelector, SubjectSelector, QuestionEditor } from "@/frontend/components/features/exams"
+import { ExamTypeSelector, SyllabusTypeSelector, SubjectSelector, QuestionEditor, StudentAssigneeSelector } from "@/frontend/components/features/exams"
 import type { Question } from "@/frontend/components/features/exams"
-import { findInvalidQuestion } from "@/frontend/lib/examCreation"
+import { examUsersForCreation, findInvalidQuestion, findMissingStudentAssignees } from "@/frontend/lib/examCreation"
 
 export default function CreateExamPage() {
   const [examType, setExamType] = useState<string | null>(null)
@@ -56,6 +56,7 @@ export default function CreateExamPage() {
   const [negativeMarking,setNegativeMarking]=useState<boolean>(false)
   const [negativeMarkingPercentage,setNegativeMarkingPercentage]=useState<number>(25)
   const [deadline,setDeadline]=useState<string>("")
+  const [selectedStudentIds,setSelectedStudentIds]=useState<string[]>([])
   const [processingRequest,setProcessingRequest]=useState<boolean>(false)
   const [error,setError]=useState<string>("")
   const [success,setSuccess]=useState<string>("")
@@ -94,6 +95,12 @@ async function uploadExamSet(): Promise<ApiResponse> {
       return { success: false, error: questionError }
     }
 
+    const assigneeError = findMissingStudentAssignees(examType, selectedStudentIds)
+    if (assigneeError) {
+      setError(assigneeError)
+      return { success: false, error: assigneeError }
+    }
+
     setProcessingRequest(true)
     setError("")
     setSuccess("")
@@ -114,7 +121,7 @@ async function uploadExamSet(): Promise<ApiResponse> {
       negativeMarking,
       negativeMarkingPercentage: negativeMarking ? negativeMarkingPercentage : undefined,
       examMaxMarks: totalMarks,
-      examUsers: [],
+      examUsers: examUsersForCreation(examType, selectedStudentIds),
       questions: questions.map(q => ({
         text: q.text,
         marks: q.marks,
@@ -358,14 +365,21 @@ async function uploadExamSet(): Promise<ApiResponse> {
           )}
 
           {examType === "teacher" && (
-            <div className="grid gap-2">
-              <Label htmlFor="deadline">Submission Deadline</Label>
-              <Input
-                id="deadline"
-                type="datetime-local"
-                value={deadline}
-                readOnly={processingRequest}
-                onChange={e=>{setDeadline(e.target.value)}}
+            <div className="grid gap-4">
+              <div className="grid gap-2">
+                <Label htmlFor="deadline">Submission Deadline</Label>
+                <Input
+                  id="deadline"
+                  type="datetime-local"
+                  value={deadline}
+                  readOnly={processingRequest}
+                  onChange={e=>{setDeadline(e.target.value)}}
+                />
+              </div>
+              <StudentAssigneeSelector
+                selectedIds={selectedStudentIds}
+                onChange={setSelectedStudentIds}
+                disabled={processingRequest}
               />
             </div>
           )}

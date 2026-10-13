@@ -4,7 +4,7 @@ An intelligent exam creation and evaluation platform powered by AI.
 
 ## Features
 
-- **Exam Creation**: Create exams for personal use or teacher assignments
+- **Exam Creation**: Create exams for personal use or teacher assignments. A teacher exam is assigned to the students selected on the create form; those students can start it once `scheduledAt` is reached.
 - **AI Evaluation**: Automated grading using advanced AI models
 - **Resources Management**: Organized by branch, semester, and subject
 - **Past Year Questions**: Comprehensive PYQ database with Bloom's taxonomy

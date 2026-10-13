@@ -68,7 +68,7 @@
 | `ExamAnalysisRepository` | `newFeatureModels.ts` | `create()`, `getByUser()`, `publish()`, `getPublicAnalyses()` |
 | `AnalysisReportRepository` | `newFeatureModels.ts` | `create()`, `findBySubject()`, `getSubjectsSummary()`, `getRecentReports()` |
 | `SubjectRepository` | `newFeatureModels.ts` | `create()`, `getByCode()`, `getAll(filters)`, `getStatistics()` |
-| `UserRepository` | `mongooseSchemas.ts` | `create()`, `getAllocatedExams()`, `assignExam()`, `getByRole()` |
+| `UserRepository` | `mongooseSchemas.ts` | `create()`, `getByIds()`, `getAllocatedExams()`, `assignExam()`, `assignExamToMany()`, `getByRole()` |
 | `PromptRepository` | `mongooseSchemas.ts` | `create()`, `createBulk()`, `search()`, `getLowConfidenceOcr()`, `findBySubject()` (public bank only; excludes unpublished `generateVia: "user"` exam prompts) |
 | `JobMetadataRepository` | `mongooseSchemas.ts` | `create()`, `findById()`, `findByJobIds()`, `updateStatus()`, `findOlderThan()` |
 | `UploadSessionRepository` | `mongooseSchemas.ts` | `create()`, `findById()`, `addJobs()`, `updateJobStats()` |

@@ -90,3 +90,92 @@ export function parseScheduledAt(value: unknown): Date | undefined {
   const date = value instanceof Date ? value : new Date(value as string | number);
   return Number.isNaN(date.getTime()) ? undefined : date;
 }
+
+export interface AssignableStudent {
+  id: string;
+  name: string;
+  email: string;
+}
+
+const BLOCKED_STUDENT_STATUSES = new Set(["inactive", "suspended"]);
+
+export const MISSING_STUDENT_ASSIGNEES = "Select at least one student to assign this exam";
+
+function text(value: unknown): string {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+/**
+ * A student who can receive a new exam. Teachers and admins are not recipients.
+ * A missing status is treated as active, matching accounts written before the field existed.
+ */
+export function toAssignableStudent(user: unknown): AssignableStudent | null {
+  if (!user || typeof user !== "object") return null;
+  const record = user as Record<string, unknown>;
+  const id = record._id == null ? "" : String(record._id).trim();
+  const email = text(record.email);
+  const role = text(record.role);
+  const status = text(record.status);
+  if (!id || !email || role !== "student") return null;
+  if (BLOCKED_STUDENT_STATUSES.has(status)) return null;
+  return { id, name: text(record.name) || email, email };
+}
+
+export function listAssignableStudents(users: unknown, excludeId?: string): AssignableStudent[] {
+  if (!Array.isArray(users)) return [];
+  const seen = new Set<string>();
+  const students: AssignableStudent[] = [];
+  for (const user of users) {
+    const row = toAssignableStudent(user);
+    if (!row || row.id === excludeId || seen.has(row.id)) continue;
+    seen.add(row.id);
+    students.push(row);
+  }
+  return students;
+}
+
+export function filterAssignableStudents(students: AssignableStudent[], query: string): AssignableStudent[] {
+  const needle = query.trim().toLowerCase();
+  if (!needle) return students;
+  return students.filter(
+    (student) => student.name.toLowerCase().includes(needle) || student.email.toLowerCase().includes(needle),
+  );
+}
+
+export function dedupeExamUserIds(examUsers: unknown): string[] {
+  if (!Array.isArray(examUsers)) return [];
+  const seen = new Set<string>();
+  const ids: string[] = [];
+  for (const candidate of examUsers) {
+    if (typeof candidate !== "string") continue;
+    const id = candidate.trim();
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+    ids.push(id);
+  }
+  return ids;
+}
+
+/** Personal exams stay with the creator. Teacher exams submit the chosen students. */
+export function examUsersForCreation(examType: unknown, selectedStudentIds: unknown): string[] {
+  if (examType !== "teacher") return [];
+  return dedupeExamUserIds(selectedStudentIds);
+}
+
+export function findMissingStudentAssignees(examType: unknown, studentIds: readonly string[]): string | null {
+  if (examType !== "teacher") return null;
+  return studentIds.length === 0 ? MISSING_STUDENT_ASSIGNEES : null;
+}
+
+/**
+ * Intersect the requested ids with active student accounts.
+ * The creator is always stored separately and is not a recipient here.
+ */
+export function confirmedStudentAssignees(
+  requestedIds: readonly string[],
+  directory: readonly unknown[],
+  creatorId: string,
+): string[] {
+  const allowed = new Set(listAssignableStudents(directory).map((student) => student.id));
+  return dedupeExamUserIds(requestedIds).filter((id) => id !== creatorId && allowed.has(id));
+}
