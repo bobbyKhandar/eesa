@@ -10,8 +10,9 @@ import { Badge } from "@/frontend/components/ui/badge"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/frontend/components/ui/select"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/frontend/components/ui/tabs"
 import { Input } from "@/frontend/components/ui/input"
-import { Loader2, ArrowLeft, FileText, BarChart3, Eye, BookOpen, Sparkles, Search, X } from "lucide-react"
+import { Loader2, ArrowLeft, FileText, BarChart3, Eye, BookOpen, Sparkles, Search, X, AlertCircle } from "lucide-react"
 import { toBloomRows } from "@/frontend/lib/bloomDistribution"
+import { subjectCatalogErrorMessage, subjectCatalogView } from "@/frontend/lib/subjectCatalogLoad"
 import {
   safeDecodeParam,
   toUniqueQuestionList,
@@ -78,6 +79,7 @@ export default function SubjectReportsPage({ params }: { params: Promise<{ subje
   const router = useRouter()
   
   const [reports, setReports] = useState<AnalysisReport[]>([])
+  const [reportsError, setReportsError] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [filterYear, setFilterYear] = useState<string>("all")
   const [filterSemester, setFilterSemester] = useState<string>("all")
@@ -85,6 +87,7 @@ export default function SubjectReportsPage({ params }: { params: Promise<{ subje
   
   // Unique questions state
   const [uniqueQuestions, setUniqueQuestions] = useState<UniqueQuestion[]>([])
+  const [uniqueQuestionsError, setUniqueQuestionsError] = useState<string | null>(null)
   const [uniqueStats, setUniqueStats] = useState<UniqueQuestionStats | null>(null)
   const [isLoadingUnique, setIsLoadingUnique] = useState(false)
   const [searchQuery, setSearchQuery] = useState("")
@@ -108,6 +111,7 @@ export default function SubjectReportsPage({ params }: { params: Promise<{ subje
   const fetchReports = async () => {
     try {
       setIsLoading(true)
+      setReportsError(null)
       const params = new URLSearchParams({ subjectName })
       if (filterYear !== "all") params.append("year", filterYear)
       if (filterSemester !== "all") params.append("semester", filterSemester)
@@ -124,6 +128,7 @@ export default function SubjectReportsPage({ params }: { params: Promise<{ subje
     } catch (error) {
       console.error("Error fetching reports:", error)
       setReports([])
+      setReportsError(subjectCatalogErrorMessage("reports", error))
     } finally {
       setIsLoading(false)
     }
@@ -132,6 +137,7 @@ export default function SubjectReportsPage({ params }: { params: Promise<{ subje
   const fetchUniqueQuestions = async () => {
     try {
       setIsLoadingUnique(true)
+      setUniqueQuestionsError(null)
       const params = new URLSearchParams({ subject: subjectName })
       if (bloomFilter !== "all") params.append("bloomsLevel", bloomFilter)
       if (appliedSearchQuery) params.append("search", appliedSearchQuery)
@@ -147,6 +153,7 @@ export default function SubjectReportsPage({ params }: { params: Promise<{ subje
     } catch (error) {
       console.error("Error fetching unique questions:", error)
       setUniqueQuestions([])
+      setUniqueQuestionsError(subjectCatalogErrorMessage("unique-questions", error))
     } finally {
       setIsLoadingUnique(false)
     }
@@ -195,6 +202,17 @@ export default function SubjectReportsPage({ params }: { params: Promise<{ subje
 
   const uniqueYears = Array.from(new Set(reports.map(r => r.year))).sort().reverse()
   const uniqueSemesters = Array.from(new Set(reports.map(r => r.semester))).sort()
+
+  const reportsView = subjectCatalogView({
+    loading: isLoading,
+    error: reportsError,
+    itemCount: reports.length,
+  })
+  const questionsView = subjectCatalogView({
+    loading: isLoadingUnique,
+    error: uniqueQuestionsError,
+    itemCount: uniqueQuestions.length,
+  })
 
   const getBloomBadgeColor = (level?: string): string => {
     if (!level) return "secondary"
@@ -294,11 +312,31 @@ export default function SubjectReportsPage({ params }: { params: Promise<{ subje
         </div>
 
           {/* Reports List */}
-      {isLoading ? (
+      {reportsView === "loading" ? (
         <div className="flex items-center justify-center py-12">
           <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
         </div>
-      ) : reports.length === 0 ? (
+      ) : reportsView === "error" ? (
+        <Card>
+          <CardContent role="alert" className="flex flex-col items-center justify-center py-12 text-center">
+            <AlertCircle className="h-12 w-12 text-destructive mb-4" />
+            <p className="text-lg font-medium text-destructive">
+              Unable to load reports
+            </p>
+            <p className="text-sm text-muted-foreground mt-2">
+              {reportsError}
+            </p>
+            <Button
+              type="button"
+              variant="outline"
+              className="mt-4"
+              onClick={() => void fetchReports()}
+            >
+              Retry loading reports
+            </Button>
+          </CardContent>
+        </Card>
+      ) : reportsView === "empty" ? (
         <Card>
           <CardContent className="flex flex-col items-center justify-center py-12">
             <FileText className="h-12 w-12 text-muted-foreground mb-4" />
@@ -465,11 +503,31 @@ export default function SubjectReportsPage({ params }: { params: Promise<{ subje
           </div>
 
           {/* Questions List */}
-          {isLoadingUnique ? (
+          {questionsView === "loading" ? (
             <div className="flex items-center justify-center py-12">
               <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
             </div>
-          ) : uniqueQuestions.length === 0 ? (
+          ) : questionsView === "error" ? (
+            <Card>
+              <CardContent role="alert" className="flex flex-col items-center justify-center py-12 text-center">
+                <AlertCircle className="h-12 w-12 text-destructive mb-4" />
+                <p className="text-lg font-medium text-destructive">
+                  Unable to load unique questions
+                </p>
+                <p className="text-sm text-muted-foreground mt-2">
+                  {uniqueQuestionsError}
+                </p>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="mt-4"
+                  onClick={() => void fetchUniqueQuestions()}
+                >
+                  Retry loading unique questions
+                </Button>
+              </CardContent>
+            </Card>
+          ) : questionsView === "empty" ? (
             <Card>
               <CardContent className="flex flex-col items-center justify-center py-12">
                 <BookOpen className="h-12 w-12 text-muted-foreground mb-4" />
