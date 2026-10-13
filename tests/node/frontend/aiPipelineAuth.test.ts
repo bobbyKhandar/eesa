@@ -106,6 +106,25 @@ describe("pipeline callers send the service token", () => {
       assert.doesNotMatch(source, /192\.168\.1\.105/, path);
     }
   });
+
+  it("proxies mass upload and subject import through fetchFromAiPipeline", () => {
+    const massUpload = readRepoFile(
+      "packages/frontend/app/api/upload/questionpaper/massupload/route.ts"
+    );
+    const fromJob = readRepoFile("packages/frontend/app/api/subjects/from-job/route.ts");
+
+    assert.match(massUpload, /fetchFromAiPipeline\(\s*"\/upload\/question-papers"/);
+    assert.match(massUpload, /MASS_UPLOAD_PIPELINE_TIMEOUT_MS/);
+    assert.match(massUpload, /const MASS_UPLOAD_PIPELINE_TIMEOUT_MS = 10 \* 60 \* 1000;/);
+    assert.doesNotMatch(massUpload, /\bfetch\(/);
+    assert.doesNotMatch(massUpload, /AI_PIPELINE_URL\s*=/);
+
+    assert.equal(fromJob.match(/fetchFromAiPipeline\(/g)?.length, 2);
+    assert.match(fromJob, /fetchFromAiPipeline\(\s*`\/job\/\$\{encodeURIComponent\(job_id\)\}\/questions`/);
+    assert.match(fromJob, /fetchFromAiPipeline\(\s*`\/job\/\$\{encodeURIComponent\(job_id\)\}\/status`/);
+    assert.doesNotMatch(fromJob, /\bfetch\(/);
+    assert.doesNotMatch(fromJob, /AI_PIPELINE_URL\s*=/);
+  });
 });
 
 describe("job pipeline proxies reuse the ownership helper", () => {
