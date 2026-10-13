@@ -43,7 +43,7 @@
 - **PDF handling:** `PDFHandler` class using PyMuPDF (`src/pdf_handler.py`).
 - **DOCX handling:** `should_extract_docx` / `extract_docx_result` in `src/docx_handler.py`. A batch file whose `options.file_type` is `docx`, or whose path ends in `.docx`, is read from `word/document.xml`. It is not sent through `PDFHandler`. PDF and image uploads stay on the OCR path. Legacy `.doc` files fail with an error asking for `.docx`.
 - **Queue management:** Redis via `redis_client.py` — required for local pipeline. Connection: `redis.Redis(host='localhost', port=6379, db=0, decode_responses=True)`.
-- **Pipeline manager:** `PipelineManager` singleton (`src/pipeline_manager.py`) — uses background thread for continuous batch processing. `_process_single_batch` branches to `_process_docx_file` before `_process_pdf_file`.
+- **Pipeline manager:** `PipelineManager` singleton (`src/pipeline_manager.py`) — uses background thread for continuous batch processing. `_process_single_batch` branches to `_process_docx_file` before `_process_pdf_file`. PDF page outcomes are compiled by `compile_pdf_file_result` (`src/ocr_file_result.py`). A file is `status: success` only when every page succeeds. Dropped pages set `status: partial`, `success: false`, and `failed_pages` / `failed_page_numbers`, and the batch status is `partial` (not `completed`). If every page fails, the file and batch are `failed`. The file payload is still stored so callers can see which pages were lost. This local batch status is separate from the AWS job status `partial_success`. DOCX extraction is unchanged.
 
 ## Module Architecture
 

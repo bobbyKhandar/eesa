@@ -329,10 +329,10 @@ Get final results of a completed batch.
 **Returns:**
 - `BatchResult`: Complete batch results
   - `batch_id`: Batch identifier
-  - `status`: Final status
+  - `status`: Final status (`completed`, `partial`, or `failed`). `partial` means OCR dropped some pages but still produced text. This is separate from the AWS job status `partial_success`.
   - `total_files`: Total files processed
-  - `successful_files`: Successfully processed files
-  - `failed_files`: Failed files
+  - `successful_files`: Files whose pages all succeeded
+  - `failed_files`: Files that produced no usable text
   - `processing_time`: Total processing time
   - `results`: Dictionary of file results
   - `errors`: List of error messages
@@ -343,6 +343,8 @@ Get final results of a completed batch.
 result = pipeline_manager.get_batch_result(batch_id)
 for file_path, file_result in result.results.items():
     print(f"{file_path}: {file_result['combined_text']}")
+    if file_result.get("status") == "partial":
+        print(f"  failed pages: {file_result.get('failed_page_numbers')}")
 ```
 
 ### Processing Options

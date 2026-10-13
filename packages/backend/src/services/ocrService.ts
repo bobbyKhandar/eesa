@@ -1,14 +1,10 @@
 import axios from "axios";
 import fs from "fs";
+import { interpretOcrFileResult, type OCRResult } from "./ocrFileResult.js";
+
+export type { OCRResult, OcrFailedPage } from "./ocrFileResult.js";
 
 const OCR_PIPELINE_URL = process.env.OCR_PIPELINE_URL || "http://localhost:5000";
-
-interface OCRResult {
-  success: boolean;
-  text?: string;
-  error?: string;
-  batchId?: string;
-}
 
 /**
  * Process a file through the OCR pipeline (Python AI Pipeline)
@@ -72,39 +68,36 @@ export async function processFileWithOCR(
       const status = statusResponse.data.status.status;
       console.log(`Batch ${batchId} status: ${status} (attempt ${attempts}/${maxAttempts})`);
 
-      if (status === "completed") {
-        // Get result
-        const resultResponse = await axios.get(
-          `${OCR_PIPELINE_URL}/result/${batchId}`
-        );
-
-        if (!resultResponse.data.success) {
-          throw new Error("Failed to retrieve batch result");
-        }
-
-        const result = resultResponse.data.result;
-        const fileResult = result.results[filePath];
-
-        if (!fileResult) {
-          throw new Error("No result found for file");
-        }
-
-        // Python server returns text in "combined_text" field
-        const extractedText = fileResult.combined_text || fileResult.text || "";
-        
-        if (!extractedText) {
-          throw new Error("No text extracted from file");
-        }
-
-        console.log(`OCR completed successfully. Extracted ${extractedText.length} characters`);
-        return {
-          success: true,
-          text: extractedText,
-          batchId,
-        };
+      if (status === "completed" || status === "partial") {
+        const fileResult = await fetchFileResult(batchId, filePath);
+        const interpreted = interpretOcrFileResult(fileResult, batchId);
+        logOcrOutcome(interpreted);
+        return interpreted;
       } else if (status === "failed") {
+        const fileResult = await fetchFileResult(batchId, filePath).catch(() => undefined);
+        if (fileResult) {
+          const interpreted = interpretOcrFileResult(fileResult, batchId);
+          logOcrOutcome(interpreted);
+          if (!interpreted.success || (interpreted.failedPages && interpreted.failedPages.length > 0)) {
+            return {
+              ...interpreted,
+              success: false,
+              status: "failed",
+            };
+          }
+        }
+
         const errors = statusResponse.data.status.errors || [];
-        throw new Error(`OCR processing failed: ${errors.join(", ")}`);
+        const message = errors.length
+          ? `OCR processing failed: ${errors.join(", ")}`
+          : "OCR processing failed";
+        return {
+          success: false,
+          status: "failed",
+          batchId,
+          error: message,
+          failedPages: [],
+        };
       }
       // Continue polling if status is "pending" or "processing"
     }
@@ -118,6 +111,34 @@ export async function processFileWithOCR(
       error: error.message || "Failed to process file with OCR",
     };
   }
+}
+
+async function fetchFileResult(batchId: string, filePath: string): Promise<Record<string, unknown>> {
+  const resultResponse = await axios.get(`${OCR_PIPELINE_URL}/result/${batchId}`);
+
+  if (!resultResponse.data.success) {
+    throw new Error("Failed to retrieve batch result");
+  }
+
+  const fileResult = resultResponse.data.result?.results?.[filePath];
+  if (!fileResult) {
+    throw new Error("No result found for file");
+  }
+  return fileResult;
+}
+
+function logOcrOutcome(result: OCRResult): void {
+  if (result.status === "partial") {
+    console.warn(
+      `OCR completed with failed pages${result.batchId ? ` for batch ${result.batchId}` : ""}: ${result.error}`
+    );
+    return;
+  }
+  if (!result.success) {
+    console.error(`OCR failed${result.batchId ? ` for batch ${result.batchId}` : ""}: ${result.error}`);
+    return;
+  }
+  console.log(`OCR completed successfully. Extracted ${result.text?.length ?? 0} characters`);
 }
 
 /**

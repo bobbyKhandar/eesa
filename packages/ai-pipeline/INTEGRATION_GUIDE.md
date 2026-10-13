@@ -300,6 +300,8 @@ const result = await client.waitForBatch(batchId, pollInterval, timeout);
 }
 ```
 
+A file is `"success": true` and `"status": "success"` only when every page succeeded. If some pages fail and at least one page produced text, that file is `"success": false`, `"status": "partial"`, with `failed_pages` and `failed_page_numbers` naming the lost pages. `combined_text` still contains only the pages that succeeded, and the batch status is `"partial"` rather than `"completed"`. If every page fails, the file is `"status": "failed"` and the batch is `"failed"`, but the file payload remains in `results` so the lost pages are visible. DOCX extraction does not use this page loop: a readable DOCX file is still a clean success.
+
 ---
 
 ## 🧪 Testing

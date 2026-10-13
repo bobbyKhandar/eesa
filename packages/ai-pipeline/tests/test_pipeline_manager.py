@@ -466,9 +466,11 @@ class TestPipelineManagerProcessing(unittest.TestCase):
         
         result = self.manager._process_pdf_file("/test/mixed.pdf")
         
-        self.assertTrue(result["success"])
+        self.assertFalse(result["success"])
+        self.assertEqual(result["status"], "partial")
         self.assertEqual(result["successful_pages"], 1)
         self.assertEqual(result["failed_pages"], 1)
+        self.assertEqual(result["failed_page_numbers"], [1])
         self.assertEqual(len(result["page_results"]), 2)
 
     def test_process_pdf_file_exception(self):
@@ -594,6 +596,7 @@ class TestJobStatus(unittest.TestCase):
         self.assertEqual(JobStatus.COMPLETED.value, "completed")
         self.assertEqual(JobStatus.FAILED.value, "failed")
         self.assertEqual(JobStatus.CANCELLED.value, "cancelled")
+        self.assertEqual(JobStatus.PARTIAL.value, "partial")
 
     def test_job_status_from_string(self):
         """Test creating JobStatus from string"""

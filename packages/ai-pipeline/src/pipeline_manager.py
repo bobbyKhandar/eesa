@@ -26,12 +26,22 @@ try:
     from .local_image_processor_pipeline import ImageProcessor
     from .pdf_handler import PDFHandler
     from .docx_handler import extract_docx_result, should_extract_docx
+    from .ocr_file_result import (
+        batch_terminal_status,
+        classify_file_outcome,
+        compile_pdf_file_result,
+    )
 except ImportError:
     import redis_client
     from local_ocr_engine import OCREngine
     from local_image_processor_pipeline  import ImageProcessor
     from pdf_handler import PDFHandler
     from docx_handler import extract_docx_result, should_extract_docx
+    from ocr_file_result import (
+        batch_terminal_status,
+        classify_file_outcome,
+        compile_pdf_file_result,
+    )
 
 
 class JobStatus(Enum):
@@ -40,6 +50,9 @@ class JobStatus(Enum):
     COMPLETED = "completed"
     FAILED = "failed"
     CANCELLED = "cancelled"
+    # Local OCR batch with usable text and dropped pages. Distinct from the
+    # AWS job status "partial_success".
+    PARTIAL = "partial"
 
 
 @dataclass
@@ -174,12 +187,22 @@ class PipelineManager:
             processed_files = metadata.get("processed_files", 0)
             progress_percentage = (processed_files / total_files * 100) if total_files > 0 else 0
             
+            errors = []
+            try:
+                raw_errors = redis_client.hash_get_json(f"batch:{batch_id}", "errors") or []
+                if isinstance(raw_errors, list):
+                    errors = raw_errors
+            except Exception as error_read:
+                print(f"Error reading batch errors for {batch_id}: {error_read}")
+
             return {
                 "batch_id": batch_id,
                 "status": metadata.get("status"),
                 "total_files": total_files,
                 "processed_files": processed_files,
                 "failed_files": metadata.get("failed_files", 0),
+                "partial_files": metadata.get("partial_files", 0),
+                "errors": errors,
                 "progress_percentage": round(progress_percentage, 2),
                 "created_at": metadata.get("created_at"),
                 "processing_time": time.time() - metadata.get("created_at", time.time())
@@ -200,13 +223,16 @@ class PipelineManager:
             results_data = redis_client.hash_get_json(f"batch:{batch_id}", "results") or {}
             errors = redis_client.hash_get_json(f"batch:{batch_id}", "errors") or []
             
-            # Create result object
+            processed_files = metadata.get("processed_files", 0)
+            failed_files = metadata.get("failed_files", 0)
+            partial_files = metadata.get("partial_files", 0)
+            # Create result object. Partial page drops are not clean successes.
             result = BatchResult(
                 batch_id=batch_id,
                 status=JobStatus(metadata.get("status", "unknown")),
                 total_files=metadata.get("total_files", 0),
-                successful_files=metadata.get("processed_files", 0) - metadata.get("failed_files", 0),
-                failed_files=metadata.get("failed_files", 0),
+                successful_files=processed_files - failed_files - partial_files,
+                failed_files=failed_files,
                 processing_time=metadata.get("processing_time", 0),
                 results=results_data,
                 errors=errors,
@@ -257,7 +283,8 @@ class PipelineManager:
             options = metadata.get("options") or {}
             batch_results = {}
             batch_errors = []
-            processed_files = 0
+            clean_files = 0
+            partial_files = 0
             failed_files = 0
             
             print(f"📄 Processing {len(file_locations)} files in batch {batch_id}")
@@ -271,13 +298,24 @@ class PipelineManager:
                         file_result = self._process_docx_file(file_location)
                     else:
                         file_result = self._process_pdf_file(file_location, batch_id)
-                    
-                    if file_result["success"]:
-                        batch_results[file_location] = file_result
-                        processed_files += 1
+
+                    # Keep the payload even when pages failed so callers can see which were lost.
+                    batch_results[file_location] = file_result
+                    outcome = classify_file_outcome(file_result)
+
+                    if outcome == "success":
+                        clean_files += 1
                         print(f"  ✅ Successfully processed: {file_location}")
                         print(f"     - Total Pages: {file_result['total_pages']}")
                         print(f"     - Successful Pages: {file_result['successful_pages']}")
+                        print(file_result)
+                    elif outcome == "partial":
+                        partial_files += 1
+                        lost = file_result.get("failed_page_numbers", file_result.get("failed_pages"))
+                        batch_errors.append(
+                            f"Partial OCR for {file_location}: failed pages {lost}. {file_result.get('error', '')}".strip()
+                        )
+                        print(f"  ⚠️ Partial OCR for {file_location}: failed pages {lost}")
                         print(file_result)
                     else:
                         batch_errors.append(f"Failed to process {file_location}: {file_result.get('error', 'Unknown error')}")
@@ -286,22 +324,26 @@ class PipelineManager:
                     
                     # Update progress
 
-                    metadata["processed_files"] = processed_files + failed_files
+                    metadata["processed_files"] = clean_files + partial_files + failed_files
                     metadata["failed_files"] = failed_files
+                    metadata["partial_files"] = partial_files
                     redis_client.hash_set(f"batch:{batch_id}", "metadata", metadata)
                     
                 except Exception as e:
                     error_msg = f"Error processing {file_location}: {str(e)}"
                     batch_errors.append(error_msg)
                     failed_files += 1
+                    metadata["processed_files"] = clean_files + partial_files + failed_files
+                    metadata["failed_files"] = failed_files
+                    metadata["partial_files"] = partial_files
                     print(f"  ❌ {error_msg}")
             
             # Calculate final statistics
             processing_time = time.time() - start_time
-            successful_files = processed_files
+            successful_files = clean_files
             
-            # Update final metadata
-            metadata["status"] = JobStatus.COMPLETED.value if failed_files == 0 else JobStatus.FAILED.value
+            # Update final metadata. Dropped pages are partial, not a clean completion.
+            metadata["status"] = batch_terminal_status(failed_files, partial_files)
             metadata["processing_time"] = processing_time
             metadata["completed_at"] = time.time()
             
@@ -317,6 +359,7 @@ class PipelineManager:
                 "total_files": len(file_locations),
                 "successful_files": successful_files,
                 "failed_files": failed_files,
+                "partial_files": partial_files,
                 "processing_time": processing_time,
                 "results": batch_results,
                 "errors": batch_errors
@@ -329,7 +372,7 @@ class PipelineManager:
                 if batch_id in self.active_batches:
                     del self.active_batches[batch_id]
             
-            print(f"✅ Completed batch {batch_id}: {successful_files} successful, {failed_files} failed, {processing_time:.2f}s")
+            print(f"✅ Completed batch {batch_id}: {successful_files} successful, {partial_files} partial, {failed_files} failed, {processing_time:.2f}s")
             
         except Exception as e:
             print(f"❌ Error processing batch {batch_id}: {e}")
@@ -411,23 +454,12 @@ class PipelineManager:
                         "success": False
                     })
             
-            # Calculate average confidence
-            successful_pages = [r for r in file_results if r.get("success")]
-            avg_confidence = total_confidence / len(successful_pages) if successful_pages else 0
-            
-            # Combine all text
-            combined_text = "\n\n".join([r["text"] for r in successful_pages])
-            
-            return {
-                "success": True,
-                "file_location": file_location,
-                "total_pages": len(pages_data),
-                "successful_pages": len(successful_pages),
-                "failed_pages": len(file_results) - len(successful_pages),
-                "average_confidence": avg_confidence,
-                "combined_text": combined_text,
-                "page_results": file_results
-            }
+            return compile_pdf_file_result(
+                file_location,
+                len(pages_data),
+                file_results,
+                total_confidence,
+            )
             
         except Exception as e:
             return {"success": False, "error": str(e)}
