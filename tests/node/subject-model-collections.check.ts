@@ -24,3 +24,8 @@ assert.ok(physicalNames.includes(FEATURE_SUBJECT_COLLECTION));
 const byRegistryName = new Map(collections.map(({ name, model }) => [name, model.collection.collectionName]));
 assert.equal(byRegistryName.get("subjects"), "subjects");
 assert.equal(byRegistryName.get("Subject"), "featureSubjects");
+assert.equal(
+  collections.filter(({ name }) => name === "examAttempts").length,
+  1
+);
+assert.equal(byRegistryName.get("examAttempts"), "examAttempts");

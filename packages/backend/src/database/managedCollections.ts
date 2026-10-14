@@ -15,6 +15,10 @@
  * names onto `subjects`, so callers must check `model.collection` and not
  * assume the registry key is a unique MongoDB collection.
  *
+ * `examAttempts` is the in-progress attempt clock (`ExamAttemptRepository`).
+ * It is registered once, under that physical collection name. Completed
+ * submissions stay in `ExamSubmission`.
+ *
  * This module must stay dependency free (no mongoose/zod imports) so it can be
  * unit tested in isolation.
  */
@@ -35,6 +39,7 @@ export const MANAGED_COLLECTION_NAMES = [
   'Syllabus',
   'UniqueQuestion',
   'Subject',
+  'examAttempts',
 ] as const;
 
 export type ManagedCollectionName = (typeof MANAGED_COLLECTION_NAMES)[number];

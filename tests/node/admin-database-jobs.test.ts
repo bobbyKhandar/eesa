@@ -76,7 +76,16 @@ describe("managed collection registry", () => {
     assert.equal(new Set(MANAGED_COLLECTION_NAMES).size, MANAGED_COLLECTION_NAMES.length);
     assert.ok(isManagedCollectionName("subjects"));
     assert.ok(isManagedCollectionName("Subject"));
-    assert.equal(MANAGED_COLLECTION_NAMES.length, 15);
+    assert.equal(MANAGED_COLLECTION_NAMES.length, 16);
+  });
+
+  it("registers active exam attempts exactly once", () => {
+    assert.equal(
+      MANAGED_COLLECTION_NAMES.filter((name) => name === "examAttempts").length,
+      1
+    );
+    assert.ok(isManagedCollectionName("examAttempts"));
+    assert.equal(isManagedCollectionName("ExamAttempt"), false);
   });
 
   it("rejects unknown collection names", () => {
@@ -135,6 +144,14 @@ describe("planRestore", () => {
       plan.map((entry) => entry.name),
       [...MANAGED_COLLECTION_NAMES]
     );
+  });
+
+  it("clears examAttempts when an older backup omits them", () => {
+    const plan = planRestore({ questions: [{ _id: 1 }] }, MANAGED_COLLECTION_NAMES);
+    const attempts = plan.find((entry) => entry.name === "examAttempts");
+    assert.ok(attempts);
+    assert.equal(attempts!.presentInBackup, false);
+    assert.deepEqual(attempts!.docs, []);
   });
 
   it("marks collections missing from the payload so they are still cleared", () => {
