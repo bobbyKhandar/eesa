@@ -245,6 +245,9 @@ Each package has its own `.env` file:
 | `CLERK_SECRET_KEY` | Clerk secret key |
 | `AI_PIPELINE_URL` | AI Pipeline server URL (`http://127.0.0.1:5000`) |
 | `AI_PIPELINE_TOKEN` | Shared secret sent as `Authorization: Bearer` to every AI pipeline route except `/health`. Set the same value in `packages/ai-pipeline/.env`. |
+| `QUESTION_PAPER_MAX_FILE_BYTES` | Max bytes for one question-paper upload (default `26214400`, 25 MB). A non-positive or non-integer value keeps the default. |
+| `QUESTION_PAPER_MAX_FILE_COUNT` | Max files in one question-paper batch (default `20`). |
+| `QUESTION_PAPER_MAX_REQUEST_BYTES` | Max bytes for the whole question-paper request (default `209715200`, 200 MB). |
 
 **`packages/ai-pipeline/.env`**
 | Variable | Description |
@@ -257,6 +260,9 @@ Each package has its own `.env` file:
 | `AI_PIPELINE_BIND` | Gunicorn bind address (default `127.0.0.1:5000`). Public binds need `AI_PIPELINE_ALLOW_PUBLIC_BIND=1`. |
 | `AI_PIPELINE_TRUSTED_HOSTS` | Comma-separated client IPs allowed to call sensitive routes, in addition to loopback. |
 | `AI_PIPELINE_ALLOW_REMOTE` | Set to `1` to skip the client-address check. The token is still required. |
+| `QUESTION_PAPER_MAX_FILE_BYTES` | Max bytes for one file on `POST /upload/question-papers` (default `26214400`, 25 MB). Same names as the frontend. |
+| `QUESTION_PAPER_MAX_FILE_COUNT` | Max files in that upload (default `20`). |
+| `QUESTION_PAPER_MAX_REQUEST_BYTES` | Max request bytes. Also Flask `MAX_CONTENT_LENGTH` for every route (default `209715200`, 200 MB). |
 
 The Eesa database is `test`. Set the server-side `mongodb_url` to `mongodb+srv://bobby:<URL_ENCODED_PASSWORD>@cluster0.yuld0s6.mongodb.net/test?appName=Cluster0`; URL-encode the database-user password and keep credentials in ignored environment files. Use the same URI in the root `.env` (for root-run scripts) and `packages/backend/.env` (for the shared connection helper). An inherited `mongodb_url` takes precedence over dotenv files, so update any deployment environment that supplies it and restart the app. A local database migration does not verify a production switch; verify the deployed environment and running app separately.
 
@@ -325,7 +331,7 @@ All routes registered on the canonical server at `src/api/server.py`. See `packa
 | `/status-aws/<job_id>` | GET | AWS job status (legacy interface) |
 | `/status/<batch_id>` | GET | Local batch status |
 | `/result/<batch_id>` | GET | Local batch result |
-| `/upload/question-papers` | POST | Upload PDFs from frontend, uploads to S3, starts pipeline |
+| `/upload/question-papers` | POST | Upload PDFs from the frontend, stream each PDF to S3, and start the pipeline. A batch over the file count returns 400. A file or request over the byte caps returns 413 before anything is stored. |
 
 ---
 

@@ -5,6 +5,7 @@
 - **Dependencies:** Listed in `requirements-ocr.txt`. Key packages: `opencv-python`, `easyocr`, `pdf2image`, `PyMuPDF`, `Pillow`, `numpy`, `redis`, `lancedb`, `hdbscan`, `pyarrow`, `boto3`.
 - **CORS:** `flask-cors` — all servers enable `CORS(app)`. CORS does not authenticate callers.
 - **Service auth:** Every route except `GET /health` requires `Authorization: Bearer $AI_PIPELINE_TOKEN` and a loopback (or `AI_PIPELINE_TRUSTED_HOSTS`) address. User and role checks stay in the Next.js helpers (`jobContentAccessDecision`, upload-session ownership, `requireAdminCaller`). The production listener binds to `127.0.0.1` unless `AI_PIPELINE_ALLOW_PUBLIC_BIND=1`.
+- **Question-paper upload limits:** `POST /upload/question-papers` reads `QUESTION_PAPER_MAX_FILE_BYTES` (default 25 MB), `QUESTION_PAPER_MAX_FILE_COUNT` (default 20), and `QUESTION_PAPER_MAX_REQUEST_BYTES` (default 200 MB). `register_routes` sets Flask `MAX_CONTENT_LENGTH` to that request cap, so every route rejects a larger body with 413. The upload route returns 413 for an oversized file or body and 400 for too many files before it stores anything. Accepted PDFs are streamed to S3 with `upload_fileobj`. A non-PDF in an otherwise valid batch is still reported as an error and is not stored.
 
 ## Server Entry Point
 

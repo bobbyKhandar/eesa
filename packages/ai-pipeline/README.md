@@ -470,6 +470,8 @@ LOG_LEVEL=INFO
 LOG_FILE=/var/log/ai_pipeline.log
 ```
 
+`POST /upload/question-papers` also reads `QUESTION_PAPER_MAX_FILE_BYTES` (default 26214400), `QUESTION_PAPER_MAX_FILE_COUNT` (default 20), and `QUESTION_PAPER_MAX_REQUEST_BYTES` (default 209715200). The request cap is Flask `MAX_CONTENT_LENGTH` for the whole app. The frontend proxy uses the same names.
+
 ### Redis Keys
 
 The pipeline uses these Redis keys:

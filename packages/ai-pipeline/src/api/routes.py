@@ -5,17 +5,33 @@ import uuid
 import time
 from datetime import datetime
 from flask import request, jsonify
+from werkzeug.exceptions import RequestEntityTooLarge
 
 from .aws_manager import resolve_s3_bucket
 from .job_retry import plan_job_retry
 from .question_retriever import get_job_questions
 from .service_auth import install_service_auth
+from .upload_limits import (
+    apply_max_content_length,
+    content_length_rejection,
+    question_paper_upload_limits,
+    stored_files_rejection,
+)
 
 
 def register_routes(app, aws_manager, pipeline_manager):
     # User ownership stays in the Next.js helpers. Every route except /health
     # still requires the service token from a trusted address.
     install_service_auth(app)
+    apply_max_content_length(app)
+
+    @app.errorhandler(RequestEntityTooLarge)
+    def question_paper_body_too_large(_error):
+        max_bytes = app.config.get("MAX_CONTENT_LENGTH")
+        return jsonify({
+            "success": False,
+            "error": f"Request exceeds the {max_bytes} byte upload limit",
+        }), 413
 
     # ------------------------------------------------------------------
     # Health
@@ -285,12 +301,23 @@ def register_routes(app, aws_manager, pipeline_manager):
     def upload_question_papers():
         if not aws_manager.is_aws_available():
             return jsonify({'error': 'AWS pipeline not configured'}), 503
+        limits = question_paper_upload_limits()
+        apply_max_content_length(app, limits)
         try:
+            content_length = request.content_length
+            header_rejection = content_length_rejection(content_length, limits)
+            if header_rejection is not None:
+                body, status = header_rejection
+                return jsonify(body), status
             if 'files' not in request.files:
                 return jsonify({'error': 'No files provided'}), 400
             files = request.files.getlist('files')
             if not files or len(files) == 0:
                 return jsonify({'error': 'No files selected'}), 400
+            file_rejection = stored_files_rejection(files, limits)
+            if file_rejection is not None:
+                body, status = file_rejection
+                return jsonify(body), status
             allowed_extensions = {'.pdf', '.PDF'}
             uploaded_jobs = []
             errors = []
@@ -305,12 +332,12 @@ def register_routes(app, aws_manager, pipeline_manager):
                 try:
                     job_id = str(uuid.uuid4())
                     s3_key = f"{aws_manager.s3_jobs_prefix}{job_id}/original/{filename}"
-                    file_content = file.read()
-                    aws_manager.s3_client.put_object(
-                        Bucket=aws_manager.s3_bucket,
-                        Key=s3_key,
-                        Body=file_content,
-                        ContentType='application/pdf'
+                    file.stream.seek(0)
+                    aws_manager.s3_client.upload_fileobj(
+                        file.stream,
+                        aws_manager.s3_bucket,
+                        s3_key,
+                        ExtraArgs={'ContentType': 'application/pdf'},
                     )
                     print(f"Uploaded {filename} to s3://{aws_manager.s3_bucket}/{s3_key}")
                     aws_manager.executor.submit(aws_manager.process_aws_job_pipeline, job_id, s3_key, filename)
@@ -333,6 +360,11 @@ def register_routes(app, aws_manager, pipeline_manager):
                 response['message'] += f', {len(errors)} failed'
             status_code = 202 if len(uploaded_jobs) > 0 else 400
             return jsonify(response), status_code
+        except RequestEntityTooLarge:
+            return jsonify({
+                'success': False,
+                'error': f"Request exceeds the {limits['max_request_bytes']} byte upload limit",
+            }), 413
         except Exception as e:
             print(f"Upload error: {e}")
             return jsonify({'error': str(e)}), 500
