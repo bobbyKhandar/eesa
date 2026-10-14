@@ -25,6 +25,7 @@
   ```
 - All Mongoose schemas are generated from Zod via `@zodyac/zod-mongoose`'s `zodSchema(zodSchemaObject)`.
 - **Never define raw Mongoose schemas** — always go through Zod + `zodSchema()`.
+- **Unique questions** use a unique compound index on `normalizedText` + `subject`. A database that already has duplicate pairs cannot build that index until `merge-duplicate-unique-questions.ts` has merged them. The script is a dry run unless `--apply` is passed.
 
 ## Database Connection (`src/database/connect.ts`)
 - **Exports:** `connect()` and `disconnect()`.
@@ -72,7 +73,7 @@
 | `PromptRepository` | `mongooseSchemas.ts` | `create()`, `createBulk()`, `search()`, `getLowConfidenceOcr()`, `findBySubject()` (public bank only; excludes unpublished `generateVia: "user"` exam prompts) |
 | `JobMetadataRepository` | `mongooseSchemas.ts` | `create()`, `findById()`, `findByJobIds()`, `updateStatus()`, `findOlderThan()` |
 | `UploadSessionRepository` | `mongooseSchemas.ts` | `create()`, `findById()`, `addJobs()`, `updateJobStats()` |
-| `UniqueQuestionRepository` | `newFeatureModels.ts` | `findOrCreate()` upserts by normalized text + subject and links each analysis report once (a retry does not increment `occurrenceCount`), `findBySubject()`, `getMostFrequent()`, `searchByText()` |
+| `UniqueQuestionRepository` | `newFeatureModels.ts` | `findOrCreate()` atomically upserts the unique `normalizedText` + `subject` index (`$setOnInsert`, `$inc`, `$addToSet`) and retries a duplicate-key race. A repeated analysis report does not increment `occurrenceCount`. Also `findBySubject()`, `getMostFrequent()`, `searchByText()` |
 
 ## Services (`src/services/`)
 
@@ -101,6 +102,7 @@
 | `importBedrockQuestions.ts` | Imports Bedrock-enriched JSON -> Prompts, UniqueQuestions, etc. |
 | `importOcrQuestions.ts` | Imports OCR-processed question papers |
 | `dryRunOcrImport.ts` | Preview OCR import without modifying DB |
+| `merge-duplicate-unique-questions.ts` | Dry run by default. `--apply` merges duplicate unique questions that share `normalizedText` and `subject` (union of source reports, appearances, and prompt ids; occurrence counts kept) and then replaces a non-unique identity index with the unique one. |
 
 ## Dependencies
 - **Core:** `mongoose` ^8.19.1, `zod` ^3.25.76, `@zodyac/zod-mongoose` ^4.1.0
