@@ -2,8 +2,9 @@
 
 ## Build & Module System
 - **Module type:** ESM (`"type": "module"` in package.json). Use ES import/export syntax.
-- **Build:** TypeScript compiled to `dist/` via `npm run build` (runs `tsc`). Target ES2020, lib ES2021, module ESNext, moduleResolution Bundler. `src/scripts`, `src/database/scripts`, and the example `src/services/examOcrService.ts` are excluded: the scripts run through `tsx`, and the example imports a Gemini module that is not in the tree. The frontend `prebuild` runs this compile so `@/backend/dist/...` exists before `next build`.
+- **Build:** TypeScript compiled to `dist/` via `npm run build` (runs `tsc`). Target ES2020, lib ES2021, module ESNext, moduleResolution Bundler. `src/scripts`, `src/database/scripts`, and the example `src/services/examOcrService.ts` are excluded: the scripts run through `tsx`, and the example imports a Gemini module that is not in the tree. `dist/` is not tracked in git, so the frontend `prebuild` and `predev` steps run `scripts/ensure-backend-build.mjs` — it compiles this package whenever `dist/` is missing, incomplete, or older than `src/`.
 - **Output:** `dist/` mirrors `src/` structure. Frontend API routes import from `@/backend/dist/...`.
+- **Build order:** the repository-root `npm run build` (this package, then the frontend), the frontend `prebuild`, and the frontend `predev` all compile this package before Next.js starts, because API routes cannot resolve `@/backend/dist/...` without that output.
 - **Scripts:** `npm run build` (tsc), `npm run generate-data` (seed script), `npm run build:scripts` (compile scripts separately).
 
 ## Zod Schemas (`src/database/schemas/`)
