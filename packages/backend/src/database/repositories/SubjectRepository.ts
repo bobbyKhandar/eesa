@@ -1,5 +1,6 @@
 import { getSubjectModel } from "../newFeatureModels.js";
 import type { SubjectDocument, Subject } from "../schemas/subjectZod.js";
+import { nullIfAbsentId, rethrowReadFailure } from "./readErrors.js";
 
 export class SubjectRepository {
   private model = getSubjectModel();
@@ -35,8 +36,7 @@ export class SubjectRepository {
       }
       return this.toPlainObject(subject);
     } catch (error) {
-      console.error("Error fetching subject:", error);
-      return null;
+      return nullIfAbsentId(error, "Error fetching subject:");
     }
   }
 
@@ -51,8 +51,7 @@ export class SubjectRepository {
       }
       return this.toPlainObject(subject);
     } catch (error) {
-      console.error("Error fetching subject by code:", error);
-      return null;
+      return nullIfAbsentId(error, "Error fetching subject by code:");
     }
   }
 
@@ -88,8 +87,7 @@ export class SubjectRepository {
       const subjects = await this.model.find(query).sort({ code: 1 });
       return subjects.map(s => this.toPlainObject(s));
     } catch (error) {
-      console.error("Error fetching subjects:", error);
-      return [];
+      rethrowReadFailure(error, "Error fetching subjects:");
     }
   }
 
@@ -101,8 +99,7 @@ export class SubjectRepository {
       const subjects = await this.model.find({ branch, year, isActive: true }).sort({ semester: 1, code: 1 });
       return subjects.map(s => this.toPlainObject(s));
     } catch (error) {
-      console.error("Error fetching subjects by branch and year:", error);
-      return [];
+      rethrowReadFailure(error, "Error fetching subjects by branch and year:");
     }
   }
 
@@ -218,13 +215,7 @@ export class SubjectRepository {
         totalEnrolled: enrollmentStats[0]?.totalEnrolled || 0,
       };
     } catch (error) {
-      console.error("Error fetching statistics:", error);
-      return {
-        totalSubjects: 0,
-        coreSubjects: 0,
-        electiveSubjects: 0,
-        totalEnrolled: 0,
-      };
+      rethrowReadFailure(error, "Error fetching statistics:");
     }
   }
 

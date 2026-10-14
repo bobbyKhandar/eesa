@@ -9,6 +9,7 @@ import { getUserModel } from "../mongooseSchemas.js";
 import { splitUpsertFields } from "../../services/userProvisioning.js";
 import { userZodSchema } from "../schemas/userSchemaZod.js";
 import type { User, UserInsert } from "../schemas/userSchemaZod.js";
+import { nullIfAbsentId, rethrowReadFailure } from "./readErrors.js";
 
 export class UserRepository {
   private model: ReturnType<typeof getUserModel>;
@@ -61,8 +62,7 @@ export class UserRepository {
       const user = await this.model.findById(userId).lean();
       return user as User | null;
     } catch (error) {
-      console.error('Error getting user by ID:', error);
-      return null;
+      return nullIfAbsentId(error, 'Error getting user by ID:');
     }
   }
 
@@ -85,8 +85,7 @@ export class UserRepository {
       const users = await this.model.find({ _id: { $in: uniqueIds } }).lean();
       return users as User[];
     } catch (error) {
-      console.error('Error getting users by ids:', error);
-      return [];
+      rethrowReadFailure(error, 'Error getting users by ids:');
     }
   }
 
@@ -99,8 +98,7 @@ export class UserRepository {
       const user = await this.model.findOne({ email }).lean();
       return user as User | null;
     } catch (error) {
-      console.error('Error getting user by email:', error);
-      return null;
+      return nullIfAbsentId(error, 'Error getting user by email:');
     }
   }
 
@@ -113,8 +111,7 @@ export class UserRepository {
       const user = await this.model.findOne({ clerk_user_id: clerkUserId }).lean();
       return user as User | null;
     } catch (error) {
-      console.error('Error getting user by Clerk ID:', error);
-      return null;
+      return nullIfAbsentId(error, 'Error getting user by Clerk ID:');
     }
   }
 
@@ -127,8 +124,7 @@ export class UserRepository {
       const users = await this.model.find({ role }).limit(limit).lean();
       return users as User[];
     } catch (error) {
-      console.error('Error getting users by role:', error);
-      return [];
+      rethrowReadFailure(error, 'Error getting users by role:');
     }
   }
 
@@ -155,8 +151,7 @@ export class UserRepository {
       const users = await this.model.find({}).limit(limit).sort({ createdAt: -1 }).lean();
       return users as User[];
     } catch (error) {
-      console.error('Error getting all users:', error);
-      return [];
+      rethrowReadFailure(error, 'Error getting all users:');
     }
   }
 
@@ -181,8 +176,7 @@ export class UserRepository {
       ]);
       return { total, active, inactive, suspended, admins };
     } catch (error) {
-      console.error('Error getting user counts:', error);
-      return { total: 0, active: 0, inactive: 0, suspended: 0, admins: 0 };
+      rethrowReadFailure(error, 'Error getting user counts:');
     }
   }
 
@@ -334,8 +328,7 @@ export class UserRepository {
       const user = await this.model.findById(userId).select('currentAllocatedExams').lean();
       return user?.currentAllocatedExams || [];
     } catch (error) {
-      console.error('Error getting allocated exams:', error);
-      return [];
+      rethrowReadFailure(error, 'Error getting allocated exams:');
     }
   }
 
@@ -348,8 +341,7 @@ export class UserRepository {
       const user = await this.model.findById(userId).select('submissionHistory').lean();
       return user?.submissionHistory || [];
     } catch (error) {
-      console.error('Error getting submission history:', error);
-      return [];
+      rethrowReadFailure(error, 'Error getting submission history:');
     }
   }
 
@@ -369,8 +361,7 @@ export class UserRepository {
 
       return users as User[];
     } catch (error) {
-      console.error('Error searching users:', error);
-      return [];
+      rethrowReadFailure(error, 'Error searching users:');
     }
   }
 
@@ -447,8 +438,7 @@ export class UserRepository {
         admin: adminCount
       };
     } catch (error) {
-      console.error('Error getting user count by role:', error);
-      return { student: 0, teacher: 0, admin: 0 };
+      rethrowReadFailure(error, 'Error getting user count by role:');
     }
   }
 }

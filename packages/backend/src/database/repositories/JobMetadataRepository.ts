@@ -9,6 +9,7 @@ import { connect } from "../connect";
 import { getJobMetadataModel } from "../mongooseSchemas";
 import { jobMetadataZodSchema } from "../schemas/jobMetadataZod";
 import type { JobMetadata } from "../schemas/jobMetadataZod";
+import { nullIfAbsentId, rethrowReadFailure } from "./readErrors";
 
 export class JobMetadataRepository {
   private model: Model<JobMetadata>;
@@ -57,8 +58,7 @@ export class JobMetadataRepository {
       const job = await this.model.findOne({ job_id: jobId }).lean();
       return job;
     } catch (error) {
-      console.error('[JobMetadataRepository] Error finding job:', error);
-      return null;
+      return nullIfAbsentId(error, '[JobMetadataRepository] Error finding job:');
     }
   }
 
@@ -158,8 +158,7 @@ export class JobMetadataRepository {
 
       return jobs;
     } catch (error) {
-      console.error('[JobMetadataRepository] Error finding recent jobs:', error);
-      return [];
+      rethrowReadFailure(error, '[JobMetadataRepository] Error finding recent jobs:');
     }
   }
 
@@ -175,8 +174,7 @@ export class JobMetadataRepository {
         .lean();
       return jobs;
     } catch (error) {
-      console.error('[JobMetadataRepository] Error finding jobs by status:', error);
-      return [];
+      rethrowReadFailure(error, '[JobMetadataRepository] Error finding jobs by status:');
     }
   }
 
@@ -193,8 +191,7 @@ export class JobMetadataRepository {
         .lean();
       return jobs;
     } catch (error) {
-      console.error('[JobMetadataRepository] Error finding jobs by user:', error);
-      return [];
+      rethrowReadFailure(error, '[JobMetadataRepository] Error finding jobs by user:');
     }
   }
 
@@ -245,8 +242,7 @@ export class JobMetadataRepository {
 
       return jobs;
     } catch (error) {
-      console.error('[JobMetadataRepository] Error finding old jobs:', error);
-      return [];
+      rethrowReadFailure(error, '[JobMetadataRepository] Error finding old jobs:');
     }
   }
 
@@ -291,8 +287,7 @@ export class JobMetadataRepository {
 
       return result;
     } catch (error) {
-      console.error('[JobMetadataRepository] Error getting stats:', error);
-      return { total: 0, success: 0, failed: 0, in_progress: 0, expired: 0 };
+      rethrowReadFailure(error, '[JobMetadataRepository] Error getting stats:');
     }
   }
 }

@@ -11,6 +11,7 @@ import type { Model } from "mongoose";
 import { connect } from "../connect.js";
 import { getExamSubmissionModel, getUserModel } from "../mongooseSchemas.js";
 import type { ExamSubmissionDocument } from "../schemas/examSubmissionZod.js";
+import { nullIfAbsentId, rethrowReadFailure } from "./readErrors.js";
 import {
   claimSubmissionSlot,
   gradedSubmissionFilter,
@@ -290,8 +291,7 @@ export class ExamSubmissionRepository {
       if (!submission || !isVisibleSubmission(submission)) return null;
       return submission as StoredExamSubmission | null;
     } catch (error) {
-      console.error('Error getting submission:', error);
-      return null;
+      return nullIfAbsentId(error, 'Error getting submission:');
     }
   }
 
@@ -306,8 +306,7 @@ export class ExamSubmissionRepository {
         .lean();
       return submissions;
     } catch (error) {
-      console.error('Error getting submissions by exam:', error);
-      return [];
+      rethrowReadFailure(error, 'Error getting submissions by exam:');
     }
   }
 
@@ -322,8 +321,7 @@ export class ExamSubmissionRepository {
         .lean();
       return submissions;
     } catch (error) {
-      console.error('Error getting user submissions:', error);
-      return [];
+      rethrowReadFailure(error, 'Error getting user submissions:');
     }
   }
 
@@ -336,8 +334,7 @@ export class ExamSubmissionRepository {
       const submission = await this.model.findOne({ examId, userId }).lean();
       return submission as StoredExamSubmission | null;
     } catch (error) {
-      console.error('Error getting submission by exam and user:', error);
-      return null;
+      return nullIfAbsentId(error, 'Error getting submission by exam and user:');
     }
   }
 
@@ -354,8 +351,7 @@ export class ExamSubmissionRepository {
       .lean();
       return submissions;
     } catch (error) {
-      console.error('Error getting submissions by score range:', error);
-      return [];
+      rethrowReadFailure(error, 'Error getting submissions by score range:');
     }
   }
 

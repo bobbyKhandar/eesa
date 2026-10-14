@@ -47,7 +47,7 @@
   }
   ```
 - **All methods call `await connect()`** at the start before using `this.model`.
-- **CRUD return pattern:** Most methods return `{ success: boolean, id?: string, error?: string }` — a lightweight Result pattern.
+- **CRUD return pattern:** Write methods return `{ success: boolean, id?: string, error?: string }` — a lightweight Result pattern. A read that matches nothing returns `[]` or `null` (routes keep that as 200 or 404). A database read failure is thrown, so those routes answer 5xx. An id that is not a document id is absence, not a failure.
 - **ID handling:** String IDs throughout. Use `Types.ObjectId.createFromHexString()` for queries, `_id.toString()` for returns.
 - **Lean queries:** Use `.lean()` for read operations.
 - **insertMany:** Some methods use `insertMany` instead of `.save()` to bypass Mongoose pre-save hooks (e.g., `ExamRepository.createWithPrompts`, `ExamSubmissionRepository.create`).

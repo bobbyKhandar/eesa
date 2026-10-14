@@ -10,6 +10,7 @@ import { getPromptModel } from "../mongooseSchemas";
 import { promptZodSchema } from "../schemas/promptSchemaZod";
 import type { Prompt } from "../schemas/promptSchemaZod";
 import { publicPromptSubjectQuery } from "../../services/publicQuestionBank";
+import { nullIfAbsentId, objectIdsFrom, rethrowReadFailure } from "./readErrors";
 
 export class PromptRepository {
   private model: Model<Prompt>;
@@ -110,8 +111,7 @@ export class PromptRepository {
       const prompt = await this.model.findById(promptObjectId).lean();
       return prompt;
     } catch (error) {
-      console.error('Error getting prompt:', error);
-      return null;
+      return nullIfAbsentId(error, 'Error getting prompt:');
     }
   }
 
@@ -128,11 +128,11 @@ export class PromptRepository {
   async findByIds(promptIds: string[]): Promise<Prompt[]> {
     try {
       await connect();
-      const objectIds = promptIds.map(id => new Types.ObjectId(id));
+      const objectIds = objectIdsFrom(promptIds);
+      if (objectIds.length === 0) return [];
       return await this.model.find({ _id: { $in: objectIds } }).lean();
     } catch (error) {
-      console.error("Error finding prompts by IDs:", error);
-      return [];
+      rethrowReadFailure(error, "Error finding prompts by IDs:");
     }
   }
 
@@ -180,8 +180,7 @@ export class PromptRepository {
 
       return prompts;
     } catch (error) {
-      console.error('Error searching prompts:', error);
-      return [];
+      rethrowReadFailure(error, 'Error searching prompts:');
     }
   }
 
@@ -206,8 +205,7 @@ export class PromptRepository {
 
       return prompts;
     } catch (error) {
-      console.error('Error getting low confidence OCR prompts:', error);
-      return [];
+      rethrowReadFailure(error, 'Error getting low confidence OCR prompts:');
     }
   }
 
@@ -247,8 +245,7 @@ export class PromptRepository {
       const prompts = await this.model.find({ source }).lean();
       return prompts;
     } catch (error) {
-      console.error('Error getting prompts by source:', error);
-      return [];
+      rethrowReadFailure(error, 'Error getting prompts by source:');
     }
   }
 
@@ -298,8 +295,7 @@ export class PromptRepository {
 
       return result;
     } catch (error) {
-      console.error('Error getting prompt counts:', error);
-      return { ocr: 0, llm: 0, user: 0 };
+      rethrowReadFailure(error, 'Error getting prompt counts:');
     }
   }
 
@@ -313,8 +309,7 @@ export class PromptRepository {
       await connect();
       return await this.model.find(publicPromptSubjectQuery(subject)).lean();
     } catch (error) {
-      console.error('Error finding prompts by subject:', error);
-      return [];
+      rethrowReadFailure(error, 'Error finding prompts by subject:');
     }
   }
 }

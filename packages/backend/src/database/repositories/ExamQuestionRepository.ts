@@ -9,6 +9,7 @@ import { connect } from "../connect.js";
 import { getExamQuestionModel, getExamModel } from "../mongooseSchemas.js";
 import { examQuestionZodSchema } from "../schemas/examQuestionSchemaZod.js";
 import type { ExamQuestion } from "../schemas/examQuestionSchemaZod.js";
+import { nullIfAbsentId, objectIdsFrom, rethrowReadFailure } from "./readErrors.js";
 
 export class ExamQuestionRepository {
   private model: Model<ExamQuestion>;
@@ -123,8 +124,7 @@ export class ExamQuestionRepository {
 
       return result.length > 0 ? result[0] : null;
     } catch (error) {
-      console.error('Error getting exam question with prompt:', error);
-      return null;
+      return nullIfAbsentId(error, 'Error getting exam question with prompt:');
     }
   }
 
@@ -134,9 +134,10 @@ export class ExamQuestionRepository {
   async getManyWithPrompts(examQuestionIds: string[]): Promise<any[]> {
     try {
       await connect();
-      const examQuestionObjectIds = examQuestionIds.map(id => 
+      const examQuestionObjectIds = objectIdsFrom(examQuestionIds, (id) =>
         Types.ObjectId.createFromHexString(id)
       );
+      if (examQuestionObjectIds.length === 0) return [];
 
       const results = await this.model.aggregate([
         { $match: { _id: { $in: examQuestionObjectIds } } },
@@ -156,8 +157,7 @@ export class ExamQuestionRepository {
 
       return results;
     } catch (error) {
-      console.error('Error getting exam questions with prompts:', error);
-      return [];
+      rethrowReadFailure(error, 'Error getting exam questions with prompts:');
     }
   }
 
@@ -185,8 +185,7 @@ export class ExamQuestionRepository {
 
       return exams.map(e => e._id.toString());
     } catch (error) {
-      console.error('Error finding exams using prompt:', error);
-      return [];
+      rethrowReadFailure(error, 'Error finding exams using prompt:');
     }
   }
 
@@ -200,8 +199,7 @@ export class ExamQuestionRepository {
       const examQuestion = await this.model.findById(examQuestionObjectId).lean();
       return examQuestion;
     } catch (error) {
-      console.error('Error getting exam question:', error);
-      return null;
+      return nullIfAbsentId(error, 'Error getting exam question:');
     }
   }
 
