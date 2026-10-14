@@ -4,7 +4,8 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "prebuild": "npm run build --prefix ../backend",
+    "predev": "node ../../scripts/ensure-backend-build.mjs",
+    "prebuild": "node ../../scripts/ensure-backend-build.mjs",
     "build": "next build",
     "start": "next start",
     "lint": "next lint",

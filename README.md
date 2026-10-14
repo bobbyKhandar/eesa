@@ -284,12 +284,26 @@ cd packages/ai-pipeline
 python src/server.py
 ```
 
+The frontend `dev` (and `build`) script runs `scripts/ensure-backend-build.mjs` first. API routes import `@/backend/dist/...` and git does not track that output, so a clean checkout has no backend modules: the script compiles `packages/backend` whenever `dist/` is missing, incomplete, or older than `src/`, and skips the compile when the output is already current. Restart `npm run dev` (or run `npm run build` in `packages/backend`) after changing backend sources that a running dev server already compiled.
+
 Or use **VSCode** (`.vscode/launch.json`) — open Run & Debug (Ctrl+Shift+D), select a profile, press F5:
 
 | Profile | Path |
 |---------|------|
 | **Frontend (Next.js)** | Launches Next.js dev server on port 3000 |
 | **AI Pipeline (Flask)** | Launches Flask server on port 5000 |
+
+### 4. Run in Production
+
+```bash
+# From the repository root: compiles packages/backend, then next build
+npm run build
+
+# Serves the built frontend on port 3000
+npm run start --prefix packages/frontend
+```
+
+The ordered build matters: a clean checkout has no `packages/backend/dist`, and `next build` fails on `Cannot find module '@/backend/dist/...'` until the backend compile has run. The frontend `build` script runs the same compile on its own, so `npm run build` inside `packages/frontend` also works.
 
 ---
 
@@ -341,6 +355,13 @@ All routes registered on the canonical server at `src/api/server.py`. See `packa
 
 ## Scripts
 
+### Repository root (`package.json`)
+
+| Script | Description |
+|--------|-------------|
+| `npm run build` | Production build — compiles `packages/backend`, then runs `next build` |
+| `npm run dev` | Start the Next.js dev server (compiles the backend first) |
+
 ### Backend (`packages/backend/package.json`)
 
 | Script | Description |
@@ -353,7 +374,7 @@ All routes registered on the canonical server at `src/api/server.py`. See `packa
 | Script | Description |
 |--------|-------------|
 | `npm run dev` | Start Next.js dev server |
-| `npm run build` | Production build (compiles the backend, then fails on TypeScript or ESLint errors) |
+| `npm run build` | Production build — the `prebuild` step compiles the backend, then `next build` runs and fails on TypeScript or ESLint errors |
 | `npm run start` | Start production server |
 | `npm run lint` | ESLint check |
 | `npm run typecheck` | Compile the backend and run `tsc --noEmit` |

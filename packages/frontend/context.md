@@ -29,6 +29,7 @@
   import { connect } from "@/backend/src/database/connect"
   import { JobMetadataRepository } from "@/backend/src/database/repositories/JobMetadataRepository"
   ```
+- **`@/backend/dist/...` is generated, not committed.** `packages/backend/dist` is gitignored, so it does not exist in a clean checkout. `npm run dev` (`predev`) and `npm run build` (`prebuild`) both run `scripts/ensure-backend-build.mjs` first, which compiles `packages/backend` when `dist/` is missing, incomplete, or older than `src/`. Never import `@/backend/dist/...` from a path that does not run that gate.
 
 ## Database Access (API routes only)
 - **API routes import `connect()`** from `@/backend/src/database/connect` or `@/backend/dist/database/connect` and call `await connect()` before any DB operation.
