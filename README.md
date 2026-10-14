@@ -364,7 +364,7 @@ All routes registered on the canonical server at `src/api/server.py`. See `packa
 
 | Location | Framework | Contents |
 |----------|-----------|----------|
-| `packages/ai-pipeline/tests/` | Python unittest | 15 test files (server, OCR, pipeline, AWS, integration) |
+| `packages/ai-pipeline/tests/` | Python unittest | server, OCR, pipeline, AWS, integration, and orchestrator import tests |
 | `tests/python/` | Python unittest | 2 test files (experiment, image preprocessing) |
 | `tests/node/` | — | Empty (placeholder for future Node.js tests) |
 

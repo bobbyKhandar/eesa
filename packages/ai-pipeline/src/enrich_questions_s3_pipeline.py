@@ -582,6 +582,39 @@ def _upload_enriched_to_s3(enriched_data: Dict, source_id: str) -> bool:
         return False
 
 
+def ensure_s3_bucket_exists() -> bool:
+    """Supported helper: check the enrichment bucket and create it when missing."""
+    return _ensure_s3_bucket_exists()
+
+
+def load_state() -> Dict:
+    """Supported helper: load enrichment state from S3, then the local file."""
+    return _load_state()
+
+
+def save_state(state: Dict) -> bool:
+    """Supported helper: persist enrichment state locally and to S3."""
+    return _save_state(state)
+
+
+def enrich_single_file(
+    file_path: str,
+    filename: str,
+    use_instructions: bool = True,
+) -> Optional[Dict]:
+    """Supported helper: enrich one parsed question file."""
+    return _enrich_single_file(file_path, filename, use_instructions=use_instructions)
+
+
+def upload_enriched_to_s3(enriched_data: Dict, source_id: str) -> bool:
+    """Supported helper: upload enriched JSON under a source identity.
+
+    ``source_id`` comes from :func:`source_identity`. A bare filename is not
+    an identity and would write a different object key.
+    """
+    return _upload_enriched_to_s3(enriched_data, source_id)
+
+
 def process_all_questions(input_dir: str, skip_processed: bool = True):
     """
     Main function to process all parsed questions and enrich them.

@@ -10,6 +10,7 @@ Both slave pipelines are job-based and work with S3 storage.
 
 import boto3
 import os
+import sys
 import json
 import uuid
 from datetime import datetime
@@ -23,7 +24,9 @@ from enrich_questions_s3_pipeline import (
     enrich_single_file,
     upload_enriched_to_s3,
     load_state,
-    save_state
+    save_state,
+    source_identity,
+    migrate_legacy_enrichment_state,
 )
 
 # AWS Clients
@@ -63,6 +66,12 @@ class PipelineStats:
             'duration': f"{duration:.1f}s",
             'throughput': f"{self.total_jobs/duration:.2f} jobs/s" if duration > 0 else "N/A"
         }
+
+
+def parsed_questions_dir() -> str:
+    """Local parsed-question directory used by single-file and resume modes."""
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    return os.path.normpath(os.path.join(script_dir, "..", "parsedQuestions"))
 
 
 def upload_pdf_to_s3(local_pdf_path: str, job_id: str) -> Optional[str]:
@@ -243,8 +252,7 @@ def process_single_document(pdf_path: str, job_id: Optional[str] = None) -> Dict
     print(f"ℹ Looking for: {os.path.splitext(filename)[0]}.json")
     
     # Check if parsed file exists
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    parsed_dir = os.path.join(script_dir, '../parsedQuestions')
+    parsed_dir = parsed_questions_dir()
     base_name = os.path.splitext(filename)[0]
     parsed_file = os.path.join(parsed_dir, f"{base_name}.json")
     
@@ -278,8 +286,10 @@ def process_single_document(pdf_path: str, job_id: Optional[str] = None) -> Dict
         save_job_metadata(job_id, metadata)
         return metadata
     
-    # Upload enriched data to S3
-    upload_success = upload_enriched_to_s3(enriched_data, f"{base_name}.json")
+    # Upload under the source identity so this file does not share an object
+    # key with the same basename from another input directory.
+    source_id = source_identity(parsed_dir, parsed_file)
+    upload_success = upload_enriched_to_s3(enriched_data, source_id)
     
     if not upload_success:
         metadata['status'] = 'failed'
@@ -389,86 +399,104 @@ def resume_failed_jobs(state_file: Optional[str] = None):
     print("RESUME FAILED JOBS")
     print("=" * 80)
     
-    # Load enrichment state
+    # Load enrichment state. Failed entries are source identities.
     state = load_state()
+    parsed_dir = parsed_questions_dir()
+    file_paths = []
+    if os.path.isdir(parsed_dir):
+        file_paths = [str(path) for path in Path(parsed_dir).rglob("*.json")]
+    state = migrate_legacy_enrichment_state(state, parsed_dir, file_paths)
     
-    failed_files = state.get('failed', [])
-    retry_counts = state.get('retry_counts', {})
+    failed_ids = list(state.get('failed') or [])
+    retry_counts = state.setdefault('retry_counts', {})
     
-    print(f"\n📊 Found {len(failed_files)} failed files")
+    print(f"\n📊 Found {len(failed_ids)} failed files")
     print(f"   Files pending retry: {len([f for f in retry_counts.values() if f < 3])}")
     
-    if not failed_files:
+    if not failed_ids:
+        save_state(state)
         print("✓ No failed files to process")
         return
+
+    identity_to_path = {}
+    for file_path in file_paths:
+        try:
+            identity_to_path[source_identity(parsed_dir, file_path)] = file_path
+        except ValueError:
+            continue
     
-    # Process failed files
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    parsed_dir = os.path.join(script_dir, '../parsedQuestions')
-    
-    for filename in failed_files:
-        retry_count = retry_counts.get(filename, 0)
+    for source_id in failed_ids:
+        retry_count = retry_counts.get(source_id, 0)
         
         if retry_count >= 3:
-            print(f"\n⏭ Skipping {filename} (max retries reached)")
+            print(f"\n⏭ Skipping {source_id} (max retries reached)")
             continue
         
-        print(f"\n🔄 Retrying {filename} (attempt {retry_count + 1}/3)")
+        print(f"\n🔄 Retrying {source_id} (attempt {retry_count + 1}/3)")
         
-        parsed_file = os.path.join(parsed_dir, filename)
+        parsed_file = identity_to_path.get(source_id)
         
-        if not os.path.exists(parsed_file):
-            print(f"   ✗ File not found: {parsed_file}")
+        if not parsed_file or not os.path.exists(parsed_file):
+            print(f"   ✗ File not found for {source_id}")
             continue
         
         # Try enrichment without instructions (retry strategy)
-        enriched_data = enrich_single_file(parsed_file, filename, use_instructions=False)
+        display_name = os.path.basename(parsed_file)
+        enriched_data = enrich_single_file(parsed_file, display_name, use_instructions=False)
         
-        if enriched_data and upload_enriched_to_s3(enriched_data, filename):
+        if enriched_data and upload_enriched_to_s3(enriched_data, source_id):
             print(f"   ✓ Success!")
             # Update state
-            state['processed'].append(filename)
-            state['failed'].remove(filename)
-            if filename in retry_counts:
-                del retry_counts[filename]
+            if source_id not in state['processed']:
+                state['processed'].append(source_id)
+            state['failed'].remove(source_id)
+            if source_id in retry_counts:
+                del retry_counts[source_id]
         else:
             print(f"   ✗ Failed again")
-            retry_counts[filename] = retry_count + 1
+            retry_counts[source_id] = retry_count + 1
     
     # Save updated state
     save_state(state)
     print("\n✓ Resume complete")
 
 
-if __name__ == "__main__":
-    import sys
-    
-    if len(sys.argv) < 2:
+def main(argv: Optional[List[str]] = None) -> int:
+    """Dispatch the documented single-file, batch, and resume CLI modes."""
+    if argv is None:
+        argv = sys.argv
+
+    if len(argv) < 2:
         print("Usage:")
         print("  Single file:  python pipeline_orchestrator.py <pdf_file>")
         print("  Batch mode:   python pipeline_orchestrator.py batch <pdf_directory> [max_files]")
         print("  Resume fails: python pipeline_orchestrator.py resume")
-        sys.exit(1)
-    
-    mode = sys.argv[1]
-    
+        return 1
+
+    mode = argv[1]
+
     if mode == 'batch':
-        if len(sys.argv) < 3:
+        if len(argv) < 3:
             print("Error: Batch mode requires directory path")
-            sys.exit(1)
-        
-        pdf_dir = sys.argv[2]
-        max_files = int(sys.argv[3]) if len(sys.argv) > 3 else None
-        
+            return 1
+
+        pdf_dir = argv[2]
+        max_files = int(argv[3]) if len(argv) > 3 else None
+
         process_batch(pdf_dir, max_files)
-    
-    elif mode == 'resume':
+        return 0
+
+    if mode == 'resume':
         resume_failed_jobs()
-    
-    elif os.path.isfile(mode):
-        # Single file mode
+        return 0
+
+    if os.path.isfile(mode):
         process_single_document(mode)
-    
-    else:
-        print(f"Error: Invalid mode or file not found: {mode}")
-        sys.exit(1)
+        return 0
+
+    print(f"Error: Invalid mode or file not found: {mode}")
+    return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -64,7 +64,7 @@
 | `src/pdf_handler.py` | Incremental PDF page rendering via PyMuPDF, with page-count and pixel limits |
 | `src/docx_handler.py` | Direct DOCX text extraction from Office Open XML (no OCR) |
 | `src/pipeline_manager.py` | Redis-backed local pipeline manager (singleton). DOCX uploads bypass the PDF handler |
-| `src/pipeline_orchestrator.py` | Orchestration layer — upload, process, download, save workflow |
+| `src/pipeline_orchestrator.py` | Standalone CLI (`<pdf>`, `batch`, `resume`). Enrichment uploads use a source identity from the public helpers in `enrich_questions_s3_pipeline.py` |
 
 ### API Module (`src/api/`)
 | File | Role |
@@ -79,7 +79,7 @@
 ### Supporting Modules
 | File | Role |
 |---|---|
-| `src/enrich_questions_s3_pipeline.py` | Standalone S3-based enrichment with `ThreadPoolExecutor(20)`. `processed` and the enriched object key use a source identity (input-relative path plus a short hash of the input directory). Legacy basename entries do not skip a file unless `source_namespace` pins that state to the current directory |
+| `src/enrich_questions_s3_pipeline.py` | Standalone S3-based enrichment with `ThreadPoolExecutor(20)`. `processed` and the enriched object key use a source identity (input-relative path plus a short hash of the input directory). Legacy basename entries do not skip a file unless `source_namespace` pins that state to the current directory. Supported helpers: `ensure_s3_bucket_exists`, `load_state`, `save_state`, `enrich_single_file`, and `upload_enriched_to_s3(enriched_data, source_id)` |
 | `src/organize_by_subject.py` | Local filesystem-based subject organization |
 | `src/manual_pipeline.py` | CLI pipeline (upload → OCR → parse → enrich → organize) with SQLite tracking. `--batch-size` on this CLI and on `batch_runner.py` must be an integer >= 1; smaller values are an argparse error. `process_batch` rejects a batch size below 1 and queries retry-pending jobs only when pending jobs leave remaining capacity. `get_jobs_by_phase` requires a finite integer limit >= 1 and always applies that `LIMIT`. Enrichment accepts a batch only when every question has a valid Bloom level, difficulty, `keywords` list, and `topicsCovered` list. An incomplete batch is retried up to 3 times, then the job fails instead of advancing to organize |
 | `src/redis_client.py` | Redis queue/hash operations for local pipeline job management |
@@ -99,7 +99,7 @@
 ## Testing
 - **Framework:** Python `unittest`.
 - **Locations:**
-  - `tests/` — 12 test files (server, OCR engine, PDF handler, pipeline manager, Redis, integration)
+  - `tests/` — unittest modules (server, OCR engine, PDF handler, pipeline manager, Redis, integration, orchestrator helper imports)
   - `src/test_*.py` — 4 inline test files (Textract, parsing, enrichment, organization)
 - **Run tests:** `python -m unittest discover -s tests` or `python tests/run_tests.py`.
 - **Test pattern:** `sys.path.insert(0, ..)` then `from src.<module> import <Class>`.
