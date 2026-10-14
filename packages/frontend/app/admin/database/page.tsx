@@ -199,13 +199,19 @@ export default function AdminDatabase() {
 
   const handleDeleteBackup = async (id: string) => {
     setDeletingId(id)
+    setBackupResult(null)
     try {
       const response = await fetch(`/api/admin/database/backup/${encodeURIComponent(id)}`, { method: "DELETE" })
       const data = await response.json()
+      // S3 can report a per-object failure for a delete request it accepted, so
+      // the row is only dropped once every key of the backup is gone.
       if (response.ok && data.success) {
         setBackups((prev) => prev.filter((b) => b.id !== id))
       } else {
-        setBackupResult({ success: false, message: data.error || "Failed to delete backup" })
+        setBackupResult({
+          success: false,
+          message: data.error || "Failed to delete backup, the backup is still stored and can be retried",
+        })
       }
     } catch {
       setBackupResult({ success: false, message: "Network error: failed to delete backup" })

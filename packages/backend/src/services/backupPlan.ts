@@ -12,6 +12,9 @@ export const BACKUP_ID_PATTERN = /^backup_[A-Za-z0-9T._-]+$/;
 
 export const RESTORE_BATCH_SIZE = 100;
 
+/** S3 rejects a multi-object delete request that carries more keys than this. */
+export const BACKUP_DELETE_BATCH_SIZE = 1000;
+
 export function isValidBackupId(id: unknown): id is string {
   return typeof id === "string" && BACKUP_ID_PATTERN.test(id);
 }
@@ -123,4 +126,149 @@ export function assessBackupRestore(
     };
   }
   return { allowed: true };
+}
+
+/** One `Errors` entry of a `DeleteObjectsCommand` response. */
+export interface BackupDeleteResponseError {
+  Key?: string | undefined;
+  Code?: string | undefined;
+  Message?: string | undefined;
+}
+
+/** The part of a `DeleteObjectsCommand` response that reports per-key failures. */
+export interface BackupDeleteResponse {
+  Errors?: ReadonlyArray<BackupDeleteResponseError> | undefined;
+}
+
+/** A key S3 refused to remove, with the reason it gave. */
+export interface BackupDeleteObjectError {
+  /** Key that is still stored. */
+  key: string;
+  /** S3 per-key error code, for example `AccessDenied` or `InternalError`. */
+  code: string;
+  message: string;
+  /** True when retrying the deletion can succeed (throttling, S3 internal errors). */
+  retryable: boolean;
+}
+
+export interface BackupDeleteOutcome {
+  /** True only when every requested key is gone from the bucket. */
+  success: boolean;
+  /** Number of keys S3 removed. */
+  deletedObjects: number;
+  /** Number of keys that are still stored. */
+  failedObjects: number;
+  /** Keys that are still stored, in request order. */
+  failedKeys: string[];
+  /** Per-key failures behind `failedKeys`. */
+  errors: BackupDeleteObjectError[];
+  /** Administrator facing summary of what remains stored. */
+  message: string;
+}
+
+const RETRYABLE_DELETE_ERROR_CODES = new Set([
+  "InternalError",
+  "RequestTimeTooSkewed",
+  "RequestTimeout",
+  "ServiceUnavailable",
+  "SlowDown",
+  "Throttling",
+  "ThrottlingException",
+]);
+
+const RETRYABLE_DELETE_ERROR_PATTERN =
+  /InternalError|Timeout|SlowDown|Throttl|Unavailable|TryAgain|Connection/i;
+
+/**
+ * Separate transient per-key failures from permanent ones.
+ *
+ * A retryable error (`InternalError`, `SlowDown`, timeouts) may succeed when
+ * the delete is repeated; `AccessDenied` or a bucket policy failure will not.
+ */
+export function isRetryableBackupDeleteError(
+  error: BackupDeleteResponseError | null | undefined
+): boolean {
+  const code = typeof error?.Code === "string" ? error.Code.trim() : "";
+  if (code.length === 0) return false;
+  return RETRYABLE_DELETE_ERROR_CODES.has(code) || RETRYABLE_DELETE_ERROR_PATTERN.test(code);
+}
+
+function normalizeDeleteKeys(
+  keys: ReadonlyArray<string | null | undefined> | null | undefined
+): string[] {
+  const seen = new Set<string>();
+  for (const key of keys ?? []) {
+    if (typeof key === "string" && key.length > 0) seen.add(key);
+  }
+  return [...seen];
+}
+
+/**
+ * Fold every `DeleteObjectsCommand` response into the outcome the admin sees.
+ *
+ * S3 accepts a multi-object delete request as a whole and reports the keys it
+ * could not remove in `Errors`, so a returned response is not proof that the
+ * objects are gone. `Quiet: true` only suppresses the successful-key entries;
+ * the failures are still returned. A key that no response complained about is
+ * counted as deleted, everything else is reported with its error so the
+ * administrator can retry the keys that remain.
+ *
+ * Exceptions thrown by the delete request itself are not handled here: they
+ * describe a request that never ran and are meant to reach the caller.
+ */
+export function summarizeBackupDeletes(
+  requestedKeys: ReadonlyArray<string | null | undefined> | null | undefined,
+  responses: ReadonlyArray<BackupDeleteResponse | null | undefined> | null | undefined
+): BackupDeleteOutcome {
+  const requested = normalizeDeleteKeys(requestedKeys);
+  const failures = new Map<string, BackupDeleteObjectError>();
+
+  for (const response of responses ?? []) {
+    for (const error of response?.Errors ?? []) {
+      const key = typeof error?.Key === "string" ? error.Key.trim() : "";
+      if (key.length === 0 || failures.has(key)) continue;
+      const code =
+        typeof error.Code === "string" && error.Code.trim().length > 0
+          ? error.Code.trim()
+          : "UnknownError";
+      const message =
+        typeof error.Message === "string" && error.Message.trim().length > 0
+          ? error.Message.trim()
+          : `S3 reported no reason for failing to delete ${key}`;
+      failures.set(key, { key, code, message, retryable: isRetryableBackupDeleteError(error) });
+    }
+  }
+
+  const failedKeys = requested.filter((key) => failures.has(key));
+  const errors = failedKeys.map((key) => failures.get(key) as BackupDeleteObjectError);
+  const deletedObjects = requested.length - failedKeys.length;
+
+  if (failedKeys.length === 0) {
+    return {
+      success: true,
+      deletedObjects,
+      failedObjects: 0,
+      failedKeys,
+      errors,
+      message: `Deleted ${deletedObjects} of ${requested.length} objects`,
+    };
+  }
+
+  const details = errors.map((error) => `${error.key} (${error.code})`).join("; ");
+  const transient = errors.filter((error) => error.retryable).length;
+  const transientHint =
+    transient > 0
+      ? ` ${transient} of ${errors.length} failures are transient (${
+          errors.filter((error) => error.retryable).map((error) => error.code).join(", ")
+        }) and may succeed on retry.`
+      : "";
+
+  return {
+    success: false,
+    deletedObjects,
+    failedObjects: failedKeys.length,
+    failedKeys,
+    errors,
+    message: `Deleted ${deletedObjects} of ${requested.length} objects, ${failedKeys.length} could not be deleted: ${details}.${transientHint} The backup is still stored and the deletion can be retried.`,
+  };
 }

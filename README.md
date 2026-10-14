@@ -11,7 +11,7 @@ A modular monolith for end-to-end exam processing: upload scanned question paper
 - **Exam Management** — Create exams with theory, multiple-choice, and true/false questions, organize by subject/syllabus, assign teacher exams to selected students, and publish them. Assigned students still cannot open a scheduled exam before `scheduledAt`.
 - **Student Submissions** — Take exams, auto-grading, result analysis
 - **Resource Library** — Upload and browse notes, PYQs, and study materials with subject filtering
-- **Admin Tools** — Database stats, S3 backup/restore, collection truncation, query editor, performance monitoring, job status monitoring, failed job retry. A restore loads the whole backup, writes each collection into a side collection, and swaps it into place only after every collection is written, so a failed restore does not leave live data half-wiped. Backups marked failed are still refused.
+- **Admin Tools** — Database stats, S3 backup/restore, collection truncation, query editor, performance monitoring, job status monitoring, failed job retry. A restore loads the whole backup, writes each collection into a side collection, and swaps it into place only after every collection is written, so a failed restore does not leave live data half-wiped. Backups marked failed are still refused. A deletion reports success only once S3 removed every key of the backup: an accepted `DeleteObjects` request can still return per-key failures, which are reported with the keys that remain so the admin can retry and the backup row stays in the table.
 - **AI Analysis** — Bloom's taxonomy classification, exam analysis reports, Gemini-powered exam helper
 - **Clerk Authentication** — Secure login via email, Google, or GitHub
 
