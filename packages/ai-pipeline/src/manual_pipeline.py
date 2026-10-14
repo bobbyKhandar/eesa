@@ -41,6 +41,9 @@ sys.path.insert(0, str(Path(__file__).parent))
 import boto3
 from botocore.config import Config
 
+from intelligent_chunking import chunk_ocr_text
+from chunk_merger import merge_chunk_exams
+
 # ==========================================
 # Configuration
 # ==========================================
@@ -1063,6 +1066,10 @@ class ParseProcessor(PhaseProcessor):
         self.phase = Phase.PARSE
         self.bedrock = boto3.client('bedrock-runtime', region_name='ap-south-1', config=boto_config)
         self.model_id = "google.gemma-3-27b-it"
+        # Model input bound per call (~7500 tokens). A longer document is
+        # split into bounded chunks that are all parsed and merged, so OCR
+        # text past the first chunk is never silently discarded.
+        self.max_chars_per_call = 30000
     
     def process_job(self, job: Job) -> Tuple[bool, str]:
         """Parse OCR output into structured questions"""
@@ -1088,64 +1095,52 @@ class ParseProcessor(PhaseProcessor):
             )
             return False, "Empty OCR text"
         
-        # Check text size - chunk if too large
-        max_chars = 30000  # ~7500 tokens
-        if len(extracted_text) > max_chars:
-            # For now, truncate and note it
-            extracted_text = extracted_text[:max_chars]
-            print(f"  ⚠ Text truncated to {max_chars} characters")
+        # Split into bounded chunks. Every chunk stays within the model
+        # input limit, so questions beyond the first chunk are parsed
+        # instead of being truncated away.
+        chunks = chunk_ocr_text(extracted_text, max_chars_per_chunk=self.max_chars_per_call)
         
-        # Build prompt (simplified from parsing_pipeline.py)
-        prompt = self._build_parsing_prompt(extracted_text)
+        parsed_chunks = []
+        failed_chunks = []
         
-        # Call Bedrock
-        try:
-            response = self.bedrock.invoke_model(
-                modelId=self.model_id,
-                contentType='application/json',
-                accept='application/json',
-                body=json.dumps({
-                    "messages": [{"role": "user", "content": prompt}],
-                    "max_tokens": 8000,
-                    "temperature": 0.3
+        for chunk in chunks:
+            parsed_data, error = self._parse_chunk(job, chunk)
+            if parsed_data is None:
+                failed_chunks.append({
+                    'chunk_id': chunk.get('chunk_id'),
+                    'char_count': chunk.get('char_count', len(chunk.get('text', ''))),
+                    'error': error
                 })
-            )
-            
-            response_body = json.loads(response['body'].read())
-            response_text = response_body.get('content', [{}])[0].get('text', '')
-            
-        except Exception as e:
-            self.db.update_job(
-                job.job_id,
-                status=Status.FAILED.value,
-                error_message=f"Bedrock API error: {str(e)}",
-                error_phase=self.phase.value,
-                retry_count=job.retry_count + 1
-            )
-            self.db.log_error(job.job_id, self.phase.value, "BedrockAPIError", str(e))
-            return False, f"Bedrock API error: {str(e)}"
+            else:
+                parsed_chunks.append(parsed_data)
         
-        # Parse JSON response
-        try:
-            # Clean and parse JSON
-            json_str = self._clean_json_response(response_text)
-            parsed_data = json.loads(json_str)
-        except json.JSONDecodeError as e:
+        if failed_chunks:
+            unprocessed_chars = sum(entry['char_count'] for entry in failed_chunks)
+            details = "; ".join(
+                f"chunk {entry['chunk_id']}: {entry['error']}"
+                for entry in failed_chunks
+            )
+            message = (
+                f"Parsing incomplete: {len(failed_chunks)} of {len(chunks)} chunks "
+                f"unprocessed ({unprocessed_chars} characters) - {details}"
+            )
             self.db.update_job(
                 job.job_id,
                 status=Status.FAILED.value,
-                error_message=f"JSON parse error: {str(e)}",
+                error_message=message,
                 error_phase=self.phase.value,
                 retry_count=job.retry_count + 1
             )
             self.db.log_error(
-                job.job_id, self.phase.value, "JSONParseError", str(e),
-                input_data=response_text[:2000]
+                job.job_id, self.phase.value, "ParseIncomplete", message,
+                input_data=json.dumps(failed_chunks)[:2000]
             )
-            return False, f"JSON parse error: {str(e)}"
+            return False, message
         
-        # Validate structure
-        exams = parsed_data.get('exams', [])
+        # Merge only after every chunk parsed, so the stored payload covers
+        # the whole document.
+        merged = merge_chunk_exams(parsed_chunks)
+        exams = merged['exams']
         total_questions = sum(len(e.get('questions', [])) for e in exams)
         
         if total_questions == 0:
@@ -1158,11 +1153,16 @@ class ParseProcessor(PhaseProcessor):
             return False, "No questions parsed"
         
         # Add metadata
-        parsed_data['job_id'] = job.job_id
-        parsed_data['filename'] = job.filename
-        parsed_data['parsed_at'] = datetime.now().isoformat()
-        parsed_data['total_exams'] = len(exams)
-        parsed_data['total_questions'] = total_questions
+        parsed_data = {
+            'exams': exams,
+            'subjectsCreated': merged['subjectsCreated'],
+            'job_id': job.job_id,
+            'filename': job.filename,
+            'parsed_at': datetime.now().isoformat(),
+            'total_exams': len(exams),
+            'total_questions': total_questions,
+            'chunks_parsed': len(chunks)
+        }
         
         # Upload to S3
         success, s3_key = self.s3.upload_json(parsed_data, job.job_id, "parsed", job.filename)
@@ -1189,6 +1189,63 @@ class ParseProcessor(PhaseProcessor):
         )
         
         return True, f"Parsed {total_questions} questions from {len(exams)} exam(s)"
+    
+    def _parse_chunk(self, job: Job, chunk: Dict) -> Tuple[Optional[Dict], str]:
+        """Parse one bounded chunk of OCR text.
+        
+        Returns ``(parsed_data, "")`` on success and ``(None, error)``
+        when the chunk could not be parsed, so the caller can report the
+        unprocessed portion instead of advancing a partial result.
+        """
+        prompt = self._build_parsing_prompt(chunk.get('text', ''))
+        
+        # Call Bedrock
+        try:
+            response = self.bedrock.invoke_model(
+                modelId=self.model_id,
+                contentType='application/json',
+                accept='application/json',
+                body=json.dumps({
+                    "messages": [{"role": "user", "content": prompt}],
+                    "max_tokens": 8000,
+                    "temperature": 0.3
+                })
+            )
+            
+            response_body = json.loads(response['body'].read())
+            response_text = response_body.get('content', [{}])[0].get('text', '')
+            
+        except Exception as e:
+            self.db.log_error(job.job_id, self.phase.value, "BedrockAPIError", str(e))
+            return None, f"Bedrock API error: {str(e)}"
+        
+        # Parse JSON response
+        try:
+            # Clean and parse JSON
+            json_str = self._clean_json_response(response_text)
+            parsed_data = json.loads(json_str)
+        except json.JSONDecodeError as e:
+            self.db.log_error(
+                job.job_id, self.phase.value, "JSONParseError", str(e),
+                input_data=response_text[:2000]
+            )
+            return None, f"JSON parse error: {str(e)}"
+        
+        if not isinstance(parsed_data, dict) or not isinstance(parsed_data.get('exams'), list):
+            error = "response is missing an exams list"
+            self.db.log_error(
+                job.job_id, self.phase.value, "ParseSchemaError", error,
+                input_data=response_text[:2000]
+            )
+            return None, error
+        
+        # Keep the continuation marker so merge_chunk_exams can join an exam
+        # that crosses a chunk boundary.
+        parsed_data['is_continuation'] = chunk.get('is_continuation', False) is True
+        parsed_data['chunk_metadata'] = {
+            key: value for key, value in chunk.items() if key != 'text'
+        }
+        return parsed_data, ""
     
     def _build_parsing_prompt(self, text: str) -> str:
         """Build the parsing prompt"""

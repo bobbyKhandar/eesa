@@ -18,6 +18,7 @@ def _load_chunk_merger():
 
 _chunk_merger = _load_chunk_merger()
 build_enriched_chunk = _chunk_merger.build_enriched_chunk
+merge_chunk_exams = _chunk_merger.merge_chunk_exams
 merge_chunks = _chunk_merger.merge_chunks
 
 
@@ -177,6 +178,143 @@ class TestMergeAcrossChunkBoundary(unittest.TestCase):
         self.assertEqual(
             [question["question_number"] for question in merged["exams"][0]["questions"]],
             ["Q1", "Q2"],
+        )
+
+
+class TestMergeChunkExams(unittest.TestCase):
+    """Chunk payloads merge only after every chunk parsed.
+
+    A continuation payload continues the exam already collected, a question
+    the boundary split is merged once, and extra exams inside a payload
+    stay separate so no parsed question is dropped.
+    """
+
+    def test_continuation_payload_joins_the_exam_already_collected(self):
+        base = {
+            "exams": [{
+                "subject": "Operating Systems",
+                "questions": [_question("Q1", "What is an operating system?")],
+            }],
+            "subjectsCreated": ["Operating Systems"],
+        }
+        continuation = {
+            "is_continuation": True,
+            "exams": [{
+                "subject": "Operating Systems",
+                "questions": [_question("Q2", "Explain CPU scheduling.")],
+            }],
+        }
+
+        merged = merge_chunk_exams([base, continuation])
+
+        self.assertEqual(len(merged["exams"]), 1)
+        self.assertEqual(
+            [question["question_number"] for question in merged["exams"][0]["questions"]],
+            ["Q1", "Q2"],
+        )
+        self.assertEqual(merged["subjectsCreated"], ["Operating Systems"])
+
+    def test_boundary_split_question_is_merged_once(self):
+        base = {
+            "exams": [{
+                "subject": "Operating Systems",
+                "questions": [
+                    _question("Q1", "What is an operating system?"),
+                    _question("Q2", "Explain CPU scheduling and its"),
+                ],
+            }]
+        }
+        continuation = {
+            "is_continuation": True,
+            "exams": [{
+                "subject": "Operating Systems",
+                "questions": [_question("Q2", "common algorithms.")],
+            }],
+        }
+
+        merged = merge_chunk_exams([base, continuation])
+
+        questions = merged["exams"][0]["questions"]
+        self.assertEqual(len(questions), 2)
+        self.assertEqual(
+            questions[1]["question_text"],
+            "Explain CPU scheduling and its common algorithms.",
+        )
+
+    def test_second_exam_inside_a_continuation_payload_is_kept(self):
+        base = {
+            "exams": [{
+                "subject": "Operating Systems",
+                "questions": [_question("Q1", "What is an operating system?")],
+            }]
+        }
+        continuation = {
+            "is_continuation": True,
+            "exams": [
+                {
+                    "subject": "Operating Systems",
+                    "questions": [_question("Q2", "Explain CPU scheduling.")],
+                },
+                {
+                    "subject": "Database Management Systems",
+                    "questions": [_question("Q1", "Define normalization.")],
+                },
+            ],
+        }
+
+        merged = merge_chunk_exams([base, continuation])
+
+        self.assertEqual(
+            [exam["subject"] for exam in merged["exams"]],
+            ["Operating Systems", "Database Management Systems"],
+        )
+        self.assertEqual(
+            [len(exam["questions"]) for exam in merged["exams"]], [2, 1]
+        )
+
+    def test_continuation_flag_from_chunk_metadata_is_honored(self):
+        base = {
+            "exams": [{
+                "subject": "Operating Systems",
+                "questions": [_question("Q1", "What is an operating system?")],
+            }]
+        }
+        continuation = {
+            "chunk_metadata": {"is_continuation": True, "start_question": 2},
+            "exams": [{
+                "subject": "Operating Systems",
+                "questions": [_question("Q2", "Explain CPU scheduling.")],
+            }],
+        }
+
+        merged = merge_chunk_exams([base, continuation])
+
+        self.assertEqual(len(merged["exams"]), 1)
+        self.assertEqual(
+            [question["question_number"] for question in merged["exams"][0]["questions"]],
+            ["Q1", "Q2"],
+        )
+
+    def test_different_subject_starts_a_new_exam(self):
+        base = {
+            "exams": [{
+                "subject": "Operating Systems",
+                "questions": [_question("Q1", "What is an operating system?")],
+            }]
+        }
+        continuation = {
+            "is_continuation": True,
+            "exams": [{
+                "subject": "Database Management Systems",
+                "questions": [_question("Q1", "Define normalization.")],
+            }],
+        }
+
+        merged = merge_chunk_exams([base, continuation])
+
+        self.assertEqual(
+            [exam["subject"] for exam in merged["exams"]],
+            ["Operating Systems", "Database Management Systems"],
         )
 
 
