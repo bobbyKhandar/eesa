@@ -106,6 +106,32 @@ class Job:
     batch_id: str = ""
     priority: int = 0
 
+def require_positive_int(value, name: str) -> int:
+    """Return value when it is an integer >= 1.
+
+    Booleans are rejected because they are a subclass of int. Zero, negative,
+    and missing values are rejected so callers cannot drop a SQL LIMIT.
+    """
+    if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+        raise ValueError(f"{name} must be an integer >= 1")
+    return value
+
+
+def positive_batch_size(value: str) -> int:
+    """argparse type for --batch-size. Values below 1 are an error."""
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError) as exc:
+        raise argparse.ArgumentTypeError(
+            "batch size must be an integer >= 1"
+        ) from exc
+    if parsed < 1:
+        raise argparse.ArgumentTypeError(
+            f"batch size must be an integer >= 1, got {parsed}"
+        )
+    return parsed
+
+
 # ==========================================
 # Database Manager
 # ==========================================
@@ -244,7 +270,13 @@ class DatabaseManager:
         return None
     
     def get_jobs_by_phase(self, phase: str, status: str = None, limit: int = None) -> List[Job]:
-        """Get jobs by phase and optionally status"""
+        """Get jobs by phase and optionally status.
+
+        ``limit`` is required and must be an integer >= 1. The query always
+        applies that finite LIMIT. A missing, zero, or negative limit is
+        rejected instead of loading every matching row.
+        """
+        validated_limit = require_positive_int(limit, "limit")
         query = "SELECT * FROM jobs WHERE current_phase = ?"
         params = [phase]
         
@@ -252,10 +284,8 @@ class DatabaseManager:
             query += " AND status = ?"
             params.append(status)
         
-        query += " ORDER BY priority DESC, created_at ASC"
-        
-        if limit:
-            query += f" LIMIT {limit}"
+        query += " ORDER BY priority DESC, created_at ASC LIMIT ?"
+        params.append(validated_limit)
         
         jobs = []
         with sqlite3.connect(self.db_path) as conn:
@@ -616,6 +646,8 @@ class PhaseProcessor:
     
     def process_batch(self, batch_size: int = 10, dry_run: bool = False) -> Dict:
         """Process a batch of jobs in the current phase"""
+        batch_size = require_positive_int(batch_size, "batch_size")
+
         # Get pending jobs for this phase
         jobs = self.db.get_jobs_by_phase(
             self.phase.value, 
@@ -623,13 +655,16 @@ class PhaseProcessor:
             limit=batch_size
         )
         
-        # Also get retry-pending jobs
-        retry_jobs = self.db.get_jobs_by_phase(
-            self.phase.value,
-            status=Status.RETRY_PENDING.value,
-            limit=batch_size - len(jobs)
-        )
-        jobs.extend(retry_jobs)
+        # Fill leftover capacity with retry-pending jobs. Skip the query
+        # when the pending rows already fill the batch.
+        remaining = batch_size - len(jobs)
+        if remaining > 0:
+            retry_jobs = self.db.get_jobs_by_phase(
+                self.phase.value,
+                status=Status.RETRY_PENDING.value,
+                limit=remaining
+            )
+            jobs.extend(retry_jobs)
         
         if not jobs:
             print(f"No jobs pending for phase: {self.phase.value}")
@@ -1869,7 +1904,12 @@ def main():
     # Process commands for each phase
     for phase in ['ocr', 'parse', 'enrich', 'organize']:
         phase_parser = subparsers.add_parser(phase, help=f'Process {phase} phase')
-        phase_parser.add_argument('--batch-size', type=int, default=10, help='Batch size')
+        phase_parser.add_argument(
+            '--batch-size',
+            type=positive_batch_size,
+            default=10,
+            help='Batch size (integer >= 1)',
+        )
         phase_parser.add_argument('--dry-run', action='store_true', help='Show what would be processed')
         phase_parser.set_defaults(func=cmd_process, phase=phase)
     
