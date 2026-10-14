@@ -244,7 +244,9 @@ finalize(id, autoSubmitted)     // Submit (SUBMITTED)
 evaluate(id, evaluation)        // Grade (EVALUATED)
 getById(id)                     // Get by ID
 getByExam(examId)               // All submissions for exam
-getByUser(userId)               // User's history
+getByUser(userId)               // Full history (unbounded)
+getByUser(userId, { limit, cursor }) // One page, max 50
+summarizeByUser(userId)         // Aggregated totals for the whole history
 getByExamAndUser(examId, userId) // Specific submission
 delete(id)                      // Remove
 ```

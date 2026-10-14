@@ -11,7 +11,7 @@ import type { Exam } from "../schemas/examSchemaZod.js";
 import { activeExamQuery } from "../examDeletion.js";
 import { orderQuestionDetails } from "../questionOrder.js";
 import { ExamQuestionRepository } from "./ExamQuestionRepository.js";
-import { nullIfAbsentId, rethrowReadFailure } from "./readErrors.js";
+import { nullIfAbsentId, objectIdsFrom, rethrowReadFailure } from "./readErrors.js";
 
 const { ObjectId } = Types;
 
@@ -257,6 +257,27 @@ export class ExamRepository {
         .filter((exam): exam is Exam => exam !== undefined);
     } catch (error) {
       rethrowReadFailure(error, 'Error getting exams by ids:');
+    }
+  }
+
+  /**
+   * Load the exams referenced by saved submissions in one `$in` query.
+   * Soft-deleted exams are included: a result still names the exam that was taken.
+   * Ids that cannot name a document are skipped. An empty list does not query.
+   */
+  async getHistoricalByIds(examIds: string[]): Promise<Exam[]> {
+    try {
+      await connect();
+      const uniqueIds = Array.from(
+        new Set(examIds.filter((id) => typeof id === 'string' && id.length > 0))
+      );
+      const objectIds = objectIdsFrom(uniqueIds);
+      if (objectIds.length === 0) return [];
+
+      const exams = await this.model.find({ _id: { $in: objectIds } }).lean();
+      return exams;
+    } catch (error) {
+      rethrowReadFailure(error, 'Error getting exams for result history:');
     }
   }
 

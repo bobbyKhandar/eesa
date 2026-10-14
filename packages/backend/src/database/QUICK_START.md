@@ -187,7 +187,9 @@ submissionRepo.finalize(id, autoSubmit)      // SUBMITTED
 submissionRepo.evaluate(id, evaluation)      // EVALUATED
 submissionRepo.getById(id)
 submissionRepo.getByExam(examId)
-submissionRepo.getByUser(userId)
+submissionRepo.getByUser(userId)                 // Full history (unbounded)
+submissionRepo.getByUser(userId, { limit: 20 })  // One page for GET /api/results
+submissionRepo.summarizeByUser(userId)           // Totals without loading every row
 submissionRepo.getByExamAndUser(examId, userId)
 ```
 
@@ -367,10 +369,10 @@ console.log('OCR:', counts.ocr);
 console.log('LLM:', counts.llm);
 console.log('User:', counts.user);
 
-// User's exam history
-const submissions = await submissionRepo.getByUser(userId);
-submissions.forEach(s => {
-  console.log(`${s.examId}: ${s.totalScore} points`);
+// User's exam history. Pass a page query when the caller must not load every row.
+const page = await submissionRepo.getByUser(userId, { limit: 20 });
+page.submissions.forEach(s => {
+  console.log(`${s.examId}: ${s.marksAchieved} points`);
 });
 
 // Prompt usage tracking

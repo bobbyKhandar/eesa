@@ -71,6 +71,10 @@ interface ExamResult {
 
 interface ResultsData {
   results: ExamResult[]
+  page?: {
+    limit: number
+    nextCursor: string | null
+  }
   stats: {
     totalExams: number
     passedExams: number
@@ -84,6 +88,9 @@ interface ResultsData {
   gradeDistribution: { grade: string; count: number; color: string }[]
 }
 
+/** Matches the API default in SUBMISSION_HISTORY_DEFAULT_LIMIT. */
+const RESULTS_PAGE_SIZE = 20
+
 export default function ResultsPage() {
   const { isLoaded, isSignedIn } = useUser()
   const [searchQuery, setSearchQuery] = useState("")
@@ -93,10 +100,15 @@ export default function ResultsPage() {
   const [activeTab, setActiveTab] = useState("overview")
   
   const [loading, setLoading] = useState(true)
+  const [paging, setPaging] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [data, setData] = useState<ResultsData | null>(null)
+  const [overview, setOverview] = useState<ResultsData | null>(null)
+  const [cursor, setCursor] = useState<string | null>(null)
+  const [previousCursors, setPreviousCursors] = useState<Array<string | null>>([])
   const [shareStatus, setShareStatus] = useState<ShareCopyStatus>("idle")
   const shareTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const hasOverview = useRef(false)
 
   useEffect(() => {
     return () => {
@@ -109,36 +121,50 @@ export default function ResultsPage() {
       setLoading(false)
       return
     }
-    
+
+    let cancelled = false
+
     const fetchResults = async () => {
       try {
-        setLoading(true)
+        if (!hasOverview.current) setLoading(true)
+        else setPaging(true)
         setError(null)
-        
-        const response = await fetch("/api/results")
+
+        const params = new URLSearchParams({ limit: String(RESULTS_PAGE_SIZE) })
+        if (cursor) params.set("cursor", cursor)
+        const response = await fetch(`/api/results?${params.toString()}`)
         const json = await response.json()
-        
+
         if (!response.ok || !json.success) {
           throw new Error(json.error || "Failed to fetch results")
         }
-        
+
+        if (cancelled) return
         setData(json.data)
+        if (!cursor) {
+          hasOverview.current = true
+          setOverview(json.data)
+        }
       } catch (err: any) {
-        setError(err.message || "Failed to load results")
+        if (!cancelled) setError(err.message || "Failed to load results")
       } finally {
-        setLoading(false)
+        if (!cancelled) {
+          setLoading(false)
+          setPaging(false)
+        }
       }
     }
-    
+
     fetchResults()
-  }, [isLoaded, isSignedIn])
+    return () => {
+      cancelled = true
+    }
+  }, [isLoaded, isSignedIn, cursor])
 
-  // Get unique subjects for filter
-  const subjects = data?.results
-    ? [...new Set(data.results.map(r => r.subject))]
-    : []
+  // Subjects come from the full-history summary. The search still filters this page.
+  const subjects = overview?.subjectPerformance.map((entry) => entry.subject) ?? []
 
-  // Filter results from API data
+  // Filter results from the current page. Export downloads these loaded rows.
   const filteredResults = (data?.results || []).filter((result) => {
     const matchesSearch =
       result.examName.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -218,8 +244,8 @@ export default function ResultsPage() {
     )
   }
 
-  // Show empty state
-  if (!data?.results.length) {
+  // Show empty state only when the whole history is empty, not when a later page is.
+  if (!overview || (overview.results.length === 0 && overview.stats.totalExams === 0)) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[400px] text-center">
         <Award className="h-16 w-16 text-gray-300 mb-4" />
@@ -232,8 +258,23 @@ export default function ResultsPage() {
     )
   }
 
-  // Get stats and chart data from API response
-  const { stats, performanceData, subjectPerformance, gradeDistribution } = data
+  // Totals and charts cover every completed exam. The table below is one page.
+  const { stats, performanceData, subjectPerformance, gradeDistribution } = overview
+  const nextCursor = data?.page?.nextCursor ?? null
+  const onAnotherPage = cursor !== null || previousCursors.length > 0
+
+  const goToNextPage = () => {
+    if (!nextCursor || paging) return
+    setPreviousCursors((stack) => [...stack, cursor])
+    setCursor(nextCursor)
+  }
+
+  const goToPreviousPage = () => {
+    if (previousCursors.length === 0 || paging) return
+    const prior = previousCursors[previousCursors.length - 1]
+    setPreviousCursors((stack) => stack.slice(0, -1))
+    setCursor(prior)
+  }
 
   const sharePage = async () => {
     const status = await copyPageLink(window.location.href, navigator.clipboard)
@@ -267,7 +308,9 @@ export default function ResultsPage() {
             title={
               filteredResults.length === 0
                 ? "No results match the current filters"
-                : "Download the current results as CSV"
+                : onAnotherPage || nextCursor
+                  ? "Download this page as CSV"
+                  : "Download the current results as CSV"
             }
           >
             <Download className="h-4 w-4" />
@@ -425,7 +468,7 @@ export default function ResultsPage() {
             </CardHeader>
             <CardContent>
               <div className="space-y-4">
-                {data.results.slice(0, 3).map((result) => (
+                {overview.results.slice(0, 3).map((result) => (
                   <div key={result.id} className="flex items-center justify-between p-4 border rounded-lg">
                     <div className="flex items-center gap-4">
                       {getStatusIcon(result.status)}
@@ -466,7 +509,9 @@ export default function ResultsPage() {
                 <Filter className="h-5 w-5" />
                 Filter Results
               </CardTitle>
-              <CardDescription>Search and filter your exam results</CardDescription>
+              <CardDescription>
+                Search and filter this page. Totals include every completed exam. Export downloads the rows loaded here.
+              </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
@@ -522,7 +567,9 @@ export default function ResultsPage() {
           <Card>
             <CardHeader>
               <CardTitle>All Results</CardTitle>
-              <CardDescription>Complete list of your exam results</CardDescription>
+              <CardDescription>
+                {stats.totalExams} completed {stats.totalExams === 1 ? "exam" : "exams"}, newest first
+              </CardDescription>
             </CardHeader>
             <CardContent>
               <div className="rounded-md border">
@@ -591,6 +638,27 @@ export default function ResultsPage() {
                   </TableBody>
                 </Table>
               </div>
+              <nav aria-label="Results pages" className="flex items-center justify-between pt-4">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={goToPreviousPage}
+                  disabled={previousCursors.length === 0 || paging}
+                >
+                  Previous
+                </Button>
+                <p className="text-sm text-gray-500">
+                  {paging ? "Loading page..." : `${filteredResults.length} on this page`}
+                </p>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={goToNextPage}
+                  disabled={!nextCursor || paging}
+                >
+                  Next
+                </Button>
+              </nav>
             </CardContent>
           </Card>
         </TabsContent>
@@ -691,7 +759,7 @@ export default function ResultsPage() {
             </CardHeader>
             <CardContent>
               <div className="space-y-6">
-                {data.results.slice(0, 4).map((result) => (
+                {overview.results.slice(0, 4).map((result) => (
                   <div key={result.id} className="space-y-2">
                     <div className="flex justify-between items-center">
                       <span className="font-medium">{result.examName}</span>
