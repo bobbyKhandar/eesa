@@ -167,7 +167,8 @@ class TestCleanArchitectureIntegration(unittest.TestCase):
             mock_pdf_class.return_value = mock_pdf
             
             # Setup mock returns
-            mock_pdf.extract_pages.return_value = [
+            mock_pdf.validate_pdf.return_value = {"valid": True, "errors": []}
+            mock_pdf.iter_pages.return_value = [
                 {"page_number": 0, "image": np.zeros((100, 100, 3), dtype=np.uint8)},
                 {"page_number": 1, "image": np.zeros((100, 100, 3), dtype=np.uint8)}
             ]
@@ -188,7 +189,10 @@ class TestCleanArchitectureIntegration(unittest.TestCase):
             self.assertEqual(result["successful_pages"], 2)
             
             # Verify all components were called
-            mock_pdf.extract_pages.assert_called_once_with("/test/document.pdf")
+            mock_pdf.validate_pdf.assert_called_once()
+            self.assertEqual(mock_pdf.validate_pdf.call_args[0][0], "/test/document.pdf")
+            mock_pdf.iter_pages.assert_called_once()
+            self.assertEqual(mock_pdf.iter_pages.call_args[0][0], "/test/document.pdf")
             self.assertEqual(mock_image.preprocess_image.call_count, 2)
             self.assertEqual(mock_ocr.process_image.call_count, 2)
 
@@ -331,7 +335,8 @@ class TestCleanArchitectureIntegration(unittest.TestCase):
             ]
             
             # Setup mocks
-            mock_pdf.extract_pages.return_value = extracted_pages
+            mock_pdf.validate_pdf.return_value = {"valid": True, "errors": []}
+            mock_pdf.iter_pages.return_value = extracted_pages
             mock_image.preprocess_image.side_effect = processed_images
             mock_ocr.process_image.side_effect = ocr_results
             
@@ -346,7 +351,10 @@ class TestCleanArchitectureIntegration(unittest.TestCase):
             self.assertEqual(result["successful_pages"], 2)
             
             # Verify data flowed through all components
-            mock_pdf.extract_pages.assert_called_once_with(original_pdf_path)
+            mock_pdf.validate_pdf.assert_called_once()
+            self.assertEqual(mock_pdf.validate_pdf.call_args[0][0], original_pdf_path)
+            mock_pdf.iter_pages.assert_called_once()
+            self.assertEqual(mock_pdf.iter_pages.call_args[0][0], original_pdf_path)
             self.assertEqual(mock_image.preprocess_image.call_count, 2)
             self.assertEqual(mock_ocr.process_image.call_count, 2)
             
@@ -447,7 +455,8 @@ class TestCleanArchitectureIntegration(unittest.TestCase):
                     mock_img_class.return_value = mock_img
                     mock_ocr_class.return_value = mock_ocr
                     
-                    mock_pdf.extract_pages.return_value = [
+                    mock_pdf.validate_pdf.return_value = {"valid": True, "errors": []}
+                    mock_pdf.iter_pages.return_value = [
                         {"page_number": 0, "image": np.zeros((100, 100, 3))}
                     ]
                     mock_img.preprocess_image.return_value = np.zeros((100, 100))
@@ -464,7 +473,8 @@ class TestCleanArchitectureIntegration(unittest.TestCase):
                 
                 # Step 3: Verify workflow completion
                 # All components should have been called in the correct sequence
-                mock_pdf.extract_pages.assert_called_once()
+                mock_pdf.validate_pdf.assert_called()
+                mock_pdf.iter_pages.assert_called_once()
                 mock_img.preprocess_image.assert_called_once()
                 mock_ocr.process_image.assert_called_once()
 

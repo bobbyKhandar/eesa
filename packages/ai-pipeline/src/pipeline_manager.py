@@ -24,7 +24,7 @@ try:
     from . import redis_client
     from .local_ocr_engine import OCREngine
     from .local_image_processor_pipeline import ImageProcessor
-    from .pdf_handler import PDFHandler
+    from .pdf_handler import PDFHandler, default_dpi
     from .docx_handler import extract_docx_result, should_extract_docx
     from .ocr_file_result import (
         batch_terminal_status,
@@ -35,7 +35,7 @@ except ImportError:
     import redis_client
     from local_ocr_engine import OCREngine
     from local_image_processor_pipeline  import ImageProcessor
-    from pdf_handler import PDFHandler
+    from pdf_handler import PDFHandler, default_dpi
     from docx_handler import extract_docx_result, should_extract_docx
     from ocr_file_result import (
         batch_terminal_status,
@@ -393,22 +393,31 @@ class PipelineManager:
         return extract_docx_result(file_location)
 
     def _process_pdf_file(self, file_location: str, batch_id: Optional[str] = None) -> Dict[str, Any]:
-        """Process a single PDF file through the OCR pipeline"""
+        """Process a single PDF file through the OCR pipeline.
+
+        Pages are rendered one at a time. Each image is dropped before the
+        next page is requested so a long PDF does not keep every pixmap alive.
+        """
         try:
-            # Extract pages from PDF
-            pages_data = self.pdf_handler.extract_pages(file_location)
-            
-            if not pages_data:
-                return {"success": False, "error": "No pages extracted from PDF"}
-            
+            dpi = default_dpi()
+            validation = self.pdf_handler.validate_pdf(file_location, dpi=dpi)
+            if not validation.get("valid"):
+                errors = validation.get("errors") or ["PDF validation failed"]
+                return {"success": False, "error": "; ".join(str(item) for item in errors)}
+
             file_results = []
             total_confidence = 0
-            
-            # Process each page
-            for page_data in pages_data:
+            total_pages = 0
+
+            for page_data in self.pdf_handler.iter_pages(file_location, dpi=dpi):
+                total_pages += 1
+                image = None
+                processed_image = None
                 try:
-                    # Preprocess image
-                    processed_image = self.image_processor.preprocess_image(page_data["image"])
+                    # Drop the handler's reference before OCR so the next
+                    # iter_pages step can free this render.
+                    image = page_data.pop("image", None)
+                    processed_image = self.image_processor.preprocess_image(image)
 
                     # Save preprocessed image for analysis/debugging if batch_id provided
                     try:
@@ -430,7 +439,7 @@ class PipelineManager:
 
                     # Perform OCR
                     ocr_result = self.ocr_engine.process_image(processed_image)
-                    
+
                     if ocr_result["success"]:
                         page_result = {
                             "page_number": page_data["page_number"],
@@ -446,21 +455,27 @@ class PipelineManager:
                             "error": ocr_result.get("error", "OCR processing failed"),
                             "success": False
                         })
-                
+
                 except Exception as page_error:
                     file_results.append({
                         "page_number": page_data["page_number"],
                         "error": str(page_error),
                         "success": False
                     })
-            
+                finally:
+                    image = None
+                    processed_image = None
+
+            if total_pages == 0:
+                return {"success": False, "error": "No pages extracted from PDF"}
+
             return compile_pdf_file_result(
                 file_location,
-                len(pages_data),
+                total_pages,
                 file_results,
                 total_confidence,
             )
-            
+
         except Exception as e:
             return {"success": False, "error": str(e)}
 

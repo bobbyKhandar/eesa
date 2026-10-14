@@ -42,7 +42,7 @@
 - **Engine:** EasyOCR via `OCREngine` class (`src/local_ocr_engine.py`).
 - **OCR sanitization:** `OCREngine.sanitize_text` keeps mathematical and scientific symbols (`+ = / * < > ^ % [ ] { }`, Unicode math such as `× ÷ ≤ ≥ ≠ √`, Greek letters, and the degree sign) and still strips control characters and other junk.
 - **Image processing:** `ImageProcessor` class (`src/local_image_processor_pipeline.py`).
-- **PDF handling:** `PDFHandler` class using PyMuPDF (`src/pdf_handler.py`).
+- **PDF handling:** `PDFHandler` (`src/pdf_handler.py`) renders with PyMuPDF. `iter_pages` yields one page image at a time. The local batch path calls `validate_pdf` first, OCRs that page, then drops the image before the next page is rendered. `extract_pages` still returns a list for existing callers. `MAX_PAGES_PER_PDF` (default 1000) and `MAX_PDF_PAGE_PIXELS` (default 50,000,000) are hard failures checked before a pixmap is built. `DEFAULT_DPI` (default 400) is the render resolution those pixel checks and the batch path use. A blank or non-positive value keeps the default. A file over 100MB still only warns.
 - **DOCX handling:** `should_extract_docx` / `extract_docx_result` in `src/docx_handler.py`. A batch file whose `options.file_type` is `docx`, or whose path ends in `.docx`, is read from `word/document.xml`. It is not sent through `PDFHandler`. PDF and image uploads stay on the OCR path. Legacy `.doc` files fail with an error asking for `.docx`.
 - **Queue management:** Redis via `redis_client.py` — required for local pipeline. Connection: `redis.Redis(host='localhost', port=6379, db=0, decode_responses=True)`.
 - **Pipeline manager:** `PipelineManager` singleton (`src/pipeline_manager.py`) — uses background thread for continuous batch processing. `_process_single_batch` branches to `_process_docx_file` before `_process_pdf_file`. PDF page outcomes are compiled by `compile_pdf_file_result` (`src/ocr_file_result.py`). A file is `status: success` only when every page succeeds. Dropped pages set `status: partial`, `success: false`, and `failed_pages` / `failed_page_numbers`, and the batch status is `partial` (not `completed`). If every page fails, the file and batch are `failed`. The file payload is still stored so callers can see which pages were lost. This local batch status is separate from the AWS job status `partial_success`. DOCX extraction is unchanged.
@@ -61,7 +61,7 @@
 | `src/question_clustering.py` | LanceDB vector store + FAISS/HDBSCAN for similarity clustering and appearance frequency |
 | `src/local_ocr_engine.py` | EasyOCR-based OCR engine with GPU auto-detect |
 | `src/local_image_processor_pipeline.py` | Image preprocessing (denoise, sharpen, binarize, deskew, contrast enhancement) |
-| `src/pdf_handler.py` | PDF page extraction via PyMuPDF at configurable DPI |
+| `src/pdf_handler.py` | Incremental PDF page rendering via PyMuPDF, with page-count and pixel limits |
 | `src/docx_handler.py` | Direct DOCX text extraction from Office Open XML (no OCR) |
 | `src/pipeline_manager.py` | Redis-backed local pipeline manager (singleton). DOCX uploads bypass the PDF handler |
 | `src/pipeline_orchestrator.py` | Orchestration layer — upload, process, download, save workflow |
