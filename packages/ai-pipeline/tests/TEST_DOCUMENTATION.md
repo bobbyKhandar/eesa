@@ -18,7 +18,8 @@ tests/
 ├── test_server.py                 # AI Server unit tests
 ├── test_redis_client.py           # Redis Client unit tests
 ├── test_clean_integration.py      # Integration tests
-└── test_intelligent_chunking.py   # OCR chunks stay within max_chars_per_chunk
+├── test_intelligent_chunking.py   # OCR chunks stay within max_chars_per_chunk
+└── test_manual_failure_transition.py  # Handled failures never strand a manual job
 ```
 
 ### OCR chunk maximum (`test_intelligent_chunking.py`)
@@ -26,6 +27,12 @@ tests/
 - Each piece stays within the configured maximum, including the 20,000-character AWS limit
 - Continuation pieces keep `is_continuation` and a distinct `chunk_id`
 - Sections that already fit still split on question boundaries
+
+### Manual failure transition (`test_manual_failure_transition.py`)
+- A handled Textract poll, pagination, or start error records the job `failed` with the `ocr` phase, the error detail, `retry_count` 1, an `error_log` row, and the error file
+- `process_batch` records a returned failure the processor did not record itself, records it once, and survives an error-logging failure
+- A row left `in_progress` is reclaimed to `pending` after the quiet period, and a reclaimed job is processed by the next batch
+- Retry targets are validated: only `ocr`, `parse`, `enrich`, and `organize` are accepted, a single-job retry falls back from an empty `error_phase` to `current_phase`, and a job that is not failed is refused
 
 ## 🧪 Test Coverage by Component
 

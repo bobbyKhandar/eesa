@@ -27,7 +27,7 @@ import json
 import uuid
 import argparse
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 from dataclasses import dataclass, asdict
@@ -65,6 +65,15 @@ boto_config = Config(
     connect_timeout=60,
     retries={'max_attempts': 3, 'mode': 'adaptive'}
 )
+
+# Phases that have a processor and can therefore be retried.
+RETRYABLE_PHASES = ('ocr', 'parse', 'enrich', 'organize')
+
+# A job left in_progress by an interrupted run is claimed for work again
+# after this many seconds. Without the reclaim, a Ctrl-C between the
+# in_progress update and the outcome update strands the job: the phase
+# queries only select pending and retry_pending rows.
+STALE_IN_PROGRESS_SECONDS = 3600
 
 # ==========================================
 # Enums & Data Classes
@@ -133,6 +142,39 @@ def positive_batch_size(value: str) -> int:
             f"batch size must be an integer >= 1, got {parsed}"
         )
     return parsed
+
+
+def normalize_retry_phase(phase) -> str:
+    """Return a phase name a retry can target.
+
+    Only ``ocr``, ``parse``, ``enrich``, and ``organize`` have processors, so
+    anything else (a blank ``error_phase``, ``upload``, ``complete``, an
+    unknown string) is rejected instead of moving a job into a phase that no
+    run will ever process.
+    """
+    normalized = (phase or "").strip().lower()
+    if normalized not in RETRYABLE_PHASES:
+        raise ValueError(
+            f"retry phase must be one of {', '.join(RETRYABLE_PHASES)}, "
+            f"got {phase!r}"
+        )
+    return normalized
+
+
+def retry_target_phase(job: Job) -> Optional[str]:
+    """Phase a failed job retries from, or None when it has none.
+
+    ``error_phase`` is written by every failure transition, but a job failed
+    by an older run can carry it empty, and it can name a phase without a
+    processor. The job's current phase is the fallback, so a single-job retry
+    never marks a job for a phase nothing can process.
+    """
+    for candidate in (job.error_phase, job.current_phase):
+        try:
+            return normalize_retry_phase(candidate)
+        except ValueError:
+            continue
+    return None
 
 
 # ==========================================
@@ -422,22 +464,62 @@ class DatabaseManager:
         return stats
     
     def mark_for_retry(self, job_id: str, phase: str):
-        """Mark a failed job for retry"""
+        """Mark a failed job for retry.
+
+        ``phase`` must name a phase with a processor. Marking a job for any
+        other value (including an empty ``error_phase`` left by an older
+        failure) would move it to a phase nothing can process.
+        """
+        retry_phase = normalize_retry_phase(phase)
         self.update_job(
             job_id,
             status=Status.RETRY_PENDING.value,
-            current_phase=phase,
+            current_phase=retry_phase,
             error_message=""
         )
     
     def bulk_mark_for_retry(self, phase: str) -> int:
         """Mark all failed jobs in a phase for retry"""
+        retry_phase = normalize_retry_phase(phase)
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.execute("""
                 UPDATE jobs 
                 SET status = 'retry_pending', current_phase = ?, error_message = ''
                 WHERE status = 'failed' AND error_phase = ?
-            """, (phase, phase))
+            """, (retry_phase, retry_phase))
+            conn.commit()
+            return cursor.rowcount
+
+    def reclaim_stale_in_progress(
+        self,
+        phase: str,
+        older_than_seconds: int = STALE_IN_PROGRESS_SECONDS
+    ) -> int:
+        """Return jobs claimed for ``phase`` but never finished to pending.
+
+        A batch interrupted between the in_progress update and the outcome
+        update (Ctrl-C, crash, killed container) leaves the row claimed, and
+        the phase queries only select pending and retry_pending rows, so the
+        job disappears from both processing and bulk retry. Jobs whose last
+        update is older than ``older_than_seconds`` are reclaimed here.
+
+        Returns the number of reclaimed jobs.
+        """
+        retry_phase = normalize_retry_phase(phase)
+        quiet_seconds = require_positive_int(older_than_seconds, "older_than_seconds")
+        cutoff = (datetime.now() - timedelta(seconds=quiet_seconds)).isoformat()
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.execute("""
+                UPDATE jobs
+                SET status = ?, updated_at = ?
+                WHERE status = ? AND current_phase = ? AND updated_at <= ?
+            """, (
+                Status.PENDING.value,
+                datetime.now().isoformat(),
+                Status.IN_PROGRESS.value,
+                retry_phase,
+                cutoff
+            ))
             conn.commit()
             return cursor.rowcount
 
@@ -654,14 +736,95 @@ class PhaseProcessor:
         self.db = db
         self.s3 = s3
         self.phase = Phase.UPLOAD
+        # Job ids this processor already moved to failed during the current
+        # batch, so a recorded failure is never written twice.
+        self._recorded_failures = set()
     
     def process_job(self, job: Job) -> Tuple[bool, str]:
         """Process a single job. Returns (success, message)"""
         raise NotImplementedError
     
+    def record_failure(
+        self,
+        job: Job,
+        message: str,
+        error_type: str = "PhaseError",
+        error_traceback: str = "",
+        input_data: str = ""
+    ) -> str:
+        """Durably record an unsuccessful job as failed in this phase.
+
+        Every unsuccessful result funnels through this one transition so a
+        job never stays ``in_progress``: the row leaves ``in_progress`` for
+        ``failed`` with a valid ``error_phase``, the error detail, and an
+        incremented ``retry_count``, and the ``error_log`` row plus the error
+        file keep the traceback. A job recorded here is selected again by the
+        phase queries and by ``retry-errors`` instead of being stranded.
+
+        Error logging is best effort: a disk failure there is reported and
+        never blocks the status update, because the status update is what
+        keeps the job recoverable.
+        """
+        message = str(message).strip() or f"{self.phase.value} failed"
+        retry_attempt = job.retry_count + 1
+        try:
+            self.db.log_error(
+                job.job_id,
+                self.phase.value,
+                error_type,
+                message,
+                error_traceback,
+                input_data=input_data,
+                retry_attempt=retry_attempt
+            )
+        except Exception as log_exc:
+            print(
+                f"  ! Could not log the {self.phase.value} error for "
+                f"{job.job_id}: {log_exc}"
+            )
+        self.db.update_job(
+            job.job_id,
+            status=Status.FAILED.value,
+            error_message=message,
+            error_phase=self.phase.value,
+            retry_count=retry_attempt
+        )
+        self._recorded_failures.add(job.job_id)
+        return message
+    
+    def _record_returned_failure(self, job: Job, message: str):
+        """Record a returned failure the processor did not record itself.
+
+        A processor that returns False without recording the failure would
+        leave the job ``in_progress``, so the batch records it here. Jobs the
+        processor already recorded are skipped so the failure is written
+        once.
+        """
+        if job.job_id in self._recorded_failures:
+            return
+        try:
+            self.record_failure(job, message, "PhaseFailure")
+        except Exception as record_exc:
+            print(
+                f"  ! Could not record the {self.phase.value} failure for "
+                f"{job.job_id}: {record_exc}. The job is still in_progress; "
+                f"reclaim it with 'retry-errors --job-id {job.job_id}' once "
+                f"the database is writable again."
+            )
+    
     def process_batch(self, batch_size: int = 10, dry_run: bool = False) -> Dict:
         """Process a batch of jobs in the current phase"""
         batch_size = require_positive_int(batch_size, "batch_size")
+
+        # An earlier run interrupted between the in_progress update and the
+        # outcome update left its jobs claimed, which the phase queries below
+        # do not select. Reclaim them first so the batch sees the work.
+        reclaimed = self.db.reclaim_stale_in_progress(self.phase.value)
+        if reclaimed:
+            print(
+                f"Reclaimed {reclaimed} stale in_progress job(s) for phase: "
+                f"{self.phase.value}"
+            )
 
         # Get pending jobs for this phase
         jobs = self.db.get_jobs_by_phase(
@@ -691,6 +854,10 @@ class PhaseProcessor:
             "failed": 0,
             "jobs": []
         }
+        
+        # Failures are recorded per batch, so a job that is retried in a later
+        # batch records its own failure.
+        self._recorded_failures.clear()
         
         print(f"\n{'='*60}")
         print(f"Processing {len(jobs)} jobs for phase: {self.phase.value}")
@@ -722,6 +889,9 @@ class PhaseProcessor:
                     })
                 else:
                     print(f"  ✗ Failed ({duration:.1f}s): {message}")
+                    # A processor that returned False without recording the
+                    # failure would leave the job in_progress.
+                    self._record_returned_failure(job, message)
                     results["failed"] += 1
                     results["jobs"].append({
                         "job_id": job.job_id,
@@ -736,24 +906,9 @@ class PhaseProcessor:
                 
                 print(f"  ✗ Exception ({duration:.1f}s): {error_msg}")
                 
-                # Log error
-                self.db.log_error(
-                    job.job_id,
-                    self.phase.value,
-                    type(e).__name__,
-                    error_msg,
-                    error_tb,
-                    retry_attempt=job.retry_count
-                )
-                
-                # Update job
-                self.db.update_job(
-                    job.job_id,
-                    status=Status.FAILED.value,
-                    error_message=error_msg,
-                    error_phase=self.phase.value,
-                    retry_count=job.retry_count + 1
-                )
+                # Log error and move the job out of in_progress, so an
+                # exception cannot strand it either.
+                self.record_failure(job, error_msg, type(e).__name__, error_tb)
                 
                 results["failed"] += 1
                 results["jobs"].append({
@@ -892,14 +1047,12 @@ class OCRProcessor(PhaseProcessor):
         
         # Verify S3 original key is present and accessible before starting Textract
         if not job.s3_original_key:
-            self.db.update_job(
-                job.job_id,
-                status=Status.FAILED.value,
-                error_message="Missing s3_original_key",
-                error_phase=self.phase.value,
-                retry_count=job.retry_count + 1
+            self.record_failure(
+                job,
+                "Missing s3_original_key",
+                "MissingS3Key",
+                input_data="s3_original_key is empty"
             )
-            self.db.log_error(job.job_id, self.phase.value, "MissingS3Key", "s3_original_key is empty")
             return False, "Missing s3_original_key"
 
         try:
@@ -909,14 +1062,7 @@ class OCRProcessor(PhaseProcessor):
 
         if not exists:
             msg = f"S3 object not found or inaccessible: {job.s3_original_key}"
-            self.db.update_job(
-                job.job_id,
-                status=Status.FAILED.value,
-                error_message=msg,
-                error_phase=self.phase.value,
-                retry_count=job.retry_count + 1
-            )
-            self.db.log_error(job.job_id, self.phase.value, "InvalidS3Object", msg)
+            self.record_failure(job, msg, "InvalidS3Object")
             return False, msg
 
         # Start Textract job
@@ -932,14 +1078,10 @@ class OCRProcessor(PhaseProcessor):
             )
             textract_job_id = response['JobId']
         except Exception as e:
-            self.db.update_job(
-                job.job_id,
-                status=Status.FAILED.value,
-                error_message=f"Textract start failed: {str(e)}",
-                error_phase=self.phase.value,
-                retry_count=job.retry_count + 1
+            self.record_failure(
+                job, f"Textract start failed: {str(e)}", "TextractStartError",
+                traceback.format_exc()
             )
-            self.db.log_error(job.job_id, self.phase.value, "TextractStartError", str(e))
             return False, f"Textract start failed: {str(e)}"
         
         # Poll for completion
@@ -956,31 +1098,27 @@ class OCRProcessor(PhaseProcessor):
                     break
                 elif status == 'FAILED':
                     error_msg = status_response.get('StatusMessage', 'Unknown error')
-                    self.db.update_job(
-                        job.job_id,
-                        status=Status.FAILED.value,
-                        error_message=f"Textract failed: {error_msg}",
-                        error_phase=self.phase.value,
-                        retry_count=job.retry_count + 1
+                    self.record_failure(
+                        job, f"Textract failed: {error_msg}", "TextractJobFailed"
                     )
-                    self.db.log_error(job.job_id, self.phase.value, "TextractJobFailed", error_msg)
                     return False, f"Textract failed: {error_msg}"
                 
                 time.sleep(poll_interval)
                 elapsed += poll_interval
                 
             except Exception as e:
-                self.db.log_error(job.job_id, self.phase.value, "TextractPollError", str(e))
-                return False, f"Textract poll error: {str(e)}"
+                # A handled polling error used to return False with the job
+                # still in_progress, which removed it from both the phase
+                # queries and retry-errors.
+                return False, self.record_failure(
+                    job,
+                    f"Textract poll error: {str(e)}",
+                    "TextractPollError",
+                    traceback.format_exc()
+                )
         
         if elapsed >= max_wait:
-            self.db.update_job(
-                job.job_id,
-                status=Status.FAILED.value,
-                error_message="Textract timeout",
-                error_phase=self.phase.value,
-                retry_count=job.retry_count + 1
-            )
+            self.record_failure(job, "Textract timeout", "TextractTimeout")
             return False, "Textract timeout"
         
         # Collect all pages
@@ -1004,8 +1142,15 @@ class OCRProcessor(PhaseProcessor):
                     break
                     
             except Exception as e:
-                self.db.log_error(job.job_id, self.phase.value, "TextractResultsError", str(e))
-                return False, f"Error getting results: {str(e)}"
+                # A handled pagination error used to return False with the
+                # job still in_progress, stranding it outside processing and
+                # retry.
+                return False, self.record_failure(
+                    job,
+                    f"Error getting results: {str(e)}",
+                    "TextractResultsError",
+                    traceback.format_exc()
+                )
         
         # Extract text
         lines = []
@@ -1036,13 +1181,7 @@ class OCRProcessor(PhaseProcessor):
         success, s3_key = self.s3.upload_json(ocr_output, job.job_id, "ocr", job.filename)
         
         if not success:
-            self.db.update_job(
-                job.job_id,
-                status=Status.FAILED.value,
-                error_message=f"S3 upload failed: {s3_key}",
-                error_phase=self.phase.value,
-                retry_count=job.retry_count + 1
-            )
+            self.record_failure(job, f"S3 upload failed: {s3_key}", "S3UploadError")
             return False, f"S3 upload failed: {s3_key}"
         
         # Update job and move to next phase
@@ -1077,22 +1216,13 @@ class ParseProcessor(PhaseProcessor):
         # Download OCR output
         success, ocr_data = self.s3.download_json(job.s3_ocr_key)
         if not success:
-            self.db.update_job(
-                job.job_id,
-                status=Status.FAILED.value,
-                error_message=f"Failed to download OCR: {ocr_data.get('error')}",
-                error_phase=self.phase.value
-            )
-            return False, f"Failed to download OCR output"
+            message = f"Failed to download OCR: {ocr_data.get('error')}"
+            self.record_failure(job, message, "OcrDownloadError")
+            return False, "Failed to download OCR output"
         
         extracted_text = ocr_data.get('extracted_text', '')
         if not extracted_text.strip():
-            self.db.update_job(
-                job.job_id,
-                status=Status.FAILED.value,
-                error_message="Empty OCR text",
-                error_phase=self.phase.value
-            )
+            self.record_failure(job, "Empty OCR text", "EmptyOcrText")
             return False, "Empty OCR text"
         
         # Split into bounded chunks. Every chunk stays within the model
@@ -1124,15 +1254,10 @@ class ParseProcessor(PhaseProcessor):
                 f"Parsing incomplete: {len(failed_chunks)} of {len(chunks)} chunks "
                 f"unprocessed ({unprocessed_chars} characters) - {details}"
             )
-            self.db.update_job(
-                job.job_id,
-                status=Status.FAILED.value,
-                error_message=message,
-                error_phase=self.phase.value,
-                retry_count=job.retry_count + 1
-            )
-            self.db.log_error(
-                job.job_id, self.phase.value, "ParseIncomplete", message,
+            self.record_failure(
+                job,
+                message,
+                "ParseIncomplete",
                 input_data=json.dumps(failed_chunks)[:2000]
             )
             return False, message
@@ -1144,12 +1269,7 @@ class ParseProcessor(PhaseProcessor):
         total_questions = sum(len(e.get('questions', [])) for e in exams)
         
         if total_questions == 0:
-            self.db.update_job(
-                job.job_id,
-                status=Status.FAILED.value,
-                error_message="No questions parsed",
-                error_phase=self.phase.value
-            )
+            self.record_failure(job, "No questions parsed", "NoQuestionsParsed")
             return False, "No questions parsed"
         
         # Add metadata
@@ -1168,13 +1288,8 @@ class ParseProcessor(PhaseProcessor):
         success, s3_key = self.s3.upload_json(parsed_data, job.job_id, "parsed", job.filename)
         
         if not success:
-            self.db.update_job(
-                job.job_id,
-                status=Status.FAILED.value,
-                error_message=f"S3 upload failed: {s3_key}",
-                error_phase=self.phase.value
-            )
-            return False, f"S3 upload failed"
+            self.record_failure(job, f"S3 upload failed: {s3_key}", "S3UploadError")
+            return False, "S3 upload failed"
         
         # Update job
         self.db.update_job(
@@ -1366,11 +1481,8 @@ class EnrichProcessor(PhaseProcessor):
         # Download parsed output
         success, parsed_data = self.s3.download_json(job.s3_parsed_key)
         if not success:
-            self.db.update_job(
-                job.job_id,
-                status=Status.FAILED.value,
-                error_message="Failed to download parsed data",
-                error_phase=self.phase.value
+            self.record_failure(
+                job, "Failed to download parsed data", "ParsedDownloadError"
             )
             return False, "Failed to download parsed data"
         
@@ -1398,12 +1510,7 @@ class EnrichProcessor(PhaseProcessor):
                     batch, subject, batch_number
                 )
                 if failure:
-                    self.db.update_job(
-                        job.job_id,
-                        status=Status.FAILED.value,
-                        error_message=failure,
-                        error_phase=self.phase.value
-                    )
+                    self.record_failure(job, failure, "EnrichmentIncomplete")
                     return False, failure
 
                 for j, enrichment in enumerate(enrichments):
@@ -1418,12 +1525,7 @@ class EnrichProcessor(PhaseProcessor):
                     f"Incomplete enrichment: enriched {total_enriched} of "
                     f"{expected_questions} questions"
                 )
-            self.db.update_job(
-                job.job_id,
-                status=Status.FAILED.value,
-                error_message=message,
-                error_phase=self.phase.value
-            )
+            self.record_failure(job, message, "EnrichmentIncomplete")
             return False, message
         
         # Add enrichment metadata
@@ -1434,12 +1536,7 @@ class EnrichProcessor(PhaseProcessor):
         success, s3_key = self.s3.upload_json(parsed_data, job.job_id, "enriched", job.filename)
         
         if not success:
-            self.db.update_job(
-                job.job_id,
-                status=Status.FAILED.value,
-                error_message=f"S3 upload failed",
-                error_phase=self.phase.value
-            )
+            self.record_failure(job, "S3 upload failed", "S3UploadError")
             return False, "S3 upload failed"
         
         # Update job
@@ -1556,11 +1653,8 @@ class OrganizeProcessor(PhaseProcessor):
         # Download enriched output
         success, enriched_data = self.s3.download_json(job.s3_enriched_key)
         if not success:
-            self.db.update_job(
-                job.job_id,
-                status=Status.FAILED.value,
-                error_message="Failed to download enriched data",
-                error_phase=self.phase.value
+            self.record_failure(
+                job, "Failed to download enriched data", "EnrichedDownloadError"
             )
             return False, "Failed to download enriched data"
         
@@ -1780,19 +1874,36 @@ def cmd_retry_errors(args):
     db = DatabaseManager()
     
     if args.all:
-        for phase in ['ocr', 'parse', 'enrich', 'organize']:
+        for phase in RETRYABLE_PHASES:
             count = db.bulk_mark_for_retry(phase)
             print(f"Marked {count} {phase} failures for retry")
     elif args.phase:
-        count = db.bulk_mark_for_retry(args.phase)
+        try:
+            count = db.bulk_mark_for_retry(args.phase)
+        except ValueError as invalid_phase:
+            print(f"Cannot retry {args.phase}: {invalid_phase}")
+            return
         print(f"Marked {count} {args.phase} failures for retry")
     elif args.job_id:
         job = db.get_job(args.job_id)
-        if job:
-            db.mark_for_retry(args.job_id, job.error_phase)
-            print(f"Marked job {args.job_id} for retry")
-        else:
+        if not job:
             print(f"Job not found: {args.job_id}")
+            return
+        if job.status not in (Status.FAILED.value, Status.RETRY_PENDING.value):
+            print(
+                f"Job {args.job_id} is {job.status}, not failed. "
+                f"Only failed jobs are retried."
+            )
+            return
+        phase = retry_target_phase(job)
+        if phase is None:
+            print(
+                f"Job {args.job_id} has no retryable phase "
+                f"(current: {job.current_phase}, error: {job.error_phase or 'none'})"
+            )
+            return
+        db.mark_for_retry(args.job_id, phase)
+        print(f"Marked job {args.job_id} for retry in phase: {phase}")
     else:
         print("Specify --phase, --job-id, or --all")
 
@@ -2008,7 +2119,7 @@ def main():
     
     # Retry errors command
     retry_parser = subparsers.add_parser('retry-errors', help='Retry failed jobs')
-    retry_parser.add_argument('--phase', help='Retry failures in specific phase')
+    retry_parser.add_argument('--phase', help=f'Retry failures in specific phase ({", ".join(RETRYABLE_PHASES)})')
     retry_parser.add_argument('--job-id', help='Retry specific job')
     retry_parser.add_argument('--all', action='store_true', help='Retry all failures')
     retry_parser.set_defaults(func=cmd_retry_errors)
