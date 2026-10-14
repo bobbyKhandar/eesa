@@ -110,8 +110,11 @@ class TestHdbscanLabelAssignment(unittest.TestCase):
         def put_object(Bucket, Key, Body, ContentType=None):
             written[Key] = json.loads(Body)
 
+        def question_id_for(number):
+            return module.cluster_question_id(job_id, organized_key, "0", number)
+
         def find_similar(table, query_vector, question_id, filters=None, k=5):
-            if question_id in (f"{job_id}_Q1", f"{job_id}_Q3"):
+            if question_id in (question_id_for("Q1"), question_id_for("Q3")):
                 return []
             return [
                 {
@@ -150,6 +153,137 @@ class TestHdbscanLabelAssignment(unittest.TestCase):
         self.assertEqual(by_number["Q4"]["clusterId"], labels_by_question[f"{job_id}_Q4"])
         self.assertEqual(by_number["Q2"]["similarQuestionIds"], ["Q9"])
         self.assertEqual(by_number["Q4"]["similarQuestionIds"], ["Q9"])
+
+
+class TestRepeatedQuestionNumbersAcrossExams(unittest.TestCase):
+    def test_repeated_q1_in_two_exams_keeps_its_own_similarity(self):
+        """One file with two exams must not alias both Q1 rows.
+
+        LanceDB ids used to be ``{job_id}_{question_number}``. Write-back then
+        matched only that number, so the later exam's similarity landed on
+        every Q1 in the file and frequency was computed from the first Q1.
+        """
+        job_id = "job-repeat"
+        organized_key = f"jobs/{job_id}/organized_output/papers.json"
+        source = {
+            "exams": [
+                {
+                    "subject": "Operating Systems",
+                    "year": "2020",
+                    "semester": "V",
+                    "examType": "main",
+                    "branch": "CSE",
+                    "questions": [
+                        _question("Q1", "exam-a process scheduling", "2020"),
+                    ],
+                },
+                {
+                    "subject": "Operating Systems",
+                    "year": "2024",
+                    "semester": "V",
+                    "examType": "kt",
+                    "branch": "CSE",
+                    "questions": [
+                        _question("Q1", "exam-b deadlock detection", "2024"),
+                    ],
+                },
+            ]
+        }
+        expected_ids = {
+            "exam-a": f"{job_id}::{organized_key}::0::Q1",
+            "exam-b": f"{job_id}::{organized_key}::1::Q1",
+        }
+        written = {}
+        added_records = {}
+
+        def get_object(Bucket, Key):
+            return {"Body": io.BytesIO(json.dumps(source).encode("utf-8"))}
+
+        def put_object(Bucket, Key, Body, ContentType=None):
+            written[Key] = json.loads(Body)
+
+        def generate_embedding(text):
+            if "exam-a" in text:
+                return np.array([1.0, 0.0, 0.0], dtype=np.float32)
+            if "exam-b" in text:
+                return np.array([0.0, 1.0, 0.0], dtype=np.float32)
+            return np.array([0.0, 0.0, 1.0], dtype=np.float32)
+
+        def find_similar(table, query_vector, question_id, filters=None, k=5):
+            if query_vector[0] == 1.0:
+                return [
+                    {
+                        "id": "prior-a",
+                        "question_number": "Q9",
+                        "similarity": 0.91,
+                        "year": "2011",
+                    }
+                ]
+            if query_vector[1] == 1.0:
+                return [
+                    {
+                        "id": "prior-b",
+                        "question_number": "Q8",
+                        "similarity": 0.92,
+                        "year": "2012",
+                    }
+                ]
+            return []
+
+        table = MagicMock()
+
+        def add(records):
+            added_records["records"] = records
+
+        table.add.side_effect = add
+
+        module = _clustering
+        module.get_or_create_lancedb_table = lambda table_name="questions": table
+        module.generate_embedding = generate_embedding
+        module.find_similar_questions_lancedb = find_similar
+        module.cluster_with_hdbscan = lambda vectors: np.array([7, 8])
+        module.s3_client = MagicMock()
+        module.s3_client.list_objects_v2.return_value = {
+            "Contents": [{"Key": organized_key}]
+        }
+        module.s3_client.get_object.side_effect = get_object
+        module.s3_client.put_object.side_effect = put_object
+
+        result = module.cluster_questions_for_job(job_id, "papers.pdf")
+
+        self.assertIsNotNone(result)
+        ids = [record["id"] for record in added_records["records"]]
+        self.assertEqual(ids, [expected_ids["exam-a"], expected_ids["exam-b"]])
+
+        exams = written[organized_key]["exams"]
+        first = exams[0]["questions"][0]
+        second = exams[1]["questions"][0]
+        self.assertEqual(first["similarQuestionIds"], ["Q9"])
+        self.assertEqual(first["appearanceFrequency"]["years"], [2011, 2020])
+        self.assertEqual(first["clusterId"], 7)
+        self.assertEqual(second["similarQuestionIds"], ["Q8"])
+        self.assertEqual(second["appearanceFrequency"]["years"], [2012, 2024])
+        self.assertEqual(second["clusterId"], 8)
+        self.assertNotIn("cluster_question_id", first)
+        self.assertNotIn("cluster_question_id", second)
+
+    def test_exam_id_is_used_when_the_exam_has_one(self):
+        module = _clustering
+        self.assertEqual(module.exam_cluster_identity({"examId": "kt-2024"}, 1), "kt-2024")
+        self.assertEqual(module.exam_cluster_identity({"year": "2020"}, 1), "1")
+        self.assertEqual(
+            module.question_cluster_identity({"questionId": "q-42", "question_number": "Q1"}, 0),
+            "q-42",
+        )
+        self.assertEqual(
+            module.cluster_question_id(
+                "job-repeat",
+                "jobs/job-repeat/organized_output/papers.json",
+                "kt-2024",
+                "Q1",
+            ),
+            "job-repeat::jobs/job-repeat/organized_output/papers.json::kt-2024::Q1",
+        )
 
 
 if __name__ == "__main__":

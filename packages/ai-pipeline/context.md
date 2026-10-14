@@ -58,7 +58,7 @@
 | `src/organize_by_subject_job_based.py` | Groups enriched questions into subject-organized JSON on S3 |
 | `src/intelligent_chunking.py` | Splits large OCR text (20k+ chars) at question boundaries. If no boundary exists, or one section exceeds `max_chars_per_chunk`, falls back to paragraph, then line, then hard character splits so every chunk stays within the maximum. Continuation pieces set `is_continuation` |
 | `src/chunk_merger.py` | Validates and merges chunked parsing results. `build_enriched_chunk` copies parsing's `chunk_metadata` — including `is_continuation` and `starts_at_question` — onto each enriched chunk so an exam that crosses a chunk boundary stays one exam |
-| `src/question_clustering.py` | LanceDB vector store + FAISS/HDBSCAN for similarity clustering and appearance frequency |
+| `src/question_clustering.py` | LanceDB vector store + FAISS/HDBSCAN for similarity clustering and appearance frequency. LanceDB ids are `{job}::{organized source key}::{exam id or index}::{question id or number}`, and similarity is written back to that question |
 | `src/local_ocr_engine.py` | EasyOCR-based OCR engine with GPU auto-detect |
 | `src/local_image_processor_pipeline.py` | Image preprocessing (denoise, sharpen, binarize, deskew, contrast enhancement) |
 | `src/pdf_handler.py` | Incremental PDF page rendering via PyMuPDF, with page-count and pixel limits |
