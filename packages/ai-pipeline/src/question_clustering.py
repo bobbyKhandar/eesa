@@ -231,6 +231,44 @@ def find_similar_questions_lancedb(
         return []
 
 
+def _present_identity(record: Dict, fields: Tuple[str, ...]) -> Optional[str]:
+    """First non-empty identity field, as text."""
+    for field in fields:
+        value = record.get(field)
+        if value is None:
+            continue
+        text = str(value).strip()
+        if text:
+            return text
+    return None
+
+
+def exam_cluster_identity(exam: Dict, exam_index: int) -> str:
+    """Exam id when the organized exam has one, otherwise its index in the file."""
+    return _present_identity(exam, ("id", "exam_id", "examId")) or str(exam_index)
+
+
+def question_cluster_identity(question: Dict, question_index: int) -> str:
+    """Question id when present, otherwise its number, otherwise its index."""
+    explicit = _present_identity(question, ("id", "question_id", "questionId"))
+    if explicit:
+        return explicit
+    number = question.get("question_number", question.get("questionNumber"))
+    if number is not None and str(number).strip() != "":
+        return str(number)
+    return str(question_index)
+
+
+def cluster_question_id(
+    job_id: str,
+    source_key: str,
+    exam_identity: str,
+    question_identity: str,
+) -> str:
+    """Stable LanceDB id. Question numbers repeat across exams in one file."""
+    return f"{job_id}::{source_key}::{exam_identity}::{question_identity}"
+
+
 def calculate_appearance_frequency(
     table,
     question: Dict,
@@ -320,19 +358,27 @@ def cluster_questions_for_job(job_id: str, filename: str) -> Optional[Dict]:
                 data = json.loads(obj_response['Body'].read().decode('utf-8'))
                 
                 if isinstance(data, dict) and 'exams' in data:
-                    for exam in data['exams']:
-                        if 'questions' in exam:
-                            for q in exam['questions']:
-                                # Add exam metadata to question
-                                q['subject'] = exam.get('subject', 'Unknown')
-                                q['year'] = exam.get('year', 'Unknown')
-                                q['semester'] = exam.get('semester', 'Unknown')
-                                q['exam_type'] = exam.get('examType', 'main')
-                                q['branch'] = exam.get('branch', 'CSE')
-                                q['source_file'] = key
-                                q['job_id'] = job_id
-                                
-                                all_questions.append(q)
+                    for exam_index, exam in enumerate(data['exams']):
+                        if 'questions' not in exam:
+                            continue
+                        exam_identity = exam_cluster_identity(exam, exam_index)
+                        for question_index, q in enumerate(exam['questions']):
+                            # Add exam metadata to question
+                            q['subject'] = exam.get('subject', 'Unknown')
+                            q['year'] = exam.get('year', 'Unknown')
+                            q['semester'] = exam.get('semester', 'Unknown')
+                            q['exam_type'] = exam.get('examType', 'main')
+                            q['branch'] = exam.get('branch', 'CSE')
+                            q['source_file'] = key
+                            q['job_id'] = job_id
+                            q['_cluster_question_id'] = cluster_question_id(
+                                job_id,
+                                key,
+                                exam_identity,
+                                question_cluster_identity(q, question_index),
+                            )
+
+                            all_questions.append(q)
         
         if not all_questions:
             print(f"   ✗ No questions found in organized output")
@@ -355,8 +401,9 @@ def cluster_questions_for_job(job_id: str, filename: str) -> Optional[Dict]:
             if embedding is None:
                 continue
             
-            # Prepare record for LanceDB
-            question_id = f"{job_id}_{q.get('question_number', idx)}"
+            # Prepare record for LanceDB. The id includes the organized
+            # source and exam so repeated question numbers stay distinct.
+            question_id = q["_cluster_question_id"]
             record = {
                 "id": question_id,
                 "question_number": str(q.get('question_number', q.get('questionNumber', f'Q{idx+1}'))),
@@ -411,9 +458,11 @@ def cluster_questions_for_job(job_id: str, filename: str) -> Optional[Dict]:
                 # Extract similar question IDs and calculate appearance frequency
                 similar_ids = [s['question_number'] for s in similar]
                 
-                # Calculate frequency based on original question data
-                original_q = next((q for q in all_questions if 
-                                 f"{job_id}_{q.get('question_number', '')}" == record['id']), {})
+                # Calculate frequency from the question this record was built for.
+                original_q = next(
+                    (q for q in all_questions if q.get("_cluster_question_id") == record["id"]),
+                    {},
+                )
                 
                 frequency = calculate_appearance_frequency(table, original_q, similar)
                 
@@ -473,18 +522,25 @@ def cluster_questions_for_job(job_id: str, filename: str) -> Optional[Dict]:
                 
                 # Update questions in the data
                 if isinstance(data, dict) and 'exams' in data:
-                    for exam in data['exams']:
-                        if 'questions' in exam:
-                            for i, q in enumerate(exam['questions']):
-                                q_num = str(q.get('question_number', q.get('questionNumber')))
-                                
-                                # Find matching similarity data
-                                for sim_data in sim_list:
-                                    if sim_data['question_number'] == q_num:
-                                        exam['questions'][i]['similarQuestionIds'] = sim_data['similar_ids']
-                                        exam['questions'][i]['appearanceFrequency'] = sim_data['appearance_frequency']
-                                        if sim_data['cluster_id'] is not None:
-                                            exam['questions'][i]['clusterId'] = sim_data['cluster_id']
+                    for exam_index, exam in enumerate(data['exams']):
+                        if 'questions' not in exam:
+                            continue
+                        exam_identity = exam_cluster_identity(exam, exam_index)
+                        for i, q in enumerate(exam['questions']):
+                            cluster_id = cluster_question_id(
+                                job_id,
+                                source_key,
+                                exam_identity,
+                                question_cluster_identity(q, i),
+                            )
+                            for sim_data in sim_list:
+                                if sim_data['id'] != cluster_id:
+                                    continue
+                                exam['questions'][i]['similarQuestionIds'] = sim_data['similar_ids']
+                                exam['questions'][i]['appearanceFrequency'] = sim_data['appearance_frequency']
+                                if sim_data['cluster_id'] is not None:
+                                    exam['questions'][i]['clusterId'] = sim_data['cluster_id']
+                                break
                 
                 # Save back to S3
                 s3_client.put_object(
