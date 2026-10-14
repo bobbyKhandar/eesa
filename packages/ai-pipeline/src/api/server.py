@@ -22,15 +22,85 @@ from .service_auth import assert_trusted_bind
 current_dir = Path(__file__).parent.parent
 sys.path.insert(0, str(current_dir))
 
-# --- Local Pipeline ---
-try:
-    from pipeline_manager import pipeline_manager
-except ImportError:
+
+class LazyLocalPipeline:
+    """Load the optional local OCR pipeline the first time a local route needs it.
+
+    Importing ``pipeline_manager`` imports ``redis_client``, which pings
+    localhost Redis and raises ``RuntimeError`` when that ping fails. The
+    module then constructs the OCR singleton. Doing either while the Flask
+    app is created takes AWS WSGI down with the local queue. A missing Redis
+    server or OCR dependency is reported by the local routes as a 503 instead.
+    """
+
+    def __init__(self):
+        self._manager = None
+        self._error = None
+        self._loaded = False
+        self._lock = threading.Lock()
+
+    def __bool__(self):
+        return self._manager is not None
+
+    @property
+    def is_running(self):
+        manager = self._manager
+        if manager is None:
+            return False
+        return bool(getattr(manager, "is_running", False))
+
+    def resolve_local_pipeline(self):
+        """Return ``(manager, error)``. ``error`` is set when local OCR cannot start."""
+        with self._lock:
+            if self._loaded:
+                return self._manager, self._error
+            self._loaded = True
+            try:
+                manager = _import_pipeline_manager()
+                if hasattr(manager, "start_server"):
+                    manager.start_server()
+            except Exception as exc:
+                self._manager = None
+                self._error = "Local pipeline not available: %s" % (exc,)
+                print("Warning: %s" % (self._error,))
+                return None, self._error
+            self._manager = manager
+            self._error = None
+            return manager, None
+
+    def stop_server(self):
+        manager = self._manager
+        if manager is None or not hasattr(manager, "stop_server"):
+            return
+        try:
+            manager.stop_server()
+        except Exception as exc:
+            print("Warning: Error stopping local pipeline: %s" % (exc,))
+
+
+def _import_pipeline_manager():
+    """Import the local singleton.
+
+    A missing ``pipeline_manager`` module tries the package-relative import.
+    An ``ImportError`` raised while that module loads (OpenCV, EasyOCR, and
+    the rest of the local stack) is kept so the 503 names the missing
+    dependency. Redis connection failures are ``RuntimeError`` and propagate
+    unchanged.
+    """
     try:
-        from .pipeline_manager import pipeline_manager
-    except ImportError:
-        print("Warning: Local pipeline_manager not found. Local routes will not work.")
-        pipeline_manager = None
+        from pipeline_manager import pipeline_manager as manager
+    except ImportError as first_error:
+        if getattr(first_error, "name", None) != "pipeline_manager":
+            raise
+        try:
+            from .pipeline_manager import pipeline_manager as manager
+        except ImportError:
+            raise first_error from None
+    return manager
+
+
+# Resolved on the first local route. Importing it here would ping Redis.
+pipeline_manager = LazyLocalPipeline()
 
 # --- Module-level Flask app (for WSGI) ---
 app = Flask(__name__)
@@ -39,14 +109,6 @@ CORS(app)
 aws_manager = AWSPipelineManager()
 # register_routes caps every request body with MAX_CONTENT_LENGTH.
 register_routes(app, aws_manager, pipeline_manager)
-
-# Start local pipeline if available
-if pipeline_manager:
-    try:
-        if hasattr(pipeline_manager, 'start_server'):
-            pipeline_manager.start_server()
-    except Exception as e:
-        print(f"Warning: Could not start local pipeline: {e}")
 
 
 def cleanup_resources():
