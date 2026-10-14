@@ -10,6 +10,7 @@ It resends these files through the appropriate AWS Bedrock pipeline to attempt r
 
 import os
 import json
+import sys
 import boto3
 import time
 import re
@@ -19,9 +20,22 @@ from typing import Dict, List, Tuple, Optional
 import concurrent.futures
 from botocore.config import Config
 
+# Add src to path for the shared chunking and merge helpers
+sys.path.insert(0, str(Path(__file__).parent))
+
+from intelligent_chunking import chunk_ocr_text
+from chunk_merger import merge_chunk_exams
+
 # AWS Bedrock Configuration
 BEDROCK_MODEL_ID = "google.gemma-3-27b-it"
 REGION = "us-east-1"
+
+# Recovery input bounds. A document or question set larger than these is
+# processed in bounded chunks/batches that merge only after full coverage,
+# so no source content past the first chunk is silently dropped.
+RECOVERY_CHUNK_MAX_CHARS = 6000
+RECOVERY_ENRICH_BATCH_SIZE = 10
+RECOVERY_ENRICH_MAX_CHARS = 6000
 
 # Paths
 BASE_DIR = Path(__file__).parent.parent
@@ -157,6 +171,103 @@ def validate_and_fix_json(json_str: str) -> Tuple[Optional[str], Optional[str]]:
             return None, f"JSON validation failed: {str(e2)}"
 
 
+# A recovery batch is successful only when every question in it has a
+# usable classification. Fewer entries, extra entries, and invalid fields
+# leave questions unclassified and are reported instead of saved.
+VALID_BLOOM_LEVELS = frozenset({
+    "Recall", "Understand", "Apply", "Analyze", "Evaluate", "Create",
+})
+VALID_DIFFICULTIES = frozenset({"Easy", "Medium", "Hard"})
+
+
+def _classification_problem(entry) -> str:
+    """Return why an enrichment entry is unusable, or an empty string."""
+    if not isinstance(entry, dict):
+        return "entry must be an object"
+    if entry.get("bloomLevel") not in VALID_BLOOM_LEVELS:
+        return (
+            "bloomLevel must be one of Recall, Understand, Apply, Analyze, "
+            "Evaluate, Create"
+        )
+    if entry.get("difficulty") not in VALID_DIFFICULTIES:
+        return "difficulty must be Easy, Medium, or Hard"
+    for field in ("keywords", "topicsCovered"):
+        values = entry.get(field)
+        if not isinstance(values, list) or not all(
+            isinstance(item, str) and item.strip() for item in values
+        ):
+            return f"{field} must be a list of non-empty strings"
+    return ""
+
+
+def _require_complete_batch(expected: int, entries, expected_indexes: set) -> None:
+    """Reject a model payload that does not classify the whole batch."""
+    if not isinstance(entries, list):
+        raise ValueError(
+            f"expected {expected} enrichment entries, got 0: "
+            "response was not a JSON array"
+        )
+    if len(entries) != expected:
+        raise ValueError(
+            f"expected {expected} enrichment entries, got {len(entries)}"
+        )
+    returned = set()
+    for index, entry in enumerate(entries):
+        problem = _classification_problem(entry)
+        if problem:
+            raise ValueError(
+                f"expected {expected} enrichment entries, got {len(entries)}: "
+                f"invalid entry at index {index} ({problem})"
+            )
+        question_index = entry.get("questionIndex")
+        if question_index not in expected_indexes:
+            raise ValueError(
+                f"expected {expected} enrichment entries, got {len(entries)}: "
+                f"entry at index {index} has questionIndex {question_index!r} "
+                "outside this batch"
+            )
+        returned.add(question_index)
+    missing = sorted(expected_indexes - returned)
+    if missing:
+        raise ValueError(
+            f"expected {expected} enrichment entries, got {len(entries)}: "
+            f"missing classifications for questions {missing}"
+        )
+
+
+def _question_block(question: Dict, index: int) -> str:
+    """Render one question for the enrichment prompt, keeping its index."""
+    marks = question.get('marks', 'N/A')
+    q_type = question.get('questionType', 'text')
+    block = f"\n[Question {index}] ({marks} marks, {q_type})\n{question.get('question_text', '')}\n"
+    if question.get('options'):
+        block += "Options: " + ", ".join(question['options']) + "\n"
+    return block
+
+
+def _enrichment_batches(questions: List[Dict], max_batch: int, max_chars: int) -> List[List[int]]:
+    """Group question indexes into bounded batches.
+
+    A batch stops at the question count or the character budget so every
+    prompt stays within the model input limit. A single question longer
+    than the budget still gets its own batch instead of being dropped.
+    """
+    batches = []
+    current: List[int] = []
+    current_chars = 0
+    for index, question in enumerate(questions):
+        block = _question_block(question, index)
+        if current and (len(current) >= max_batch or current_chars + len(block) > max_chars):
+            batches.append(current)
+            current = []
+            current_chars = 0
+        current.append(index)
+        current_chars += len(block)
+    if current:
+        batches.append(current)
+    return batches
+
+
 def call_bedrock_api(prompt: str, system_prompt: str = "") -> Optional[str]:
     """
     Call AWS Bedrock API with the given prompt.
@@ -201,6 +312,11 @@ def reprocess_parsed_error(error_file_path: Path) -> bool:
     """
     Reprocess a file that failed during initial OCR parsing.
     The error file contains the raw OCR text that needs to be parsed.
+
+    The full text is parsed in bounded chunks. The chunks are merged and
+    saved only when every chunk parsed, so a tail the model could not
+    handle is reported as unprocessed instead of saved as a complete
+    recovery.
     """
     print(f"📝 Reprocessing parsed error: {error_file_path.name}")
     
@@ -236,38 +352,65 @@ Return a valid JSON object with this structure:
 }
 """
         
-        prompt = f"""Extract all questions from this exam paper text. Preserve all question numbers, text, and marks.
+        chunks = chunk_ocr_text(ocr_text, max_chars_per_chunk=RECOVERY_CHUNK_MAX_CHARS)
+        parsed_chunks = []
+        failed_chunks = []
+        
+        for chunk in chunks:
+            prompt = f"""Extract all questions from this exam paper text. Preserve all question numbers, text, and marks.
 
 TEXT:
-{ocr_text[:6000]}  
+{chunk['text']}
 
 Return only valid JSON, no explanations."""
+            
+            # Call Bedrock
+            response = call_bedrock_api(prompt, system_prompt)
+            
+            if not response:
+                print(f"   ❌ No response from Bedrock")
+                failed_chunks.append((chunk, "no response from Bedrock"))
+                continue
+            
+            # Parse the full JSON root and require the exams envelope.
+            parsed_data, error = extract_stage_payload(response, "parsing")
+            
+            if error:
+                print(f"   ❌ JSON validation error: {error}")
+                # Save failed response for debugging
+                failed_path = REPROCESSED_DIR / "failed" / f"{original_name}_parse_failed.txt"
+                cleaned_json = clean_json_response(response)
+                with open(failed_path, 'w', encoding='utf-8') as f:
+                    f.write(f"=== RAW RESPONSE ===\n{response}\n\n")
+                    f.write(f"=== CLEANED ===\n{cleaned_json}\n\n")
+                    f.write(f"=== ERROR ===\n{error}")
+                failed_chunks.append((chunk, error))
+                continue
+            
+            # Keep the continuation marker so exams merge across chunks.
+            parsed_data['is_continuation'] = chunk.get('is_continuation', False) is True
+            parsed_chunks.append(parsed_data)
         
-        # Call Bedrock
-        response = call_bedrock_api(prompt, system_prompt)
-        
-        if not response:
-            print(f"   ❌ No response from Bedrock")
+        if failed_chunks:
+            unprocessed = sum(
+                chunk.get('char_count', len(chunk.get('text', '')))
+                for chunk, _ in failed_chunks
+            )
+            print(
+                f"   ❌ Incomplete recovery: {len(failed_chunks)} of {len(chunks)} "
+                f"chunks unprocessed ({unprocessed} characters)"
+            )
+            for chunk, error in failed_chunks:
+                print(f"      chunk {chunk.get('chunk_id')}: {error}")
             return False
         
-        # Parse the full JSON root and require the exams envelope.
-        parsed_data, error = extract_stage_payload(response, "parsing")
+        # Merge the whole document only after every chunk parsed
+        merged = merge_chunk_exams(parsed_chunks)
         
-        if error:
-            print(f"   ❌ JSON validation error: {error}")
-            # Save failed response for debugging
-            failed_path = REPROCESSED_DIR / "failed" / f"{original_name}_parse_failed.txt"
-            cleaned_json = clean_json_response(response)
-            with open(failed_path, 'w', encoding='utf-8') as f:
-                f.write(f"=== RAW RESPONSE ===\n{response}\n\n")
-                f.write(f"=== CLEANED ===\n{cleaned_json}\n\n")
-                f.write(f"=== ERROR ===\n{error}")
-            return False
-        
-        # Save successfully parsed JSON
+        # Save the recovered parsing envelope
         output_path = REPROCESSED_DIR / "parsed" / f"{original_name}.json"
         with open(output_path, 'w', encoding='utf-8') as f:
-            json.dump(parsed_data, f, indent=2, ensure_ascii=False)
+            json.dump(merged, f, indent=2, ensure_ascii=False)
         
         print(f"   ✅ Successfully reparsed to: {output_path.name}")
         return True
@@ -281,6 +424,11 @@ def reprocess_enriched_error(error_file_path: Path) -> bool:
     """
     Reprocess a file that failed during Bloom's taxonomy enrichment.
     The error file contains the raw Bedrock response that failed JSON parsing.
+
+    Every question is classified in bounded batches. The enriched file is
+    saved only when each batch classifies all of its questions with valid
+    fields, so questions past the first batch are reported as unclassified
+    instead of being silently skipped.
     """
     print(f"🌸 Reprocessing enriched error: {error_file_path.name}")
     
@@ -324,53 +472,79 @@ Return a valid JSON array with this structure:
 ]
 """
         
-        # Prepare questions text
-        questions_text = ""
-        for idx, q in enumerate(all_questions):
-            marks = q.get('marks', 'N/A')
-            q_type = q.get('questionType', 'text')
-            questions_text += f"\n[Question {idx}] ({marks} marks, {q_type})\n{q.get('question_text', '')}\n"
-            if q.get('options'):
-                questions_text += "Options: " + ", ".join(q['options']) + "\n"
+        classifications: List[Optional[Dict]] = [None] * len(all_questions)
+        failed_batches = []
         
-        prompt = f"""Classify each question using Bloom's Taxonomy.
+        for batch in _enrichment_batches(
+            all_questions, RECOVERY_ENRICH_BATCH_SIZE, RECOVERY_ENRICH_MAX_CHARS
+        ):
+            expected_indexes = set(batch)
+            questions_text = "".join(
+                _question_block(all_questions[index], index) for index in batch
+            )
+            
+            prompt = f"""Classify each question using Bloom's Taxonomy.
 
 QUESTIONS:
-{questions_text[:6000]}
+{questions_text}
 
 Return only valid JSON array, no explanations."""
+            
+            # Call Bedrock
+            response = call_bedrock_api(prompt, system_prompt)
+            
+            if not response:
+                print(f"   ❌ No response from Bedrock")
+                failed_batches.append((batch, "no response from Bedrock"))
+                continue
+            
+            # Parse the full JSON root and require an enrichment array that
+            # covers every question in the batch with valid fields.
+            bloom_classifications, error = extract_stage_payload(response, "enrichment")
+            
+            if not error:
+                try:
+                    _require_complete_batch(
+                        len(batch), bloom_classifications, expected_indexes
+                    )
+                except ValueError as exc:
+                    bloom_classifications, error = None, str(exc)
+            
+            if error:
+                print(f"   ❌ JSON validation error: {error}")
+                # Save failed response for debugging
+                failed_path = REPROCESSED_DIR / "failed" / f"{original_name}_bloom_failed.txt"
+                cleaned_json = clean_json_response(response)
+                with open(failed_path, 'w', encoding='utf-8') as f:
+                    f.write(f"=== RAW RESPONSE ===\n{response}\n\n")
+                    f.write(f"=== CLEANED ===\n{cleaned_json}\n\n")
+                    f.write(f"=== ERROR ===\n{error}")
+                failed_batches.append((batch, error))
+                continue
+            
+            for classification in bloom_classifications:
+                classifications[classification['questionIndex']] = classification
         
-        # Call Bedrock
-        response = call_bedrock_api(prompt, system_prompt)
-        
-        if not response:
-            print(f"   ❌ No response from Bedrock")
-            return False
-        
-        # Parse the full JSON root and require an enrichment array.
-        bloom_classifications, error = extract_stage_payload(response, "enrichment")
-        
-        if error:
-            print(f"   ❌ JSON validation error: {error}")
-            # Save failed response for debugging
-            failed_path = REPROCESSED_DIR / "failed" / f"{original_name}_bloom_failed.txt"
-            cleaned_json = clean_json_response(response)
-            with open(failed_path, 'w', encoding='utf-8') as f:
-                f.write(f"=== RAW RESPONSE ===\n{response}\n\n")
-                f.write(f"=== CLEANED ===\n{cleaned_json}\n\n")
-                f.write(f"=== ERROR ===\n{error}")
+        if failed_batches:
+            unclassified = sum(len(batch) for batch, _ in failed_batches)
+            message = (
+                f"Incomplete enrichment: {unclassified} of {len(all_questions)} "
+                f"questions unclassified"
+            )
+            print(f"   ❌ {message}")
+            for batch, error in failed_batches:
+                print(f"      questions {batch[0]}-{batch[-1]}: {error}")
             return False
         
         # Merge Bloom's data back into questions
-        for classification in bloom_classifications:
-            idx = classification.get('questionIndex', -1)
-            if 0 <= idx < len(all_questions):
-                all_questions[idx]['bloomLevel'] = classification.get('bloomLevel')
-                all_questions[idx]['bloomJustification'] = classification.get('bloomJustification')
-                all_questions[idx]['confidence'] = classification.get('confidence')
-                all_questions[idx]['difficulty'] = classification.get('difficulty')
-                all_questions[idx]['keywords'] = classification.get('keywords', [])
-                all_questions[idx]['topicsCovered'] = classification.get('topicsCovered', [])
+        for index, classification in enumerate(classifications):
+            question = all_questions[index]
+            question['bloomLevel'] = classification.get('bloomLevel')
+            question['bloomJustification'] = classification.get('bloomJustification')
+            question['confidence'] = classification.get('confidence')
+            question['difficulty'] = classification.get('difficulty')
+            question['keywords'] = classification.get('keywords', [])
+            question['topicsCovered'] = classification.get('topicsCovered', [])
         
         # Reconstruct exam data with enriched questions
         enriched_data = {

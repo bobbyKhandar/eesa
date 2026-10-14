@@ -323,6 +323,133 @@ def build_enriched_chunk(parsed_chunk: Dict, enriched_exams: List[Dict], chunk_i
     return enriched
 
 
+def _chunk_is_continuation(parsed_chunk: Dict) -> bool:
+    """Read the continuation flag from the payload or its chunk metadata."""
+    if 'is_continuation' in parsed_chunk:
+        return parsed_chunk.get('is_continuation') is True
+    metadata = parsed_chunk.get('chunk_metadata')
+    if isinstance(metadata, dict) and 'is_continuation' in metadata:
+        return metadata.get('is_continuation') is True
+    return False
+
+
+def _same_question(first: Dict, second: Dict) -> bool:
+    """True when two payloads describe the same numbered question."""
+    number = str(first.get('question_number', '') or '').strip().lower()
+    return bool(number) and number == str(second.get('question_number', '') or '').strip().lower()
+
+
+def _merge_split_question(first: Dict, second: Dict) -> Dict:
+    """Merge one question that a chunk boundary split in two."""
+    merged = dict(first)
+
+    text_first = str(first.get('question_text', '') or '').strip()
+    text_second = str(second.get('question_text', '') or '').strip()
+    if text_first and text_second:
+        if text_first in text_second or text_second in text_first:
+            # One payload repeated the question; keep the fuller text.
+            merged['question_text'] = (
+                first['question_text'] if len(text_first) >= len(text_second)
+                else second['question_text']
+            )
+        else:
+            # The boundary cut the question in two; join the pieces.
+            merged['question_text'] = f"{text_first} {text_second}".strip()
+    elif text_second:
+        merged['question_text'] = second['question_text']
+
+    if not merged.get('marks') and second.get('marks'):
+        merged['marks'] = second['marks']
+
+    options = second.get('options')
+    if options:
+        combined = list(merged.get('options') or [])
+        for option in options:
+            if option not in combined:
+                combined.append(option)
+        merged['options'] = combined
+
+    return merged
+
+
+def _continues_last_exam(last_exam: Dict, continuation_exam: Dict) -> bool:
+    """True when a continuation chunk's exam belongs to the exam already kept.
+
+    A different subject inside a continuation chunk is a new exam that
+    starts mid-document, not the same exam continuing.
+    """
+    target_subject = str(last_exam.get('subject', '') or '').strip().lower()
+    next_subject = str(continuation_exam.get('subject', '') or '').strip().lower()
+    if target_subject and next_subject and target_subject != next_subject:
+        return False
+    return True
+
+
+def _append_continuation_exam(exams: List[Dict], continuation_exam: Dict) -> None:
+    """Merge a continuation chunk's first exam into the exam already kept.
+
+    A question that the chunk boundary split keeps one entry instead of
+    becoming two half questions.
+    """
+    if not exams or not isinstance(continuation_exam, dict):
+        if isinstance(continuation_exam, dict):
+            exams.append(continuation_exam)
+        return
+
+    last_exam = exams[-1]
+    questions = continuation_exam.get('questions')
+    questions = list(questions) if isinstance(questions, list) else []
+    existing = last_exam.get('questions')
+    existing = list(existing) if isinstance(existing, list) else []
+
+    if questions and existing and _same_question(existing[-1], questions[0]):
+        existing[-1] = _merge_split_question(existing[-1], questions[0])
+        questions = questions[1:]
+
+    last_exam['questions'] = existing + questions
+    if not last_exam.get('subject') and continuation_exam.get('subject'):
+        last_exam['subject'] = continuation_exam['subject']
+
+
+def merge_chunk_exams(parsed_chunks: List[Dict]) -> Dict:
+    """Merge parsed chunk payloads into one exams envelope.
+
+    Each payload holds the exams its chunk produced. A continuation
+    payload starts mid-document: its first exam continues the exam already
+    collected, and a question split across the boundary is merged instead
+    of duplicated. Every other exam in that payload stays its own exam, so
+    a chunk that contains more than one exam keeps all of them. Callers
+    merge only after every chunk parsed, which keeps the envelope covering
+    the whole document.
+    """
+    exams: List[Dict] = []
+    subjects: List[str] = []
+
+    for parsed_chunk in parsed_chunks:
+        chunk_exams = parsed_chunk.get('exams')
+        if not isinstance(chunk_exams, list):
+            continue
+        remaining = list(chunk_exams)
+
+        if (
+            _chunk_is_continuation(parsed_chunk)
+            and remaining
+            and exams
+            and _continues_last_exam(exams[-1], remaining[0])
+        ):
+            _append_continuation_exam(exams, remaining.pop(0))
+
+        exams.extend(remaining)
+
+        chunk_subjects = parsed_chunk.get('subjectsCreated')
+        if isinstance(chunk_subjects, list):
+            for subject in chunk_subjects:
+                if subject and subject not in subjects:
+                    subjects.append(subject)
+
+    return {'exams': exams, 'subjectsCreated': subjects}
+
+
 def merge_chunks(parsed_chunks: List[Dict]) -> Dict:
     """
     Main function to merge parsed chunks
