@@ -105,14 +105,14 @@ processDocuments().catch(console.error);
 
 ### Python AI Pipeline
 
-#### 1. OCR Engine (`ocr_engine.py`)
+#### 1. OCR Engine (`local_ocr_engine.py`)
 - ✅ EasyOCR integration
 - ✅ GPU/CPU auto-detection
 - ✅ Confidence threshold filtering
 - ✅ Text sanitization
 - ✅ Multi-language support
 
-#### 2. Image Processor (`image_processor.py`)
+#### 2. Image Processor (`local_image_processor_pipeline.py`)
 - ✅ Adaptive resizing
 - ✅ CLAHE contrast enhancement
 - ✅ Non-local means denoising
