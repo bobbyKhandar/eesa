@@ -7,9 +7,9 @@
  */
 
 import { Types } from "mongoose";
-import type { Model } from "mongoose";
+import type { Model, PipelineStage } from "mongoose";
 import { connect } from "../connect.js";
-import { getExamSubmissionModel, getUserModel } from "../mongooseSchemas.js";
+import { getExamModel, getExamSubmissionModel, getUserModel } from "../mongooseSchemas.js";
 import type { ExamSubmissionDocument } from "../schemas/examSubmissionZod.js";
 import { nullIfAbsentId, rethrowReadFailure } from "./readErrors.js";
 import {
@@ -22,9 +22,30 @@ import {
   type ClaimOutcome,
   type GradedExamSubmission,
 } from "../../services/examSubmissionClaim.js";
+import {
+  buildUserResultSummaryPipeline,
+  readSummaryAggregate,
+  type UserResultSummaryAggregate,
+} from "../../services/resultSummary.js";
+import {
+  clampHistoryLimit,
+  decodeHistoryCursor,
+  encodeHistoryCursor,
+  historyPageFilter,
+  isInvalidResultsCursorError,
+  type SubmissionHistoryPageQuery,
+} from "../../services/submissionHistoryPage.js";
 
 /** Lean Mongo rows include `_id`, which the Zod document schema does not describe. */
-type StoredExamSubmission = ExamSubmissionDocument & { _id: { toString(): string } };
+type StoredExamSubmission = ExamSubmissionDocument & {
+  _id: { toString(): string };
+  submittedAt?: Date | string;
+};
+
+export interface SubmissionHistoryPage {
+  submissions: StoredExamSubmission[];
+  nextCursor: string | null;
+}
 
 export class ExamSubmissionRepository {
   private model: Model<ExamSubmissionDocument>;
@@ -311,9 +332,25 @@ export class ExamSubmissionRepository {
   }
 
   /**
-   * Get user's submission history
+   * Every graded submission for a user, newest first, with no limit.
+   * Request paths that render history must pass a page query instead.
    */
-  async getByUser(userId: string): Promise<ExamSubmissionDocument[]> {
+  async getByUser(userId: string): Promise<ExamSubmissionDocument[]>;
+  /**
+   * One page of graded history, newest first.
+   * `limit` defaults to 20 and is clamped to 50. An unusable cursor throws
+   * `InvalidResultsCursorError` instead of a database failure.
+   */
+  async getByUser(
+    userId: string,
+    query: SubmissionHistoryPageQuery,
+  ): Promise<SubmissionHistoryPage>;
+  async getByUser(
+    userId: string,
+    query?: SubmissionHistoryPageQuery,
+  ): Promise<ExamSubmissionDocument[] | SubmissionHistoryPage> {
+    if (query) return this.getHistoryPage(userId, query);
+
     try {
       await connect();
       const submissions = await this.model.find(gradedSubmissionFilter({ userId }))
@@ -321,6 +358,56 @@ export class ExamSubmissionRepository {
         .lean();
       return submissions;
     } catch (error) {
+      rethrowReadFailure(error, 'Error getting user submissions:');
+    }
+  }
+
+  /**
+   * Totals, grades, subjects, and months for every graded submission.
+   * The aggregation does not load submission documents into the process.
+   * A user with no graded rows yields zeroes, not an error.
+   */
+  async summarizeByUser(userId: string): Promise<UserResultSummaryAggregate> {
+    try {
+      await connect();
+      const pipeline = buildUserResultSummaryPipeline(
+        gradedSubmissionFilter({ userId }),
+        getExamModel().collection.collectionName,
+      );
+      const rows = await this.model.aggregate(pipeline as unknown as PipelineStage[]);
+      return readSummaryAggregate(rows);
+    } catch (error) {
+      rethrowReadFailure(error, 'Error summarizing user submissions:');
+    }
+  }
+
+  private async getHistoryPage(
+    userId: string,
+    query: SubmissionHistoryPageQuery,
+  ): Promise<SubmissionHistoryPage> {
+    const cursor = query.cursor ? decodeHistoryCursor(query.cursor) : null;
+    const limit = clampHistoryLimit(query.limit);
+
+    try {
+      await connect();
+      const rows = await this.model
+        .find(historyPageFilter(userId, cursor))
+        .sort({ submittedAt: -1, _id: -1 })
+        .limit(limit + 1)
+        .lean();
+      const stored = rows as StoredExamSubmission[];
+      const hasMore = stored.length > limit;
+      const submissions = hasMore ? stored.slice(0, limit) : stored;
+      const last = submissions[submissions.length - 1];
+      const nextCursor = hasMore && last?._id
+        ? encodeHistoryCursor({
+            submittedAt: historyCursorDate(last.submittedAt),
+            id: String(last._id),
+          })
+        : null;
+      return { submissions, nextCursor };
+    } catch (error) {
+      if (isInvalidResultsCursorError(error)) throw error;
       rethrowReadFailure(error, 'Error getting user submissions:');
     }
   }
@@ -375,4 +462,13 @@ export class ExamSubmissionRepository {
       return { success: false, error: 'Failed to delete submission' };
     }
   }
+}
+
+function historyCursorDate(value: Date | string | undefined): Date {
+  if (value instanceof Date && !Number.isNaN(value.getTime())) return value;
+  const date = new Date(value ?? "");
+  if (Number.isNaN(date.getTime())) {
+    throw new Error("Submission is missing submittedAt");
+  }
+  return date;
 }

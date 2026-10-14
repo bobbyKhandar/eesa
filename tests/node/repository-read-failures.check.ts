@@ -394,11 +394,14 @@ describe("other repository reads that used to swallow errors", () => {
 describe("read routes answer 5xx when a repository read throws", () => {
   it("GET /api/results maps a thrown submission read to 500 and still 404s a missing user", () => {
     const source = read("packages/frontend/app/api/results/route.ts");
-    assert.match(source, /submissionRepo\.getByUser\(userId\)/);
+    assert.match(source, /submissionRepo\.getByUser\(\s*userId/);
     assert.match(source, /if\s*\(\s*!user\s*\)/);
     assert.match(source, /status:\s*404/);
     assert.match(source, /status:\s*500/);
+    assert.match(source, /status:\s*400/);
     assert.doesNotMatch(source, /getByUser\([^)]*\)\s*\|\|\s*\[\]/);
+    assert.doesNotMatch(source, /examRepo\.getById/);
+    assert.doesNotMatch(source, /\.map\(\s*async/);
   });
 
   it("keeps 5xx on the other handlers that render repository reads", () => {

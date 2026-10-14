@@ -232,6 +232,97 @@ export function sortResultsByDateDesc(rows: ResultRow[]): ResultRow[] {
   return [...rows].sort((a, b) => timeOf(b) - timeOf(a))
 }
 
+export interface AggregatedResultSummary {
+  totalExams: number
+  passedExams: number
+  roundedScoreSum: number
+  highestScore: number
+  grades: Array<{ grade: string; count: number }>
+  subjects: Array<{ subject: string; total: number; count: number }>
+  months: Array<{ key: string; total: number; count: number }>
+}
+
+/**
+ * Turn grouped history totals into the same cards and charts as the
+ * per-row reducers. `roundedScoreSum` is the sum of already-rounded
+ * percentages, which is what {@link summarizeResults} averages.
+ */
+export function shapeAggregatedResultSummary(input: AggregatedResultSummary): {
+  stats: ResultsStats
+  performanceData: TrendPoint[]
+  subjectPerformance: Array<{ subject: string; score: number; count: number; color: string }>
+  gradeDistribution: Array<{ grade: string; count: number; color: string }>
+} {
+  const totalExams = finiteCount(input.totalExams)
+  const passedExams = Math.min(totalExams, finiteCount(input.passedExams))
+  const stats: ResultsStats =
+    totalExams === 0
+      ? { totalExams: 0, passedExams: 0, failedExams: 0, avgScore: 0, highestScore: 0, passRate: 0 }
+      : {
+          totalExams,
+          passedExams,
+          failedExams: totalExams - passedExams,
+          avgScore: Math.round(finiteCount(input.roundedScoreSum) / totalExams),
+          highestScore: finiteCount(input.highestScore),
+          passRate: Math.round((passedExams / totalExams) * 100),
+        }
+
+  const performanceData = [...input.months]
+    .filter((bucket) => typeof bucket.key === "string" && bucket.key.length > 0 && finiteCount(bucket.count) > 0)
+    .sort((left, right) => (left.key < right.key ? -1 : left.key > right.key ? 1 : 0))
+    .slice(-5)
+    .map((bucket) => {
+      const count = finiteCount(bucket.count)
+      return {
+        month: monthLabelOf(bucket.key),
+        key: bucket.key,
+        score: Math.round(finiteCount(bucket.total) / count),
+        count,
+      }
+    })
+
+  const subjectPerformance = [...input.subjects]
+    .filter((bucket) => typeof bucket.subject === "string" && bucket.subject.length > 0 && finiteCount(bucket.count) > 0)
+    .map((bucket) => {
+      const count = finiteCount(bucket.count)
+      return {
+        subject: bucket.subject,
+        average: finiteCount(bucket.total) / count,
+        count,
+      }
+    })
+    .sort(
+      (left, right) =>
+        right.average - left.average || left.subject.localeCompare(right.subject),
+    )
+    .map((entry, index) => ({
+      subject: entry.subject,
+      score: Math.round(entry.average),
+      count: entry.count,
+      color: SUBJECT_COLORS[index % SUBJECT_COLORS.length],
+    }))
+
+  const gradeDistribution = [...input.grades]
+    .filter((bucket) => typeof bucket.grade === "string" && bucket.grade.length > 0 && finiteCount(bucket.count) > 0)
+    .sort((left, right) => gradeOrderIndex(left.grade) - gradeOrderIndex(right.grade))
+    .map((bucket) => ({
+      grade: bucket.grade,
+      count: finiteCount(bucket.count),
+      color: GRADE_COLORS[bucket.grade] ?? "#999999",
+    }))
+
+  return { stats, performanceData, subjectPerformance, gradeDistribution }
+}
+
+function finiteCount(value: unknown): number {
+  return typeof value === "number" && Number.isFinite(value) ? value : 0
+}
+
+function gradeOrderIndex(grade: string): number {
+  const index = GRADE_ORDER.indexOf(grade as (typeof GRADE_ORDER)[number])
+  return index < 0 ? GRADE_ORDER.length : index
+}
+
 export function summarizeResults(rows: ResultRow[]): ResultsStats {
   const totalExams = rows.length
   const passedExams = rows.filter((row) => row.status === "passed").length
