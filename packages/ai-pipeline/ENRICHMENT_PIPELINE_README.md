@@ -11,6 +11,7 @@ This pipeline processes parsed question JSON files and enriches them with **Bloo
 ✅ **Persistent State** - State stored in both S3 and local file for redundancy  
 ✅ **Cost Tracking** - Estimates AWS Bedrock costs  
 ✅ **Bloom's Taxonomy** - Adds educational metadata to each question  
+✅ **Runnable CLI** - Returns processed/failed/skipped counts and exits nonzero on an incomplete run  
 
 ## How It Works
 
@@ -87,6 +88,35 @@ This will:
 ```bash
 python enrich_questions_s3_pipeline.py "C:/path/to/parsed/questions"
 ```
+
+### Run result and exit codes
+
+`python enrich_questions_s3_pipeline.py [input_directory]` runs the pipeline and exits with a status code:
+
+- `0` — every file was enriched, skipped as already processed, or nothing was left to do
+- `1` — a file failed enrichment or upload, or the run could not finish its work
+
+`process_all_questions` returns the same counts that the summary prints:
+
+| Key | Meaning |
+|---|---|
+| `processed` | files enriched and uploaded in this run |
+| `newly_processed` | files enriched in this run that were not in `processed` before it |
+| `failed` | files that failed enrichment or upload in this run |
+| `skipped` | files already processed, or at the retry limit |
+| `total_files` | JSON files found in the input directory |
+| `total_cost` | estimated Bedrock cost for this run |
+| `incomplete_reasons` | why the run could not finish its work |
+| `success` | true when no file failed and no reason was recorded |
+
+A run is incomplete, and therefore exits `1`, when:
+
+- the input directory does not exist
+- the input directory contains no JSON files
+- a file has exhausted the `MAX_RETRIES` retry limit
+- the enrichment state could not be saved
+
+Use the exit code to guard a scheduled job: `0` means the directory is fully enriched, anything else means something still needs attention.
 
 ### Source identity and legacy state
 
@@ -245,6 +275,10 @@ PHASE 1: Processing Non-Error Files
 - File marked for retry
 - Upload attempted again on next run
 
+**Incomplete Runs:**
+- Any failed file, or any reason listed in [Run result and exit codes](#run-result-and-exit-codes), makes the CLI exit `1`
+- The failing files stay in `failed` (or `retry_counts`) so the next run picks them up
+
 ## Cost Estimation
 
 The pipeline tracks approximate AWS Bedrock costs:
@@ -363,4 +397,14 @@ ENRICHMENT SUMMARY
    • Files pending retry: 0
    • Files at max retries: 1
 ================================================================================
+
+================================================================================
+RUN RESULT
+================================================================================
+processed=350 newly_processed=250 failed=1 skipped=100 total_files=450 success=False
+   ✗ 1 file(s) exhausted the 3 retry limit
+❌ Enrichment run did not complete
+
+$ echo $?
+1
 ```

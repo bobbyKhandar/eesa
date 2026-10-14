@@ -3,6 +3,7 @@ import hashlib
 import os
 import json
 import re
+import sys
 import time
 from datetime import datetime
 from typing import Dict, List, Optional
@@ -615,10 +616,23 @@ def upload_enriched_to_s3(enriched_data: Dict, source_id: str) -> bool:
     return _upload_enriched_to_s3(enriched_data, source_id)
 
 
-def process_all_questions(input_dir: str, skip_processed: bool = True):
+def process_all_questions(input_dir: str, skip_processed: bool = True) -> Dict:
     """
     Main function to process all parsed questions and enrich them.
     This remains public as the entry point for the module.
+
+    Returns a summary of the run:
+
+    - ``input_dir``: the directory that was processed
+    - ``total_files``: JSON files found in it
+    - ``processed``: files enriched and uploaded in this run
+    - ``newly_processed``: files enriched in this run that were not in
+      ``state['processed']`` before it started
+    - ``failed``: files that failed enrichment or upload in this run
+    - ``skipped``: files already processed, or at the retry limit
+    - ``total_cost``: estimated Bedrock cost for this run
+    - ``incomplete_reasons``: why the run could not finish its work
+    - ``success``: no file failed and no reason was recorded
     """
     print("=" * 80)
     print("QUESTION ENRICHMENT PIPELINE - AWS BEDROCK + S3")
@@ -846,8 +860,8 @@ def process_all_questions(input_dir: str, skip_processed: bool = True):
                     stats['failed'] += 1
     
     # Final state save
-    _save_state(state)
-    
+    state_saved = _save_state(state)
+
     # Final summary
     print("\n" + "=" * 80)
     print("ENRICHMENT SUMMARY")
@@ -864,10 +878,62 @@ def process_all_questions(input_dir: str, skip_processed: bool = True):
     print(f"   • Files at max retries: {len([f for f in state['retry_counts'].values() if f >= MAX_RETRIES])}")
     print("=" * 80)
 
+    incomplete_reasons = incomplete_run_reasons(
+        input_dir,
+        len(all_files),
+        state['retry_counts'],
+        state_saved,
+    )
 
-if __name__ == "__main__":
-    import sys
-    
+    return {
+        'input_dir': input_dir,
+        'total_files': len(all_files),
+        'processed': stats['total_processed'],
+        'newly_processed': stats['newly_processed'],
+        'failed': stats['failed'],
+        'skipped': stats['skipped'],
+        'total_cost': stats['total_cost'],
+        'incomplete_reasons': incomplete_reasons,
+        'success': not incomplete_reasons and stats['failed'] == 0,
+    }
+
+
+def incomplete_run_reasons(
+    input_dir: str,
+    total_files: int,
+    retry_counts: Dict,
+    state_saved: bool,
+) -> List[str]:
+    """Reasons the run could not do the work it was asked to do.
+
+    A failed file is reported separately through the run summary's
+    ``failed`` count. These reasons cover work that never happened at all.
+    """
+    reasons = []
+    if not os.path.isdir(input_dir):
+        reasons.append(f"input directory does not exist: {input_dir}")
+    elif total_files == 0:
+        reasons.append(f"no JSON files found in input directory: {input_dir}")
+
+    stuck = len([count for count in retry_counts.values() if count >= MAX_RETRIES])
+    if stuck:
+        reasons.append(f"{stuck} file(s) exhausted the {MAX_RETRIES} retry limit")
+
+    if not state_saved:
+        reasons.append("enrichment state could not be saved")
+
+    return reasons
+
+
+def main(argv: Optional[List[str]] = None) -> int:
+    """CLI entry point.
+
+    Runs the enrichment pipeline and returns a process exit code: 0 on a
+    complete run, 1 when any file failed, work was incomplete, or the user
+    aborted.
+    """
+    args = list(sys.argv[1:] if argv is None else argv)
+
     # Ensure S3 bucket exists before starting
     print("\n🔍 Checking S3 bucket...")
     if not _ensure_s3_bucket_exists():
@@ -876,20 +942,45 @@ if __name__ == "__main__":
         response = input("\nContinue anyway? (y/n): ")
         if response.lower() != 'y':
             print("❌ Aborted by user")
-            sys.exit(1)
-    
+            return 1
+
     # Default input directory - relative to this script's location
     script_dir = os.path.dirname(os.path.abspath(__file__))
     input_directory = os.path.join(script_dir, '../parsedQuestions')
-    
+
     # Allow override from command line
-    if len(sys.argv) > 1:
-        input_directory = sys.argv[1]
-    
+    if args:
+        input_directory = args[0]
+
     # Normalize path
     input_directory = os.path.abspath(input_directory)
-    
+
     print(f"Using input directory: {input_directory}")
-    
+
     # Run enrichment pipeline
-    process_all_questions(input_directory, skip_processed=True)
+    summary = process_all_questions(input_directory, skip_processed=True)
+
+    print("\n" + "=" * 80)
+    print("RUN RESULT")
+    print("=" * 80)
+    print(
+        f"processed={summary['processed']} "
+        f"newly_processed={summary['newly_processed']} "
+        f"failed={summary['failed']} "
+        f"skipped={summary['skipped']} "
+        f"total_files={summary['total_files']} "
+        f"success={summary['success']}"
+    )
+    for reason in summary['incomplete_reasons']:
+        print(f"   ✗ {reason}")
+
+    if not summary['success']:
+        print("❌ Enrichment run did not complete")
+        return 1
+
+    print("✅ Enrichment run completed")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))
