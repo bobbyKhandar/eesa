@@ -65,8 +65,18 @@ export async function markExpiredJobs(retentionDays: number = 90): Promise<{
           
           if (!exists) {
             console.log(`[S3 Cleanup] Job ${job.job_id} S3 files not found, marking as expired`);
-            await jobRepo.markS3Expired(job.job_id);
-            expired++;
+            const marked = await jobRepo.markS3Expired(job.job_id);
+
+            if (marked.success) {
+              expired++;
+            } else {
+              // The flag is still false, so the job stays in the next cleanup
+              // selection. Reporting it as expired would tell the administrator
+              // the row was updated while the stored state says otherwise.
+              const errorMsg = `Failed to mark job ${job.job_id} as expired: ${marked.error ?? 'unknown error'}`;
+              console.error(`[S3 Cleanup] ${errorMsg}`);
+              errors.push(errorMsg);
+            }
           }
         }
       } catch (error: any) {
