@@ -4,8 +4,14 @@
  */
 
 import { Types } from "mongoose";
-import type { Model } from "mongoose";
+import type { ClientSession, Model } from "mongoose";
 import { connect } from "../connect.js";
+import {
+  deleteInsertedIds,
+  ExamCreationAborted,
+  insertedIdsFromBulkError,
+  isTransactionsUnsupportedError,
+} from "../examWriteRollback.js";
 import { getExamQuestionModel, getExamModel } from "../mongooseSchemas.js";
 import { examQuestionZodSchema } from "../schemas/examQuestionSchemaZod.js";
 import type { ExamQuestion } from "../schemas/examQuestionSchemaZod.js";
@@ -68,8 +74,10 @@ export class ExamQuestionRepository {
       marks: number;
       negativeMarks?: number;
       questionType: 'MCQ' | 'TEXT' | 'TRUE_FALSE';
-    }>
+    }>,
+    options?: { session?: ClientSession | null }
   ): Promise<{ success: boolean; examQuestionIds?: string[]; error?: string }> {
+    const session = options?.session ?? null;
     try {
       await connect();
 
@@ -86,14 +94,30 @@ export class ExamQuestionRepository {
         return result.data;
       });
 
-      const insertedExamQuestions = await this.model.insertMany(validatedExamQuestions);
+      const insertedExamQuestions = await this.model.insertMany(validatedExamQuestions, {
+        ordered: true,
+        ...(session ? { session } : {}),
+      });
       const examQuestionIds = insertedExamQuestions.map(eq => eq._id.toString());
 
       console.log(`Created ${examQuestionIds.length} exam questions in bulk`);
       return { success: true, examQuestionIds };
     } catch (error) {
       console.error('Error creating exam questions in bulk:', error);
-      return { success: false, error: 'Failed to create exam questions in bulk' };
+      if (isTransactionsUnsupportedError(error)) throw error;
+
+      const insertedIds = insertedIdsFromBulkError(error);
+      const message = 'Failed to create exam questions in bulk';
+      if (session) {
+        throw new ExamCreationAborted(message, { examQuestionIds: insertedIds });
+      }
+
+      const leftover = await deleteInsertedIds(insertedIds, (ids) => this.deleteManyByIds(ids));
+      return {
+        success: false,
+        error: message,
+        ...(leftover.length > 0 ? { examQuestionIds: leftover } : {}),
+      };
     }
   }
 

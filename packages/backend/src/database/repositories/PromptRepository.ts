@@ -4,12 +4,18 @@
  */
 
 import { Types } from "mongoose";
-import type { Model } from "mongoose";
+import type { ClientSession, Model } from "mongoose";
 import { connect } from "../connect";
 import { getPromptModel } from "../mongooseSchemas";
 import { promptZodSchema } from "../schemas/promptSchemaZod";
 import type { Prompt } from "../schemas/promptSchemaZod";
 import { publicPromptSubjectQuery } from "../../services/publicQuestionBank";
+import {
+  deleteInsertedIds,
+  ExamCreationAborted,
+  insertedIdsFromBulkError,
+  isTransactionsUnsupportedError,
+} from "../examWriteRollback.js";
 import { nullIfAbsentId, objectIdsFrom, rethrowReadFailure } from "./readErrors";
 
 export class PromptRepository {
@@ -73,7 +79,8 @@ export class PromptRepository {
     ocrConfidence?: number;
     createdBy: string;
     bloomsLevel?: 'remember' | 'understand' | 'apply' | 'analyze' | 'evaluate' | 'create';
-  }>): Promise<{ success: boolean; promptIds?: string[]; error?: string }> {
+  }>, options?: { session?: ClientSession | null }): Promise<{ success: boolean; promptIds?: string[]; error?: string }> {
+    const session = options?.session ?? null;
     try {
       await connect();
 
@@ -90,14 +97,30 @@ export class PromptRepository {
         return result.data;
       });
 
-      const insertedPrompts = await this.model.insertMany(validatedPrompts);
+      const insertedPrompts = await this.model.insertMany(validatedPrompts, {
+        ordered: true,
+        ...(session ? { session } : {}),
+      });
       const promptIds = insertedPrompts.map(p => p._id.toString());
 
       console.log(`Created ${promptIds.length} prompts in bulk`);
       return { success: true, promptIds };
     } catch (error) {
       console.error('Error creating prompts in bulk:', error);
-      return { success: false, error: 'Failed to create prompts in bulk' };
+      if (isTransactionsUnsupportedError(error)) throw error;
+
+      const insertedIds = insertedIdsFromBulkError(error);
+      const message = 'Failed to create prompts in bulk';
+      if (session) {
+        throw new ExamCreationAborted(message, { promptIds: insertedIds });
+      }
+
+      const leftover = await deleteInsertedIds(insertedIds, (ids) => this.deleteManyByIds(ids));
+      return {
+        success: false,
+        error: message,
+        ...(leftover.length > 0 ? { promptIds: leftover } : {}),
+      };
     }
   }
 
@@ -256,6 +279,29 @@ export class PromptRepository {
       return prompts;
     } catch (error) {
       rethrowReadFailure(error, 'Error getting prompts by source:');
+    }
+  }
+
+  /**
+   * Delete many prompts by ID, ignoring ids that are not ObjectIds.
+   * Returns how many documents were removed.
+   */
+  async deleteManyByIds(promptIds: string[]): Promise<number> {
+    if (promptIds.length === 0) return 0;
+
+    try {
+      await connect();
+      const objectIds = promptIds
+        .map((id) => (Types.ObjectId.isValid(id) ? new Types.ObjectId(id) : null))
+        .filter((id): id is Types.ObjectId => id !== null);
+
+      if (objectIds.length === 0) return 0;
+
+      const result = await this.model.deleteMany({ _id: { $in: objectIds } });
+      return result.deletedCount ?? 0;
+    } catch (error) {
+      console.error('Error deleting prompts:', error);
+      return 0;
     }
   }
 

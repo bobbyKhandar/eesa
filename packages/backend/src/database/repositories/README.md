@@ -183,7 +183,7 @@ Manages complete exam lifecycle (creation, assignment, retrieval).
 
 **Key Methods:**
 ```typescript
-createWithPrompts(data)     // Create exam + questions (multi-step)
+createWithPrompts(data, options?) // Create exam + questions; roll back questions if the exam insert fails
 getWithFullDetails(id)      // 3-level join (Exam→ExamQuestion→Prompt), questionDetails in authored order
 assignToUsers(id, userIds)  // Assign to students
 getById(id)                 // Get by ID
