@@ -3,6 +3,10 @@ Intelligent PDF Chunking Module
 
 Analyzes OCR text to find natural split points (question boundaries)
 and creates manageable chunks for LLM processing.
+
+Every chunk stays within ``max_chars_per_chunk``. Question boundaries are
+preferred. When a document has none, or one section is longer than the
+maximum, the chunker splits on paragraphs, then lines, then characters.
 """
 
 import re
@@ -91,7 +95,13 @@ class QuestionBoundaryDetector:
     
     def create_intelligent_chunks(self, text: str, metadata: Dict = None) -> List[Dict]:
         """
-        Create chunks at natural boundaries
+        Create chunks at natural boundaries.
+
+        Question boundaries are preferred. A document with no boundaries, and
+        any single section longer than ``max_chars_per_chunk``, is split on
+        paragraphs, then lines, then characters. Continuation pieces set
+        ``is_continuation`` on the chunk dict that parsing stores as
+        ``chunk_metadata``.
         
         Returns:
             List of chunks with metadata:
@@ -110,37 +120,44 @@ class QuestionBoundaryDetector:
         boundaries = self.find_question_boundaries(text)
         
         if not boundaries:
-            # No questions found - return as single chunk with warning
-            return [{
-                'text': text,
-                'chunk_id': 0,
-                'start_question': None,
-                'end_question': None,
-                'is_continuation': False,
-                'char_count': len(text),
-                'has_metadata': False,
-                'warning': 'No question boundaries detected'
-            }]
+            pieces = self._split_to_max(text)
+            return [
+                {
+                    'text': piece,
+                    'chunk_id': index,
+                    'start_question': None,
+                    'end_question': None,
+                    'is_continuation': index > 0,
+                    'char_count': len(piece),
+                    'has_metadata': False,
+                    'warning': 'No question boundaries detected'
+                }
+                for index, piece in enumerate(pieces)
+            ]
         
         chunks = []
         current_chunk_start = 0
         chunk_boundaries = []
         
         # Group boundaries into chunks based on size
-        for i, boundary in enumerate(boundaries):
+        for boundary in boundaries:
             chunk_size = boundary['start_pos'] - current_chunk_start
             
             # If adding this boundary exceeds limit, create chunk with previous boundaries
             if chunk_size > self.max_chars_per_chunk and chunk_boundaries:
-                chunks.append(self._create_chunk(
-                    text,
-                    current_chunk_start,
-                    chunk_boundaries[-1]['start_pos'],
-                    chunk_boundaries,
-                    len(chunks)
-                ))
-                current_chunk_start = chunk_boundaries[-1]['start_pos']
-                chunk_boundaries = []
+                cut_at = chunk_boundaries[-1]['start_pos']
+                # Cutting at the current start emits an empty chunk and leaves
+                # the oversized section whole. Keep this boundary with the span.
+                if cut_at > current_chunk_start:
+                    chunks.append(self._create_chunk(
+                        text,
+                        current_chunk_start,
+                        cut_at,
+                        chunk_boundaries,
+                        len(chunks)
+                    ))
+                    current_chunk_start = cut_at
+                    chunk_boundaries = []
             
             chunk_boundaries.append(boundary)
         
@@ -153,14 +170,76 @@ class QuestionBoundaryDetector:
                 chunk_boundaries,
                 len(chunks)
             ))
+
+        expanded = []
+        for chunk in chunks:
+            pieces = self._split_to_max(chunk['text'])
+            for piece_index, piece in enumerate(pieces):
+                part = dict(chunk)
+                if isinstance(part.get('boundaries'), list):
+                    part['boundaries'] = list(part['boundaries'])
+                part['text'] = piece
+                part['char_count'] = len(piece)
+                part['_fallback_continuation'] = piece_index > 0
+                expanded.append(part)
         
-        # Mark continuation status
-        for i, chunk in enumerate(chunks):
-            chunk['is_continuation'] = i > 0 and chunk['start_question'] is not None and chunk['start_question'] > 1
+        # Mark continuation status. A fallback piece of an overlong section
+        # stays a continuation even when that section is question 1.
+        for index, chunk in enumerate(expanded):
+            fallback_continuation = chunk.pop('_fallback_continuation', False)
+            chunk['chunk_id'] = index
+            chunk['is_continuation'] = bool(
+                fallback_continuation
+                or (
+                    index > 0
+                    and chunk.get('start_question') is not None
+                    and chunk['start_question'] > 1
+                )
+            )
             # First chunk should have metadata from document header
-            chunk['has_metadata'] = i == 0
+            chunk['has_metadata'] = index == 0
         
-        return chunks
+        return expanded
+
+    def _split_to_max(self, text: str) -> List[str]:
+        """Split text so every piece fits in ``max_chars_per_chunk``.
+
+        Prefer a paragraph break, then a line break, then a hard character
+        cut. Pieces join back to ``text`` and none is longer than the maximum.
+        """
+        limit = self.max_chars_per_chunk
+        if limit < 1:
+            raise ValueError("max_chars_per_chunk must be at least 1")
+        if len(text) <= limit:
+            return [text]
+
+        pieces = []
+        start = 0
+        length = len(text)
+        while start < length:
+            end = min(start + limit, length)
+            if end >= length:
+                pieces.append(text[start:length])
+                break
+            cut = self._fallback_cut(text[start:end])
+            if cut < 1:
+                cut = end - start
+            pieces.append(text[start:start + cut])
+            start += cut
+        return pieces
+
+    def _fallback_cut(self, window: str) -> int:
+        """Choose a cut inside ``window``, which is already at most the max."""
+        paragraph_end = 0
+        for match in re.finditer(r'\n[ \t]*\n', window):
+            paragraph_end = match.end()
+        if paragraph_end > 0:
+            return paragraph_end
+
+        line_end = window.rfind('\n')
+        if line_end > 0:
+            return line_end + 1
+        return len(window)
     
     def _create_chunk(self, text: str, start_pos: int, end_pos: int, 
                      boundaries: List[Dict], chunk_id: int) -> Dict:
