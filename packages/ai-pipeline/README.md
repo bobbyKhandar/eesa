@@ -160,7 +160,7 @@ brew install python redis
 
 ### Python Dependencies
 
-Runtime dependencies and the Python floor live in `pyproject.toml`. `requirements.txt` is the same production set: Flask, flask-cors, Werkzeug, boto3, botocore, Gunicorn, and numpy. That set is what `wsgi:app` needs. OpenCV, EasyOCR, PyTorch, PyMuPDF, Pillow, and Redis are the `local` extra. LanceDB, PyArrow, HDBSCAN, and scikit-learn are the `clustering` extra.
+Runtime dependencies and the Python floor live in `pyproject.toml`. `requirements.txt` is the same production set: Flask, flask-cors, Werkzeug, boto3, botocore, Gunicorn, and numpy. That set is what `wsgi:app` needs. OpenCV, EasyOCR, PyTorch, PyMuPDF, Pillow, and Redis are the `local` extra. LanceDB, PyArrow, HDBSCAN, and scikit-learn are the `clustering` extra. Installing the `redis` package does not make `wsgi:app` connect to Redis. Local routes return 503 when Redis is unreachable or the OCR stack cannot start; `/health` and the AWS routes still load.
 
 ```bash
 cd packages/ai-pipeline
@@ -573,7 +573,7 @@ ai_pipeline/
 ```
 Error: Redis connection refused
 ```
-**Solution:** Ensure Redis server is running
+**Solution:** Ensure Redis server is running before calling a local OCR route. The AWS WSGI app still loads; `/submit-local`, `/submit`, `/status/<batch_id>`, and `/result/<batch_id>` return 503 until Redis is reachable.
 ```bash
 redis-server
 ```

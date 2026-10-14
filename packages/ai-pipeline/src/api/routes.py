@@ -19,6 +19,25 @@ from .upload_limits import (
 )
 
 
+def _open_local_pipeline(pipeline_manager):
+    """Return ``(manager, error)`` without requiring the local pipeline at import.
+
+    A ``resolve_local_pipeline`` method on the manager's class loads Redis and
+    OCR on first use. Plain managers, including test doubles, are returned as-is.
+    """
+    if pipeline_manager is None:
+        return None, "Local pipeline not available"
+    resolve = getattr(pipeline_manager.__class__, "resolve_local_pipeline", None)
+    if callable(resolve):
+        manager, error = resolve(pipeline_manager)
+        if manager is None:
+            return None, error or "Local pipeline not available"
+        return manager, None
+    if not pipeline_manager:
+        return None, "Local pipeline not available"
+    return pipeline_manager, None
+
+
 def register_routes(app, aws_manager, pipeline_manager):
     # User ownership stays in the Next.js helpers. Every route except /health
     # still requires the service token from a trusted address.
@@ -223,15 +242,16 @@ def register_routes(app, aws_manager, pipeline_manager):
     # ------------------------------------------------------------------
     @app.route('/submit-local', methods=['POST'])
     def submit_local_batch():
-        if not pipeline_manager:
-            return jsonify({'error': 'Local pipeline not available'}), 503
+        local_pipeline, local_error = _open_local_pipeline(pipeline_manager)
+        if local_pipeline is None:
+            return jsonify({'error': local_error}), 503
         try:
             data = request.get_json()
             file_locations = data.get('file_locations', [])
             options = data.get('options', {})
             if not file_locations:
                 return jsonify({'error': 'No file_locations provided'}), 400
-            batch_id = pipeline_manager.submit_batch(file_locations, options)
+            batch_id = local_pipeline.submit_batch(file_locations, options)
             return jsonify({
                 "success": True,
                 "batch_id": batch_id,
@@ -247,18 +267,20 @@ def register_routes(app, aws_manager, pipeline_manager):
 
     @app.route('/status/<batch_id>', methods=['GET'])
     def get_local_batch_status(batch_id):
-        if not pipeline_manager:
-            return jsonify({'error': 'Local pipeline not available'}), 503
-        status = pipeline_manager.get_batch_status(batch_id)
+        local_pipeline, local_error = _open_local_pipeline(pipeline_manager)
+        if local_pipeline is None:
+            return jsonify({'error': local_error}), 503
+        status = local_pipeline.get_batch_status(batch_id)
         if status is None:
             return jsonify({"error": "Batch not found"}), 404
         return jsonify({"success": True, "status": status}), 200
 
     @app.route('/result/<batch_id>', methods=['GET'])
     def get_local_batch_result(batch_id):
-        if not pipeline_manager:
-            return jsonify({'error': 'Local pipeline not initialized'}), 501
-        result = pipeline_manager.get_batch_result(batch_id)
+        local_pipeline, local_error = _open_local_pipeline(pipeline_manager)
+        if local_pipeline is None:
+            return jsonify({'error': local_error}), 503
+        result = local_pipeline.get_batch_result(batch_id)
         if result is None:
             return jsonify({"error": "Batch not found"}), 404
         return jsonify({"success": True, "result": result.to_dict()})
