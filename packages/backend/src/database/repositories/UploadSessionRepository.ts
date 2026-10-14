@@ -9,6 +9,7 @@ import { connect } from "../connect";
 import { getUploadSessionModel } from "../mongooseSchemas";
 import { uploadSessionZodSchema } from "../schemas/uploadSessionZod";
 import type { UploadSession } from "../schemas/uploadSessionZod";
+import { rethrowReadFailure } from "./readErrors";
 
 export class UploadSessionRepository {
   private model: Model<UploadSession>;
@@ -66,8 +67,7 @@ export class UploadSessionRepository {
       
       return session;
     } catch (error) {
-      console.error('[UploadSessionRepository] Error finding session:', error);
-      return null;
+      rethrowReadFailure(error, '[UploadSessionRepository] Error finding session:');
     }
   }
 
@@ -88,8 +88,7 @@ export class UploadSessionRepository {
 
       return sessions;
     } catch (error) {
-      console.error('[UploadSessionRepository] Error finding sessions by user:', error);
-      return [];
+      rethrowReadFailure(error, '[UploadSessionRepository] Error finding sessions by user:');
     }
   }
 

@@ -11,6 +11,7 @@ import type { Exam } from "../schemas/examSchemaZod.js";
 import { activeExamQuery } from "../examDeletion.js";
 import { orderQuestionDetails } from "../questionOrder.js";
 import { ExamQuestionRepository } from "./ExamQuestionRepository.js";
+import { nullIfAbsentId, rethrowReadFailure } from "./readErrors.js";
 
 const { ObjectId } = Types;
 
@@ -189,8 +190,7 @@ export class ExamRepository {
       exam.questionDetails = orderQuestionDetails(exam.questions, exam.questionDetails);
       return exam;
     } catch (error) {
-      console.error('Error getting exam with full details:', error);
-      return null;
+      return nullIfAbsentId(error, 'Error getting exam with full details:');
     }
   }
 
@@ -233,8 +233,7 @@ export class ExamRepository {
       const exam = await this.model.findById(examId).lean();
       return exam;
     } catch (error) {
-      console.error('Error getting exam:', error);
-      return null;
+      return nullIfAbsentId(error, 'Error getting exam:');
     }
   }
 
@@ -257,8 +256,7 @@ export class ExamRepository {
         .map((id) => examsById.get(id))
         .filter((exam): exam is Exam => exam !== undefined);
     } catch (error) {
-      console.error('Error getting exams by ids:', error);
-      return [];
+      rethrowReadFailure(error, 'Error getting exams by ids:');
     }
   }
 
@@ -274,8 +272,7 @@ export class ExamRepository {
         .lean();
       return exams;
     } catch (error) {
-      console.error('Error getting exams by subject:', error);
-      return [];
+      rethrowReadFailure(error, 'Error getting exams by subject:');
     }
   }
 
@@ -291,8 +288,7 @@ export class ExamRepository {
         .lean();
       return exams;
     } catch (error) {
-      console.error('Error getting exams by creator:', error);
-      return [];
+      rethrowReadFailure(error, 'Error getting exams by creator:');
     }
   }
 
@@ -375,8 +371,7 @@ export class ExamRepository {
         .lean();
       return exams;
     } catch (error) {
-      console.error('Error getting all exams:', error);
-      return [];
+      rethrowReadFailure(error, 'Error getting all exams:');
     }
   }
 }

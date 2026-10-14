@@ -5,6 +5,7 @@ import {
   type ExamAnalysis,
   type ExamAnalysisDocument,
 } from "../schemas/examAnalysisZod";
+import { nullIfAbsentId, rethrowReadFailure } from "./readErrors";
 
 export class ExamAnalysisRepository {
   private model = getExamAnalysisModel();
@@ -40,8 +41,7 @@ export class ExamAnalysisRepository {
       }
       return this.toPlainObject(analysis);
     } catch (error) {
-      console.error("Error fetching analysis:", error);
-      return null;
+      return nullIfAbsentId(error, "Error fetching analysis:");
     }
   }
 
@@ -75,8 +75,7 @@ export class ExamAnalysisRepository {
       const analyses = await this.model.find(query).sort({ analyzedAt: -1 });
       return analyses.map(a => this.toPlainObject(a));
     } catch (error) {
-      console.error("Error fetching user analyses:", error);
-      return [];
+      rethrowReadFailure(error, "Error fetching user analyses:");
     }
   }
 
@@ -194,8 +193,7 @@ export class ExamAnalysisRepository {
 
       return analyses.map(a => this.toPlainObject(a));
     } catch (error) {
-      console.error("Error fetching public analyses:", error);
-      return [];
+      rethrowReadFailure(error, "Error fetching public analyses:");
     }
   }
 
