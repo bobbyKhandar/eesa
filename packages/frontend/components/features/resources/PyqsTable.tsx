@@ -34,6 +34,14 @@ export interface PYQ {
   sourceReports: number
 }
 
+interface PyqPageControls {
+  hasPrevious: boolean
+  hasNext: boolean
+  onPrevious: () => void
+  onNext: () => void
+  paging?: boolean
+}
+
 interface PyqsTableProps {
   subjectName: string
   pyqs: PYQ[]
@@ -41,6 +49,8 @@ interface PyqsTableProps {
   getDifficultyColor: (d: string) => string
   /** Replaces the default empty copy, for example when a search matches nothing. */
   emptyMessage?: string
+  /** When set, the table is one page of the subject bank. */
+  page?: PyqPageControls
 }
 
 const PREVIEW_FIELDS = [
@@ -52,9 +62,17 @@ const PREVIEW_FIELDS = [
   ["Exam type", "examType"],
 ] as const
 
-export function PyqsTable({ subjectName, pyqs, loading, getDifficultyColor, emptyMessage }: PyqsTableProps) {
+export function PyqsTable({
+  subjectName,
+  pyqs,
+  loading,
+  getDifficultyColor,
+  emptyMessage,
+  page,
+}: PyqsTableProps) {
   const [preview, setPreview] = useState<PyqPreview | null>(null)
-  const canDownload = !loading && pyqs.length > 0
+  const anotherPage = Boolean(page && (page.hasPrevious || page.hasNext))
+  const canDownload = !loading && !page?.paging && pyqs.length > 0
 
   return (
     <Card>
@@ -69,11 +87,13 @@ export function PyqsTable({ subjectName, pyqs, loading, getDifficultyColor, empt
             disabled={!canDownload}
             title={
               canDownload
-                ? "Download the listed questions as CSV"
+                ? anotherPage
+                  ? "Download this page as CSV"
+                  : "Download the listed questions as CSV"
                 : "No questions to download"
             }
           >
-            <Download className="h-4 w-4" /> Download All
+            <Download className="h-4 w-4" /> {anotherPage ? "Download page" : "Download All"}
           </Button>
         </div>
         <CardDescription>Access past examination papers for {subjectName}</CardDescription>
@@ -147,6 +167,29 @@ export function PyqsTable({ subjectName, pyqs, loading, getDifficultyColor, empt
               </TableBody>
             </Table>
           </div>
+        )}
+        {page && !(loading && pyqs.length === 0) && (
+          <nav aria-label="Previous year question pages" className="flex items-center justify-between pt-4">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={page.onPrevious}
+              disabled={!page.hasPrevious || page.paging}
+            >
+              Previous
+            </Button>
+            <p className="text-sm text-gray-500">
+              {page.paging ? "Loading page..." : `${pyqs.length} on this page`}
+            </p>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={page.onNext}
+              disabled={!page.hasNext || page.paging}
+            >
+              Next
+            </Button>
+          </nav>
         )}
       </CardContent>
       <Dialog

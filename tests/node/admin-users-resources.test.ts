@@ -396,13 +396,24 @@ describe("resources route reads the fields the summary returns", () => {
   });
 
   it("stops fabricating a download count", () => {
+    const catalog = read("packages/frontend/lib/resourceCatalog.ts");
+    const mappers = catalog.slice(catalog.indexOf("export function mapStoredQuestionToPyq"));
     assert.doesNotMatch(source, /Math\.random\(\)/);
-    assert.match(source, /downloadCount: 0/);
+    assert.doesNotMatch(mappers, /Math\.random\(\)/);
+    assert.match(mappers, /downloadCount: 0/);
+    assert.match(source, /mapStoredQuestionToPyq\(/);
+    assert.match(source, /mapFallbackPromptToPyq\(/);
   });
 
   it("builds titles with the tested helper", () => {
-    assert.match(source, /questionTitle\(/);
+    const catalog = read("packages/frontend/lib/resourceCatalog.ts");
+    const mappers = catalog.slice(catalog.indexOf("export function mapStoredQuestionToPyq"));
+    assert.match(catalog, /export function questionTitle\(/);
+    assert.match(mappers, /questionTitle\(/);
+    assert.match(source, /mapStoredQuestionToPyq\(/);
+    assert.match(source, /mapFallbackPromptToPyq\(/);
     assert.doesNotMatch(source, /substring\(0, 50\) \+ "\.\.\."/);
+    assert.doesNotMatch(mappers, /substring\(0, 50\) \+ "\.\.\."/);
   });
 
   it("rejects an unknown action or a pyqs request without a subject", () => {

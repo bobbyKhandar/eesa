@@ -5,9 +5,16 @@ import { UniqueQuestionRepository } from "@/backend/src/database/repositories/Un
 import { AnalysisReportRepository } from "@/backend/src/database/repositories/AnalysisReportRepository";
 import { PromptRepository } from "@/backend/src/database/repositories/PromptRepository";
 import {
+  FALLBACK_PROMPT_PROJECTION,
+  clampPyqLimit,
+  decodeQuestionBankCursor,
+  isInvalidQuestionBankCursorError,
+} from "@/backend/src/services/questionBankPage";
+import {
   buildPyqStats,
   buildSubjectCatalog,
-  questionTitle,
+  mapFallbackPromptToPyq,
+  mapStoredQuestionToPyq,
   type PyqStatsInput,
   type SubjectReportRow,
 } from "@/frontend/lib/resourceCatalog";
@@ -19,6 +26,9 @@ const promptRepo = new PromptRepository();
 /**
  * GET /api/resources
  * Fetch subjects and their resources (PYQs, unique questions, etc.)
+ *
+ * `action=pyqs` returns one page of questions. Totals come from an aggregate,
+ * not from the rows on the page. Embeddings are not selected.
  */
 export async function GET(request: NextRequest) {
   try {
@@ -27,8 +37,6 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const action = searchParams.get("action"); // "subjects", "pyqs", "questions"
     const subject = searchParams.get("subject")?.trim();
-    const branch = searchParams.get("branch");
-    const semester = searchParams.get("semester");
 
     // Get all subjects with reports (for branch/semester selection)
     if (action === "subjects" || !action) {
@@ -58,104 +66,27 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // Get PYQs (unique questions that appeared in exams) for a specific subject
-    const allQuestionsForSubject = await uniqueQuestionRepo.findBySubject(subject, {
-      sortBy: "occurrenceCount",
-      sortOrder: "desc",
-    });
+    // Reject a cursor this API did not emit before any question-bank read.
+    const limit = clampPyqLimit(searchParams.get("limit"));
+    const cursorParam = searchParams.get("cursor");
+    const cursor = cursorParam && cursorParam.trim() !== "" ? cursorParam.trim() : null;
+    if (cursor) decodeQuestionBankCursor(cursor);
 
-    let pyqs: any[] = [];
-    let statsInput: PyqStatsInput = {
-      uniqueQuestions: 0,
-      totalOccurrences: 0,
-      avgOccurrence: 0,
-      bloomsDistribution: {},
-      subjectCount: 0,
-    };
+    // Totals are independent of the page. An empty bank falls back to reports.
+    const statsData = await uniqueQuestionRepo.getSubjectStats(subject);
+    let pyqs: ReturnType<typeof mapStoredQuestionToPyq>[] = [];
+    let nextCursor: string | null = null;
+    let statsInput: PyqStatsInput;
 
-    // If UniqueQuestions collection is empty, fall back to AnalysisReports
-    if (allQuestionsForSubject.length === 0) {
-      const reports = await analysisReportRepo.findBySubject(subject);
-      const ordered = [...reports].sort((a, b) =>
-        String(a.year ?? "").localeCompare(String(b.year ?? ""))
-      );
-
-      if (ordered.length > 0) {
-        // Collect all question IDs from all reports, de-duplicated
-        const allQuestionIds = Array.from(new Set(ordered.flatMap(r => r.questionIds || [])));
-        const prompts = await promptRepo.findByIds(allQuestionIds);
-        const years = ordered.map(r => r.year).filter((v): v is string => Boolean(v));
-        const distinctYears = Array.from(new Set(years)).sort();
-
-        // Map prompts to PYQ format
-        pyqs = prompts.map((q: any, index: number) => ({
-          _id: q._id?.toString() || `q-${index + 1}`,
-          id: q._id?.toString() || `q-${index + 1}`,
-          title: questionTitle(q.questionText ?? q.text, `Question ${index + 1}`),
-          questionText: q.questionText || q.text || "",
-          year: distinctYears[0] ?? "2024",
-          years: distinctYears,
-          examType: ordered[0]?.examType || "main",
-          occurrenceCount: 1,
-          frequency: 1,
-          bloomsLevel: q.bloomsLevel || "understand",
-          topic: q.topic || subject,
-          topics: q.topic ? [q.topic] : [subject],
-          difficulty: getDifficultyFromBlooms(q.bloomsLevel),
-          downloadCount: 0,
-          sourceReports: ordered.length,
-          firstSeenAt: ordered[0]?.publishedAt,
-          lastSeenAt: ordered[ordered.length - 1]?.publishedAt,
-        }));
-
-        statsInput = {
-          uniqueQuestions: prompts.length,
-          totalOccurrences: prompts.length,
-          avgOccurrence: 1,
-          bloomsDistribution: prompts.reduce((acc: Record<string, number>, q: any) => {
-            const level = q.bloomsLevel || "understand";
-            acc[level] = (acc[level] || 0) + 1;
-            return acc;
-          }, {}),
-          subjectCount: 1,
-        };
-      }
-    } else {
-      // Use UniqueQuestions data
-      pyqs = allQuestionsForSubject.map((q: any, index: number) => {
-        const years = Array.from(
-          new Set(
-            (q.appearances || [])
-              .map((a: any) => a?.year)
-              .filter((v: unknown): v is string => Boolean(v))
-          )
-        ).sort();
-
-        return {
-          _id: q._id?.toString() || `q-${index + 1}`,
-          id: q._id?.toString() || `q-${index + 1}`,
-          title: questionTitle(q.text ?? q.questionText, `Question ${index + 1}`),
-          questionText: q.text ?? q.questionText ?? "",
-          year: years[0] ?? "",
-          years,
-          examType: q.appearances?.[0]?.examType || "main",
-          occurrenceCount: q.occurrenceCount || 1,
-          frequency: q.occurrenceCount || 1,
-          bloomsLevel: q.bloomsLevel || "understand",
-          topic: q.topic || subject,
-          topics: q.topic ? [q.topic] : [subject],
-          difficulty: getDifficultyFromBlooms(q.bloomsLevel),
-          // No download counter exists for PYQ rows. The UI never displayed a
-          // fabricated one, but the route used to invent a random number here,
-          // so the same question reported a different value on every request.
-          downloadCount: 0,
-          sourceReports: q.sourceReports?.length || 1,
-          firstSeenAt: q.firstSeenAt,
-          lastSeenAt: q.lastSeenAt,
-        };
+    if (statsData.totalUniqueQuestions > 0) {
+      const page = await uniqueQuestionRepo.findBySubject(subject, {
+        sortBy: "occurrenceCount",
+        sortOrder: "desc",
+        limit,
+        cursor,
       });
-
-      const statsData = await uniqueQuestionRepo.getSubjectStats(subject);
+      pyqs = page.questions.map((question, index) => mapStoredQuestionToPyq(question, index, subject));
+      nextCursor = page.nextCursor;
       statsInput = {
         uniqueQuestions: statsData.totalUniqueQuestions,
         totalOccurrences: statsData.totalOccurrences,
@@ -163,36 +94,56 @@ export async function GET(request: NextRequest) {
         bloomsDistribution: statsData.bloomsDistribution,
         subjectCount: 1,
       };
+    } else {
+      const summary = await analysisReportRepo.summarizeFallbackPyqs(
+        subject,
+        promptRepo.promptCollectionName(),
+      );
+      const promptPage = await analysisReportRepo.pagePublicPromptIds(subject, { limit, cursor });
+      const prompts =
+        promptPage.ids.length > 0
+          ? await promptRepo.findByIds(promptPage.ids, FALLBACK_PROMPT_PROJECTION)
+          : [];
+      const promptsById = new Map(
+        prompts.map((prompt) => [String((prompt as { _id?: unknown })._id ?? ""), prompt]),
+      );
+      const ordered = promptPage.ids
+        .map((id) => promptsById.get(id))
+        .filter((prompt): prompt is (typeof prompts)[number] => prompt != null);
+
+      pyqs = ordered.map((prompt, index) => mapFallbackPromptToPyq(prompt, index, subject, summary));
+      nextCursor = promptPage.nextCursor;
+      statsInput = {
+        uniqueQuestions: summary.uniqueQuestions,
+        totalOccurrences: summary.totalOccurrences,
+        avgOccurrence: summary.avgOccurrence,
+        bloomsDistribution: summary.bloomsDistribution,
+        subjectCount: summary.subjectCount,
+      };
     }
 
     return NextResponse.json({
       success: true,
       data: {
         pyqs,
+        page: {
+          limit,
+          nextCursor,
+        },
         stats: buildPyqStats(statsInput),
       },
     });
   } catch (error: any) {
+    if (isInvalidQuestionBankCursorError(error)) {
+      return NextResponse.json(
+        { success: false, error: "Invalid question bank cursor" },
+        { status: 400 }
+      );
+    }
     console.error("Error fetching resources:", error);
     return NextResponse.json(
       { success: false, error: error.message || "Failed to fetch resources" },
       { status: 500 }
     );
-  }
-}
-
-function getDifficultyFromBlooms(bloomsLevel: string): string {
-  switch (bloomsLevel?.toLowerCase()) {
-    case "remember":
-    case "understand":
-      return "Easy";
-    case "apply":
-    case "analyze":
-      return "Medium";
-    case "evaluate":
-    case "create":
-      return "Hard";
-    default:
-      return "Medium";
   }
 }
