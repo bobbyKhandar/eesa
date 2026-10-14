@@ -120,9 +120,10 @@ processDocuments().catch(console.error);
 
 #### 3. PDF Handler (`pdf_handler.py`)
 - ✅ Multi-page extraction
+- ✅ One-page-at-a-time rendering (`iter_pages`) for local OCR
 - ✅ Custom DPI rendering
 - ✅ Page range selection
-- ✅ PDF validation
+- ✅ PDF validation, including hard page-count and pixel limits
 - ✅ Metadata extraction
 - ✅ Direct text extraction
 

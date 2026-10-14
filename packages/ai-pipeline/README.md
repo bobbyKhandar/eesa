@@ -461,9 +461,11 @@ OCR_LANGUAGES=en
 OCR_GPU=auto
 
 # Processing Configuration
+# Local OCR enforces page-count and pixel caps before it renders.
+# A blank, non-integer, or non-positive value keeps the default.
 DEFAULT_DPI=400
-MAX_PDF_SIZE_MB=100
 MAX_PAGES_PER_PDF=1000
+MAX_PDF_PAGE_PIXELS=50000000
 
 # Logging
 LOG_LEVEL=INFO
@@ -471,6 +473,8 @@ LOG_FILE=/var/log/ai_pipeline.log
 ```
 
 `POST /upload/question-papers` also reads `QUESTION_PAPER_MAX_FILE_BYTES` (default 26214400), `QUESTION_PAPER_MAX_FILE_COUNT` (default 20), and `QUESTION_PAPER_MAX_REQUEST_BYTES` (default 209715200). The request cap is Flask `MAX_CONTENT_LENGTH` for the whole app. The frontend proxy uses the same names.
+
+Local OCR reads `DEFAULT_DPI`, `MAX_PAGES_PER_PDF`, and `MAX_PDF_PAGE_PIXELS`. The batch path validates the PDF, renders one page at a time through `iter_pages`, and drops that image after OCR. A PDF over the page-count or per-page pixel cap fails before the first pixmap is built. `extract_pages` still returns the full list for existing callers. A file larger than 100MB still only produces a validation warning.
 
 ### Redis Keys
 

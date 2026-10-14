@@ -263,6 +263,9 @@ Each package has its own `.env` file:
 | `QUESTION_PAPER_MAX_FILE_BYTES` | Max bytes for one file on `POST /upload/question-papers` (default `26214400`, 25 MB). Same names as the frontend. |
 | `QUESTION_PAPER_MAX_FILE_COUNT` | Max files in that upload (default `20`). |
 | `QUESTION_PAPER_MAX_REQUEST_BYTES` | Max request bytes. Also Flask `MAX_CONTENT_LENGTH` for every route (default `209715200`, 200 MB). |
+| `DEFAULT_DPI` | Local OCR render resolution (default `400`). The pixel cap below is measured at this DPI. A blank or non-positive value keeps the default. |
+| `MAX_PAGES_PER_PDF` | Local OCR refuses a PDF with more pages than this before rendering (default `1000`). |
+| `MAX_PDF_PAGE_PIXELS` | Local OCR refuses a PDF whose rendered page would exceed this many pixels (width × height, default `50000000`). |
 
 The Eesa database is `test`. Set the server-side `mongodb_url` to `mongodb+srv://bobby:<URL_ENCODED_PASSWORD>@cluster0.yuld0s6.mongodb.net/test?appName=Cluster0`; URL-encode the database-user password and keep credentials in ignored environment files. Use the same URI in the root `.env` (for root-run scripts) and `packages/backend/.env` (for the shared connection helper). An inherited `mongodb_url` takes precedence over dotenv files, so update any deployment environment that supplies it and restart the app. A local database migration does not verify a production switch; verify the deployed environment and running app separately.
 

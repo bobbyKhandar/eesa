@@ -421,7 +421,8 @@ class TestPipelineManagerProcessing(unittest.TestCase):
             {"page_number": 1, "image": "mock_image_1"}
         ]
         
-        self.manager.pdf_handler.extract_pages = Mock(return_value=mock_pages_data)
+        self.manager.pdf_handler.validate_pdf = Mock(return_value={"valid": True, "errors": []})
+        self.manager.pdf_handler.iter_pages = Mock(return_value=mock_pages_data)
         self.manager.image_processor.preprocess_image = Mock(return_value="processed_image")
         self.manager.ocr_engine.process_image = Mock(return_value={
             "success": True,
@@ -440,7 +441,8 @@ class TestPipelineManagerProcessing(unittest.TestCase):
 
     def test_process_pdf_file_no_pages(self):
         """Test PDF processing when no pages extracted"""
-        self.manager.pdf_handler.extract_pages = Mock(return_value=[])
+        self.manager.pdf_handler.validate_pdf = Mock(return_value={"valid": True, "errors": []})
+        self.manager.pdf_handler.iter_pages = Mock(return_value=[])
         
         result = self.manager._process_pdf_file("/test/empty.pdf")
         
@@ -454,7 +456,8 @@ class TestPipelineManagerProcessing(unittest.TestCase):
             {"page_number": 1, "image": "mock_image_1"}
         ]
         
-        self.manager.pdf_handler.extract_pages = Mock(return_value=mock_pages_data)
+        self.manager.pdf_handler.validate_pdf = Mock(return_value={"valid": True, "errors": []})
+        self.manager.pdf_handler.iter_pages = Mock(return_value=mock_pages_data)
         self.manager.image_processor.preprocess_image = Mock(return_value="processed_image")
         
         # First page succeeds, second fails
@@ -475,7 +478,8 @@ class TestPipelineManagerProcessing(unittest.TestCase):
 
     def test_process_pdf_file_exception(self):
         """Test PDF processing with exception"""
-        self.manager.pdf_handler.extract_pages = Mock(side_effect=Exception("Processing error"))
+        self.manager.pdf_handler.validate_pdf = Mock(return_value={"valid": True, "errors": []})
+        self.manager.pdf_handler.iter_pages = Mock(side_effect=Exception("Processing error"))
         
         result = self.manager._process_pdf_file("/test/error.pdf")
         
@@ -631,7 +635,8 @@ class TestPipelineManagerIntegration(unittest.TestCase):
         }
         
         # Mock processing success
-        self.manager.pdf_handler.extract_pages = Mock(return_value=[
+        self.manager.pdf_handler.validate_pdf = Mock(return_value={"valid": True, "errors": []})
+        self.manager.pdf_handler.iter_pages = Mock(return_value=[
             {"page_number": 0, "image": "mock_image"}
         ])
         self.manager.image_processor.preprocess_image = Mock(return_value="processed")
