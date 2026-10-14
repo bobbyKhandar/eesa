@@ -125,15 +125,25 @@ export class PromptRepository {
   /**
    * Find multiple prompts by their IDs
    */
-  async findByIds(promptIds: string[]): Promise<Prompt[]> {
+  async findByIds(
+    promptIds: string[],
+    projection?: Readonly<Record<string, 0 | 1>>,
+  ): Promise<Prompt[]> {
     try {
       await connect();
       const objectIds = objectIdsFrom(promptIds);
       if (objectIds.length === 0) return [];
-      return await this.model.find({ _id: { $in: objectIds } }).lean();
+      const query = this.model.find({ _id: { $in: objectIds } });
+      if (projection) query.select(projection);
+      return await query.lean();
     } catch (error) {
       rethrowReadFailure(error, "Error finding prompts by IDs:");
     }
+  }
+
+  /** Collection that stores prompt documents, for a bounded `$lookup`. */
+  promptCollectionName(): string {
+    return this.model.collection.collectionName;
   }
 
   /**

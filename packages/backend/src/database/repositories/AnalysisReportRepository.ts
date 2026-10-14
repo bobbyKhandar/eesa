@@ -1,8 +1,19 @@
-import { Model } from "mongoose";
+import { Model, type PipelineStage } from "mongoose";
 import { getAnalysisReportModel } from "../newFeatureModels";
 import type { AnalysisReport, AnalysisReportInput, AnalysisReportWithId } from "../schemas/index";
 import { connect } from "../connect";
 import { normalizeSubjectSummaries } from "./subjectSummary";
+import {
+  InvalidQuestionBankCursorError,
+  clampPyqLimit,
+  decodeQuestionBankCursor,
+  encodeQuestionBankCursor,
+  fallbackPromptIdPipeline,
+  fallbackPyqSummaryPipeline,
+  readFallbackPyqSummary,
+  type FallbackPromptPage,
+  type FallbackPyqSummary,
+} from "../../services/questionBankPage";
 
 /**
  * Question-bank reads hide in-progress publications. A missing `publishStatus`
@@ -124,6 +135,60 @@ export class AnalysisReportRepository {
       ...report,
       _id: report._id.toString(),
     }));
+  }
+
+  /**
+   * One page of distinct prompt ids from a subject's public reports.
+   * The aggregate returns at most `limit + 1` ids. An unusable cursor throws
+   * before the query runs.
+   */
+  async pagePublicPromptIds(
+    subjectName: string,
+    options: { limit?: number; cursor?: string | null } = {},
+  ): Promise<FallbackPromptPage> {
+    const rawCursor = typeof options.cursor === "string" ? options.cursor.trim() : "";
+    const decoded = rawCursor ? decodeQuestionBankCursor(rawCursor) : null;
+    if (decoded && decoded.kind !== "prompt") throw new InvalidQuestionBankCursorError();
+
+    const limit = clampPyqLimit(options.limit);
+    await connect();
+    const rows = await this.model.aggregate(
+      fallbackPromptIdPipeline(
+        publicAnalysisReportFilter({ subjectName }),
+        decoded && decoded.kind === "prompt" ? decoded.id : null,
+        limit,
+      ) as unknown as PipelineStage[],
+    );
+
+    const ids = (rows as Array<{ _id?: unknown }>)
+      .map((row) => (row?._id == null ? "" : String(row._id)))
+      .filter((id) => id.length > 0);
+    const hasMore = ids.length > limit;
+    const pageIds = hasMore ? ids.slice(0, limit) : ids;
+    const last = pageIds[pageIds.length - 1];
+
+    return {
+      ids: pageIds,
+      nextCursor: hasMore && last ? encodeQuestionBankCursor({ kind: "prompt", id: last }) : null,
+    };
+  }
+
+  /**
+   * Counts, years, and Bloom totals for the fallback question bank.
+   * The aggregation does not return report or prompt documents.
+   */
+  async summarizeFallbackPyqs(
+    subjectName: string,
+    promptCollection: string,
+  ): Promise<FallbackPyqSummary> {
+    await connect();
+    const rows = await this.model.aggregate(
+      fallbackPyqSummaryPipeline(
+        publicAnalysisReportFilter({ subjectName }),
+        promptCollection,
+      ) as unknown as PipelineStage[],
+    );
+    return readFallbackPyqSummary(rows);
   }
 
   /**

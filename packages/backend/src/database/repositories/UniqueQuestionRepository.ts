@@ -1,6 +1,28 @@
 import { getUniqueQuestionModel } from "../newFeatureModels";
 import type { UniqueQuestionInsert } from "../schemas/index";
 import { identityWriteAttempts, isDuplicateKeyError } from "../uniqueQuestionDedup";
+import {
+  UNIQUE_QUESTION_PAGE_PROJECTION,
+  InvalidQuestionBankCursorError,
+  clampPyqLimit,
+  decodeQuestionBankCursor,
+  encodeQuestionBankCursor,
+  questionBankPageFilter,
+  type QuestionBankPage,
+} from "../../services/questionBankPage";
+
+interface SubjectListOptions {
+  bloomsLevel?: string;
+  minOccurrence?: number;
+  sortBy?: "occurrenceCount" | "firstSeenAt" | "lastSeenAt";
+  sortOrder?: "asc" | "desc";
+  includeInactive?: boolean;
+}
+
+interface SubjectPageOptions extends SubjectListOptions {
+  limit: number;
+  cursor?: string | null;
+}
 
 /** Fields callers are allowed to sort by. */
 const SORTABLE_FIELDS = ["occurrenceCount", "firstSeenAt", "lastSeenAt"] as const;
@@ -138,20 +160,25 @@ export class UniqueQuestionRepository {
   }
 
   /**
-   * Get all unique questions for a subject
+   * Active unique questions for a subject, without embedding vectors.
+   * Callers that render the resource bank pass `limit` (and optionally
+   * `cursor`) and receive one page. Other callers still receive the list.
    */
   async findBySubject(
     subject: string,
-    options?: {
-      bloomsLevel?: string;
-      minOccurrence?: number;
-      sortBy?: "occurrenceCount" | "firstSeenAt" | "lastSeenAt";
-      sortOrder?: "asc" | "desc";
-      includeInactive?: boolean;
+    options?: SubjectListOptions,
+  ): Promise<Record<string, unknown>[]>;
+  async findBySubject(subject: string, options: SubjectPageOptions): Promise<QuestionBankPage>;
+  async findBySubject(
+    subject: string,
+    options?: SubjectListOptions & { limit?: number; cursor?: string | null },
+  ): Promise<Record<string, unknown>[] | QuestionBankPage> {
+    if (typeof options?.limit === "number") {
+      return this.findSubjectPage(subject, options as SubjectPageOptions);
     }
-  ) {
-    const query: any = { subject };
-    
+
+    const query: Record<string, unknown> = { subject };
+
     // Only filter by isActive if not explicitly including inactive
     if (!options?.includeInactive) {
       query.isActive = true;
@@ -174,13 +201,63 @@ export class UniqueQuestionRepository {
         ? requestedSort
         : "occurrenceCount";
     const sortOrder = options?.sortOrder === "asc" ? 1 : -1;
-    
+
     const results = await this.model
       .find(query)
+      .select({ embedding: 0 })
       .sort({ [sortField]: sortOrder })
       .lean();
-    
-    return results;
+
+    return results as Record<string, unknown>[];
+  }
+
+  /**
+   * One page of active questions, occurrence count descending.
+   * The query projects the resource fields and does not load embeddings.
+   * An unusable cursor throws before the query runs.
+   */
+  private async findSubjectPage(subject: string, options: SubjectPageOptions): Promise<QuestionBankPage> {
+    const rawCursor = typeof options.cursor === "string" ? options.cursor.trim() : "";
+    const decoded = rawCursor ? decodeQuestionBankCursor(rawCursor) : null;
+    if (decoded && decoded.kind !== "question") {
+      throw new InvalidQuestionBankCursorError();
+    }
+
+    const limit = clampPyqLimit(options.limit);
+    const minOccurrence = toFiniteInt(options.minOccurrence, 1, Number.MAX_SAFE_INTEGER);
+    const rows = await this.model
+      .find(
+        questionBankPageFilter(subject, decoded && decoded.kind === "question" ? decoded : null, {
+          includeInactive: options.includeInactive,
+          bloomsLevel: options.bloomsLevel,
+          minOccurrence,
+        }),
+      )
+      .select(UNIQUE_QUESTION_PAGE_PROJECTION)
+      .sort({ occurrenceCount: -1, _id: -1 })
+      .limit(limit + 1)
+      .lean();
+
+    const stored = rows as Array<{ _id?: unknown; occurrenceCount?: unknown }>;
+    const hasMore = stored.length > limit;
+    const questions = hasMore ? stored.slice(0, limit) : stored;
+    const last = questions[questions.length - 1];
+    const lastId = last?._id == null ? "" : String(last._id);
+    const occurrenceCount =
+      typeof last?.occurrenceCount === "number" &&
+      Number.isInteger(last.occurrenceCount) &&
+      last.occurrenceCount >= 0
+        ? last.occurrenceCount
+        : 0;
+    const nextCursor =
+      hasMore && /^[a-f0-9]{24}$/i.test(lastId)
+        ? encodeQuestionBankCursor({ kind: "question", occurrenceCount, id: lastId })
+        : null;
+
+    return {
+      questions: questions as Array<Record<string, unknown>>,
+      nextCursor,
+    };
   }
 
   /**

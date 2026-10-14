@@ -67,6 +67,7 @@ uniqueQuestionSchema.index(
 );
 uniqueQuestionSchema.index({ subject: 1, bloomsLevel: 1 });
 uniqueQuestionSchema.index({ occurrenceCount: -1 });
+uniqueQuestionSchema.index({ subject: 1, isActive: 1, occurrenceCount: -1, _id: -1 });
 
 export const getUniqueQuestionModel = () => {
   return models["UniqueQuestion"] || model("UniqueQuestion", uniqueQuestionSchema);

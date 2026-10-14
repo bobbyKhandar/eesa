@@ -278,3 +278,167 @@ export function buildPyqStats(input: PyqStatsInput): PyqStats {
     subjectCount: nonNegativeInt(input.subjectCount),
   };
 }
+
+/** Difficulty label shown on a PYQ row. Unknown Bloom levels stay Medium. */
+export function difficultyFromBlooms(bloomsLevel: unknown): string {
+  const level = typeof bloomsLevel === "string" ? bloomsLevel.toLowerCase() : "";
+  switch (level) {
+    case "remember":
+    case "understand":
+      return "Easy";
+    case "apply":
+    case "analyze":
+      return "Medium";
+    case "evaluate":
+    case "create":
+      return "Hard";
+    default:
+      return "Medium";
+  }
+}
+
+export interface ResourcePyq {
+  _id: string;
+  id: string;
+  title: string;
+  questionText: string;
+  year: string;
+  years: string[];
+  examType: string;
+  occurrenceCount: number;
+  frequency: number;
+  bloomsLevel: string;
+  topic: string;
+  topics: string[];
+  difficulty: string;
+  downloadCount: number;
+  sourceReports: number;
+  firstSeenAt?: unknown;
+  lastSeenAt?: unknown;
+}
+
+export interface FallbackPyqContext {
+  years: readonly string[];
+  examType?: string;
+  reportCount?: number;
+  firstSeenAt?: unknown;
+  lastSeenAt?: unknown;
+}
+
+function readField(source: object, key: string): unknown {
+  return (source as { [key: string]: unknown })[key];
+}
+
+function rowId(value: unknown, index: number): string {
+  if (typeof value === "string" && value.length > 0) return value;
+  if (value && typeof value === "object" && "toString" in value) {
+    const text = String(value);
+    if (text && text !== "[object Object]") return text;
+  }
+  return `q-${index + 1}`;
+}
+
+function appearanceYears(appearances: unknown): string[] {
+  if (!Array.isArray(appearances)) return [];
+  return Array.from(
+    new Set(
+      appearances
+        .map((appearance) => {
+          if (!appearance || typeof appearance !== "object") return "";
+          const year = (appearance as { year?: unknown }).year;
+          return typeof year === "string" ? year : "";
+        })
+        .filter((year) => year.length > 0),
+    ),
+  ).sort();
+}
+
+function firstAppearanceExamType(appearances: unknown): string {
+  if (!Array.isArray(appearances) || !appearances[0] || typeof appearances[0] !== "object") {
+    return "main";
+  }
+  const examType = (appearances[0] as { examType?: unknown }).examType;
+  return typeof examType === "string" && examType.length > 0 ? examType : "main";
+}
+
+function positiveCount(value: unknown, fallback: number): number {
+  return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : fallback;
+}
+
+/**
+ * Shape one stored unique question the way the resources table reads it.
+ * The returned row is a fresh object, so an embedding on the source stays there.
+ */
+export function mapStoredQuestionToPyq(question: object, index: number, subject: string): ResourcePyq {
+  const storedText = readField(question, "text") ?? readField(question, "questionText");
+  const questionText = typeof storedText === "string" ? storedText : "";
+  const years = appearanceYears(readField(question, "appearances"));
+  const bloomsLevel = readField(question, "bloomsLevel");
+  const topicValue = readField(question, "topic");
+  const topic = typeof topicValue === "string" && topicValue.length > 0 ? topicValue : subject;
+  const occurrence = positiveCount(readField(question, "occurrenceCount"), 1);
+  const sourceReports = readField(question, "sourceReports");
+  const id = rowId(readField(question, "_id"), index);
+
+  return {
+    _id: id,
+    id,
+    title: questionTitle(storedText, `Question ${index + 1}`),
+    questionText,
+    year: years[0] ?? "",
+    years,
+    examType: firstAppearanceExamType(readField(question, "appearances")),
+    occurrenceCount: occurrence,
+    frequency: occurrence,
+    bloomsLevel: typeof bloomsLevel === "string" && bloomsLevel.length > 0 ? bloomsLevel : "understand",
+    topic,
+    topics: typeof topicValue === "string" && topicValue.length > 0 ? [topicValue] : [subject],
+    difficulty: difficultyFromBlooms(bloomsLevel),
+    downloadCount: 0,
+    sourceReports: Array.isArray(sourceReports) && sourceReports.length > 0 ? sourceReports.length : 1,
+    firstSeenAt: readField(question, "firstSeenAt"),
+    lastSeenAt: readField(question, "lastSeenAt"),
+  };
+}
+
+/**
+ * Shape one fallback prompt. Years, exam type, and report count come from the
+ * subject summary so a page of prompts does not recompute them.
+ */
+export function mapFallbackPromptToPyq(
+  prompt: object,
+  index: number,
+  subject: string,
+  context: FallbackPyqContext,
+): ResourcePyq {
+  const primary = readField(prompt, "questionText");
+  const alternate = readField(prompt, "text");
+  const questionText =
+    (typeof primary === "string" && primary.length > 0 ? primary : "") ||
+    (typeof alternate === "string" ? alternate : "");
+  const bloomsLevel = readField(prompt, "bloomsLevel");
+  const topicValue = readField(prompt, "topic");
+  const topic = typeof topicValue === "string" && topicValue.length > 0 ? topicValue : subject;
+  const years = context.years.filter((year) => year.length > 0);
+  const id = rowId(readField(prompt, "_id"), index);
+
+  return {
+    _id: id,
+    id,
+    title: questionTitle(primary ?? alternate, `Question ${index + 1}`),
+    questionText,
+    year: years[0] ?? "2024",
+    years,
+    examType: context.examType && context.examType.length > 0 ? context.examType : "main",
+    occurrenceCount: 1,
+    frequency: 1,
+    bloomsLevel: typeof bloomsLevel === "string" && bloomsLevel.length > 0 ? bloomsLevel : "understand",
+    topic,
+    topics: typeof topicValue === "string" && topicValue.length > 0 ? [topicValue] : [subject],
+    difficulty: difficultyFromBlooms(bloomsLevel),
+    downloadCount: 0,
+    sourceReports: typeof context.reportCount === "number" && context.reportCount > 0 ? context.reportCount : 1,
+    firstSeenAt: context.firstSeenAt,
+    lastSeenAt: context.lastSeenAt,
+  };
+}

@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/frontend/components/ui/tabs"
 import { BookOpen, AlertCircle } from "lucide-react"
 import {
@@ -26,10 +26,17 @@ import {
   visibleResourceSections,
 } from "@/frontend/lib/resourceFilters"
 
+/** Matches PYQ_PAGE_DEFAULT_LIMIT. The API clamps anything outside 1..50. */
+const PYQ_PAGE_SIZE = 20
+
 interface ResourcesData extends SubjectCatalog {}
 
 interface PYQsData {
   pyqs: PYQ[]
+  page?: {
+    limit: number
+    nextCursor: string | null
+  }
   stats: {
     totalQuestions: number
     totalOccurrences: number
@@ -50,9 +57,25 @@ export default function ResourcesPage() {
   // API state
   const [loading, setLoading] = useState(true)
   const [pyqsLoading, setPyqsLoading] = useState(false)
+  const [paging, setPaging] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [resourcesData, setResourcesData] = useState<ResourcesData | null>(null)
   const [pyqsData, setPyqsData] = useState<PYQsData | null>(null)
+  const [cursor, setCursor] = useState<string | null>(null)
+  const [previousCursors, setPreviousCursors] = useState<Array<string | null>>([])
+  const [cursorSubject, setCursorSubject] = useState(selectedSubject)
+  const hasPage = useRef(false)
+  hasPage.current = pyqsData !== null
+
+  // A new subject starts at the first page. Doing this while rendering keeps
+  // the fetch effect from asking for the previous subject's cursor.
+  if (cursorSubject !== selectedSubject) {
+    setCursorSubject(selectedSubject)
+    setCursor(null)
+    setPreviousCursors([])
+    setPyqsData(null)
+    if (selectedSubject) setPyqsLoading(true)
+  }
 
   // Fetch initial subjects/branches/semesters data
   useEffect(() => {
@@ -86,36 +109,56 @@ export default function ResourcesPage() {
     })
   }, [resourcesData])
 
-  // Fetch PYQs when subject is selected
+  // Fetch one page of PYQs when the subject or the cursor changes.
   useEffect(() => {
     if (!selectedSubject) {
       setPyqsData(null)
+      setPyqsLoading(false)
+      setPaging(false)
       return
     }
-    
+
+    let cancelled = false
+
     const fetchPYQs = async () => {
       try {
-        setPyqsLoading(true)
-        
-        const response = await fetch(`/api/resources?action=pyqs&subject=${encodeURIComponent(selectedSubject)}`)
+        if (!hasPage.current) setPyqsLoading(true)
+        else setPaging(true)
+
+        const params = new URLSearchParams({
+          action: "pyqs",
+          subject: selectedSubject,
+          limit: String(PYQ_PAGE_SIZE),
+        })
+        if (cursor) params.set("cursor", cursor)
+        const response = await fetch(`/api/resources?${params.toString()}`)
         const json = await response.json()
-        
+
         if (!response.ok || !json.success) {
           throw new Error(json.error || "Failed to fetch questions")
         }
-        
+
+        if (cancelled) return
         setPyqsData(json.data)
+        setError(null)
       } catch (err: any) {
+        if (cancelled) return
         console.error("Error fetching PYQs:", err)
         setPyqsData(null)
         setError(err.message || "Failed to load questions")
       } finally {
-        setPyqsLoading(false)
+        if (!cancelled) {
+          setPyqsLoading(false)
+          setPaging(false)
+        }
       }
     }
-    
-    fetchPYQs()
-  }, [selectedSubject])
+
+    void fetchPYQs()
+    return () => {
+      cancelled = true
+    }
+  }, [selectedSubject, cursor])
 
   // Only offer what the API returned. These used to fall back to four hardcoded
   // branches and eight hardcoded semesters when the catalogue was empty, so a
@@ -234,6 +277,19 @@ export default function ResourcesPage() {
     activeSection === "student" ? searchQuery : ""
   )
 
+  const nextCursor = pyqsData?.page?.nextCursor ?? null
+  const goToNextPage = () => {
+    if (!nextCursor || paging || pyqsLoading) return
+    setPreviousCursors((stack) => [...stack, cursor])
+    setCursor(nextCursor)
+  }
+  const goToPreviousPage = () => {
+    if (previousCursors.length === 0 || paging || pyqsLoading) return
+    const prior = previousCursors[previousCursors.length - 1]
+    setPreviousCursors((stack) => stack.slice(0, -1))
+    setCursor(prior)
+  }
+
   return (
     <div className="space-y-6">
       {error && (
@@ -313,6 +369,7 @@ export default function ResourcesPage() {
             {sections.includes("pyqs") && (
               <TabsContent value="pyqs" className="mt-6">
                 <PyqsTable
+                  key={`${selectedSubject}:${cursor ?? ""}`}
                   subjectName={selectedSubject}
                   pyqs={filteredPyqs}
                   loading={pyqsLoading}
@@ -320,6 +377,17 @@ export default function ResourcesPage() {
                   emptyMessage={
                     activeSection === "pyqs" && searchQuery.trim()
                       ? resourceEmptyMessage("pyqs", searchQuery)
+                      : undefined
+                  }
+                  page={
+                    pyqsData || cursor || previousCursors.length > 0
+                      ? {
+                          hasPrevious: previousCursors.length > 0,
+                          hasNext: Boolean(nextCursor),
+                          onPrevious: goToPreviousPage,
+                          onNext: goToNextPage,
+                          paging,
+                        }
                       : undefined
                   }
                 />
