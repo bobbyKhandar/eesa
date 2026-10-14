@@ -114,6 +114,15 @@ Older state files stored only the basename (`questions.json`) in `processed`, `f
 4. Setting `source_namespace` after an earlier run still works. Parked `legacy_unscoped_*` entries are adopted on the next matching run. Running a different directory does not adopt them, and the pipeline never fills in `source_namespace` from the directory you happened to pass.
 5. Objects already stored at `enriched_questions/{basename}_enriched.json` are left in place. New writes use the namespaced key, so a reprocessed file does not overwrite the old object.
 
+### Supported helpers
+
+`pipeline_orchestrator.py` calls these public functions. `upload_enriched_to_s3` takes the source identity from `source_identity`, not a bare filename:
+
+- `ensure_s3_bucket_exists()`
+- `load_state()` / `save_state(state)`
+- `enrich_single_file(file_path, filename, use_instructions=True)`
+- `upload_enriched_to_s3(enriched_data, source_id)`
+
 ### Force Reprocess All Files
 
 To ignore state and reprocess everything:
