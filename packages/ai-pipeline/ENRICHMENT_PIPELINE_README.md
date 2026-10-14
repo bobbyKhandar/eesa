@@ -29,18 +29,27 @@ This pipeline processes parsed question JSON files and enriches them with **Bloo
 
 ### State Management
 
-The pipeline maintains a state file (`processing_state.json`) that tracks:
+The pipeline maintains a state file (`processing_state.json`) that tracks each input by a **source identity**, not by its basename:
 
 ```json
 {
-  "processed": ["file1.json", "file2.json"],
-  "failed": ["error_file1.json"],
+  "processed": [
+    "file1.json__ns0123456789ab",
+    "semester/file2.json__ns0123456789ab"
+  ],
+  "failed": ["error_file1.json__ns0123456789ab"],
   "retry_counts": {
-    "error_file1.json": 2
+    "error_file1.json__ns0123456789ab": 2
   },
+  "legacy_unscoped_processed": [],
+  "legacy_unscoped_failed": [],
+  "legacy_unscoped_retry_counts": {},
+  "source_namespace": null,
   "last_updated": "2025-12-10T10:30:00"
 }
 ```
+
+`source_namespace` stays unset unless you set it yourself to adopt an older basename state. See [Source identity and legacy state](#source-identity-and-legacy-state).
 
 **State is saved in two locations:**
 1. **S3**: `s3://eesa-pipeline-storage/enrichment_state.json` (durable, cloud-accessible)
@@ -51,10 +60,12 @@ The pipeline maintains a state file (`processing_state.json`) that tracks:
 ```
 s3://eesa-pipeline-storage/
   └── enriched_questions/
-      ├── Advanced_FEA_1761409395_enriched.json
-      ├── Database_Systems_1761403997_enriched.json
+      ├── Advanced_FEA_1761409395.json__ns0123456789ab_enriched.json
+      ├── semester/Database_Systems_1761403997.json__ns0123456789ab_enriched.json
       └── ...
 ```
+
+The `__ns` segment is the input directory's hash, so `dir_a/questions.json` and `dir_b/questions.json` are different objects.
 
 ## Usage
 
@@ -67,8 +78,8 @@ python enrich_questions_s3_pipeline.py
 
 This will:
 - Process all files in `ai_pipeline/parsedQuestions/`
-- Skip already-processed files
-- Upload results to S3
+- Skip files whose source identity is already in `processed`
+- Upload results to S3 under that same identity
 - Update state automatically
 
 ### Custom Input Directory
@@ -76,6 +87,32 @@ This will:
 ```bash
 python enrich_questions_s3_pipeline.py "C:/path/to/parsed/questions"
 ```
+
+### Source identity and legacy state
+
+Each file is identified by:
+
+```text
+{relative_path}__ns{namespace_hash}
+```
+
+- `relative_path` is the file's path relative to the input directory, in POSIX form. The input directory is the root. `.` and `..` are collapsed and symlinks are resolved, so a trailing slash or an equivalent relative path does not change the id.
+- `namespace_hash` is the first 12 hex characters of SHA-256 over that normalized absolute directory. Windows paths are case-folded before hashing.
+
+`dir_a/questions.json` and `dir_b/questions.json` therefore get different processed entries and different keys:
+
+```text
+enriched_questions/questions.json__ns{hash_of_dir_a}_enriched.json
+enriched_questions/questions.json__ns{hash_of_dir_b}_enriched.json
+```
+
+Older state files stored only the basename (`questions.json`) in `processed`, `failed`, and `retry_counts`. On each run:
+
+1. Entries that already use a source identity are left as-is. They skip only that exact input.
+2. Bare basenames are **not** applied to the current directory by default. They are moved to `legacy_unscoped_processed`, `legacy_unscoped_failed`, and `legacy_unscoped_retry_counts`. A new file that shares the name is processed, including the same basename in another directory. The pipeline does not guess which directory produced the old entry.
+3. To keep skipping files from the directory that produced the legacy state, set `source_namespace` to that directory before re-running. The comparison uses the same normalization as the hash (absolute path, symlinks resolved, trailing separator removed). When it matches, each bare basename that maps to **exactly one** file in that directory is rewritten to the new identity and stays in `processed`, `failed`, or `retry_counts`. If two files share the basename, the entry stays unscoped and **neither** file is skipped.
+4. Setting `source_namespace` after an earlier run still works. Parked `legacy_unscoped_*` entries are adopted on the next matching run. Running a different directory does not adopt them, and the pipeline never fills in `source_namespace` from the directory you happened to pass.
+5. Objects already stored at `enriched_questions/{basename}_enriched.json` are left in place. New writes use the namespaced key, so a reprocessed file does not overwrite the old object.
 
 ### Force Reprocess All Files
 
@@ -128,8 +165,10 @@ Each enriched question includes:
 
 1. Simply re-run the script
 2. It will load the saved state
-3. Skip all already-processed files
+3. Skip inputs whose source identity is already in `processed`
 4. Continue from where it left off
+
+A basename-only entry from an older state file does not count as processed until `source_namespace` pins it to this input directory. See [Source identity and legacy state](#source-identity-and-legacy-state).
 
 **To reset and start fresh:**
 
@@ -177,7 +216,7 @@ PHASE 1: Processing Non-Error Files
          Recall: 2 (13.3%)
          Apply: 8 (53.3%)
          Analyze: 5 (33.3%)
-   📤 Uploaded to: s3://eesa-pipeline-storage/enriched_questions/Advanced_FEA_enriched.json
+   📤 Uploaded to: s3://eesa-pipeline-storage/enriched_questions/Advanced_FEA.json__ns0123456789ab_enriched.json
 ✓ State saved locally
 ✓ State saved to S3
 ```
