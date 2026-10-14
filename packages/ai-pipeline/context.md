@@ -53,6 +53,7 @@
 ### Core Pipeline Modules
 | Module | Role |
 |---|---|
+| `src/__init__.py` | Package exports. `PipelineManager`, `pipeline_manager`, `OCREngine`, `ImageProcessor`, `PDFHandler`, and `redis_client` are bound eagerly. `AIServer`, `start_server`, and `stop_server` resolve lazily from `api.server`, so importing the package — including the documented `from src.pipeline_manager import pipeline_manager` — never builds the Flask app |
 | `src/aws_texttract_pipeline.py` | Async Textract OCR via `start_document_text_detection()` + polling |
 | `src/parsing_pipeline.py` | Bedrock parsing with Gemma 3 27B — extracts Q&A from OCR text. Chunked parsing lists `failed_chunks` and sets `status` to `success`, `partial`, or `failed` |
 | `src/enrich_questions_job_based.py` | Bedrock enrichment — Bloom's taxonomy, difficulty, keywords, syllabus. Chunked enrichment reads `chunk_metadata` and keeps continuation markers for the merger |

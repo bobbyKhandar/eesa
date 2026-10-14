@@ -520,8 +520,8 @@ Current test coverage: **90.2%**
 ai_pipeline/
 ├── src/                              # Core application code
 │   ├── __init__.py                  # Package initialization
-│   ├── ocr_engine.py                # OCR text extraction (183 lines)
-│   ├── image_processor.py           # Image preprocessing (291 lines)
+│   ├── local_ocr_engine.py          # OCR text extraction (EasyOCR)
+│   ├── local_image_processor_pipeline.py  # Image preprocessing
 │   ├── pdf_handler.py               # PDF operations (353 lines)
 │   ├── pipeline_manager.py          # Orchestration (369 lines)
 │   ├── redis_client.py              # Redis operations
