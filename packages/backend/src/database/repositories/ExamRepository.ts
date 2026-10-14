@@ -4,11 +4,12 @@
  */
 
 import { Types } from "mongoose";
-import type { Model } from "mongoose";
+import type { ClientSession, Model } from "mongoose";
 import { connect } from "../connect.js";
 import { getExamModel, getUserModel } from "../mongooseSchemas.js";
 import type { Exam } from "../schemas/examSchemaZod.js";
 import { activeExamQuery } from "../examDeletion.js";
+import { ExamCreationAborted, isTransactionsUnsupportedError } from "../examWriteRollback.js";
 import { orderQuestionDetails } from "../questionOrder.js";
 import { ExamQuestionRepository } from "./ExamQuestionRepository.js";
 import { nullIfAbsentId, objectIdsFrom, rethrowReadFailure } from "./readErrors.js";
@@ -50,7 +51,9 @@ export class ExamRepository {
       answer: string | number[];
       options?: Array<{ text: string; isCorrect: boolean }>;
     }>;
-  }): Promise<{ success: boolean; examId?: string; error?: string }> {
+  }, options?: { session?: ClientSession | null }): Promise<{ success: boolean; examId?: string; examQuestionIds?: string[]; error?: string }> {
+    const session = options?.session ?? null;
+    let examQuestionIds: string[] = [];
     try {
       await connect();
 
@@ -64,10 +67,17 @@ export class ExamRepository {
         answer: q.answer
       }));
 
-      const examQuestionsResult = await this.examQuestionRepo.createBulk(examQuestionsData);
+      const examQuestionsResult = await this.examQuestionRepo.createBulk(examQuestionsData, { session });
       if (!examQuestionsResult.success || !examQuestionsResult.examQuestionIds) {
-        return { success: false, error: examQuestionsResult.error };
+        return {
+          success: false,
+          error: examQuestionsResult.error,
+          ...(examQuestionsResult.examQuestionIds?.length
+            ? { examQuestionIds: examQuestionsResult.examQuestionIds }
+            : {}),
+        };
       }
+      examQuestionIds = examQuestionsResult.examQuestionIds;
 
       // Step 2: Calculate total marks
       const examMaxMarks = examData.questions.reduce((sum, q) => sum + q.marks, 0);
@@ -88,7 +98,7 @@ export class ExamRepository {
         negativeMarking: examData.negativeMarking || false,
         negativeMarkingPercentage: examData.negativeMarkingPercentage,
         // Store as array of strings to match schema and enable aggregation lookup
-        questions: examQuestionsResult.examQuestionIds,
+        questions: examQuestionIds,
         assignedUsers: examData.assignedUsers,
         createdAt: new Date()
       };
@@ -96,8 +106,12 @@ export class ExamRepository {
       // Manually generate _id to avoid Mongoose pre-save hook issues
       examDoc._id = new Types.ObjectId();
       
-      // Use insertMany to bypass pre-save hooks that cause "_id before saving" errors
-      const savedExams = await this.model.insertMany([examDoc] as any);
+      // Use insertMany to bypass pre-save hooks that cause "_id before saving" errors.
+      // The session, when present, keeps this insert in the same transaction as the questions.
+      const savedExams = await this.model.insertMany([examDoc] as any, {
+        ordered: true,
+        ...(session ? { session } : {}),
+      });
       const savedExam = savedExams[0];
       
       // Ensure we have the _id
@@ -105,23 +119,49 @@ export class ExamRepository {
         savedExam._id = examDoc._id as any;
       }
 
-      // Step 4: Update assigned users (optional - skip if users don't exist)
-      try {
-        const UserModel = getUserModel();
-        await UserModel.updateMany(
-          { _id: { $in: examData.assignedUsers } },
-          { $addToSet: { currentAllocatedExams: savedExam._id.toString() } }
-        );
-      } catch (userUpdateError) {
-        console.warn('Could not update assigned users (they may not exist):', userUpdateError);
+      // User allocation is best-effort and must not abort a transaction or
+      // roll the exam back. Inside a transaction the route assigns users
+      // after commit. Outside one, keep the same best-effort update.
+      if (!session) {
+        try {
+          const UserModel = getUserModel();
+          await UserModel.updateMany(
+            { _id: { $in: examData.assignedUsers } },
+            { $addToSet: { currentAllocatedExams: savedExam._id.toString() } }
+          );
+        } catch (userUpdateError) {
+          console.warn('Could not update assigned users (they may not exist):', userUpdateError);
+        }
       }
 
       console.log('Exam created with prompts:', savedExam._id);
       return { success: true, examId: savedExam._id.toString() };
     } catch (error) {
       console.error('Error creating exam with prompts:', error);
-      return { success: false, error: 'Failed to create exam with prompts' };
+      if (isTransactionsUnsupportedError(error)) throw error;
+      if (session) {
+        if (error instanceof ExamCreationAborted) throw error;
+        throw new ExamCreationAborted('Failed to create exam with prompts', { examQuestionIds });
+      }
+
+      const leftover = await this.compensateExamQuestions(examQuestionIds);
+      const message = error instanceof ExamCreationAborted ? error.message : 'Failed to create exam with prompts';
+      return {
+        success: false,
+        error: message,
+        ...(leftover.length > 0 ? { examQuestionIds: leftover } : {}),
+      };
     }
+  }
+
+  /**
+   * Remove exam questions stored before the exam document failed to insert.
+   * Ids that are still present are returned so the caller can try again.
+   */
+  private async compensateExamQuestions(examQuestionIds: string[]): Promise<string[]> {
+    if (examQuestionIds.length === 0) return [];
+    const removed = await this.examQuestionRepo.deleteManyByIds(examQuestionIds);
+    return removed >= examQuestionIds.length ? [] : examQuestionIds;
   }
 
   /**

@@ -1,7 +1,10 @@
 // app/api/exams/create/route.ts
 import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
-import { examRepo, promptRepo, userRepo } from "@/backend/dist/database/repositories/index";
+import type { ClientSession } from "mongoose";
+import { runOptionalMongoTransaction } from "@/backend/dist/database/optionalTransaction.js";
+import { examQuestionRepo, examRepo, promptRepo, userRepo } from "@/backend/dist/database/repositories/index";
+import { commitExamCreation } from "@/backend/dist/services/examCreationCommit.js";
 import { buildStoredQuestionOptions } from "@/backend/src/services/mcqAlignment";
 import {
   authoredQuestionType,
@@ -103,43 +106,7 @@ export async function POST(req: Request) {
       assignedUsersList = normalizeAssignedUsers(confirmedStudents, userId);
     }
 
-    /* ------------- Step 1: Create Prompts (Central Question Library) ------------- */
-    const promptsData = questions.map((q: any) => ({
-      questionText: q.text,
-      subject: subject,
-      topic: q.topic || undefined,
-      generateVia: 'user' as const,
-      createdBy: userId,
-      bloomsLevel: q.bloomsLevel || undefined
-    }));
-
-    const promptsResult = await promptRepo.createBulk(promptsData);
-    
-    if (!promptsResult.success || !promptsResult.promptIds) {
-      return NextResponse.json(
-        { success: false, error: promptsResult.error || "Failed to create question prompts" },
-        { status: 500 }
-      );
-    }
-
-    /* ------------- Step 2: Create Exam with ExamQuestions ------------- */
-    const examQuestionsData = questions.map((q: any, index: number) => {
-      const stored = buildStoredQuestionOptions({
-        options: Array.isArray(q.options) ? q.options : undefined,
-        correctOption: typeof q.correctOption === "number" ? q.correctOption : undefined,
-        answer: q.answer,
-      });
-      return {
-        promptId: promptsResult.promptIds![index],
-        marks: q.marks,
-        negativeMarks: computeNegativeMarks(q.marks, negativeMarking === true, negativeMarkingPercentage),
-        questionType: authoredQuestionType(q) ?? "TEXT",
-        answer: stored.answer ?? '',
-        options: stored.options,
-      };
-    });
-
-    /* ------------- Step 3: Ensure user exists in database ------------- */
+    /* ------------- Ensure the creator exists before any prompt is written ------------- */
     // Ensure database connection
     const { connect } = await import("@/backend/dist/database/connect.js");
     await connect();
@@ -180,33 +147,74 @@ export async function POST(req: Request) {
       }
     }
 
-    const examData = {
-      examTitle,
-      examDescription,
-      subject,
-      examDegree,
-      examType,
-      passingPercentage,
-      duration: resolveDuration(duration),
-      scheduledAt: parsedScheduledAt,
+    const promptsData = questions.map((q: any) => ({
+      questionText: q.text,
+      subject: subject,
+      topic: q.topic || undefined,
+      generateVia: 'user' as const,
       createdBy: userId,
-      instructions: instructions || undefined,
-      negativeMarking: negativeMarking || false,
-      negativeMarkingPercentage: negativeMarking ? resolveNegativeMarkingPercentage(negativeMarkingPercentage) : undefined,
-      assignedUsers: assignedUsersList,
-      questions: examQuestionsData
-    };
+      bloomsLevel: q.bloomsLevel || undefined
+    }));
 
-    const examResult = await examRepo.createWithPrompts(examData);
+    const questionTemplates = questions.map((q: any) => {
+      const stored = buildStoredQuestionOptions({
+        options: Array.isArray(q.options) ? q.options : undefined,
+        correctOption: typeof q.correctOption === "number" ? q.correctOption : undefined,
+        answer: q.answer,
+      });
+      return {
+        marks: q.marks,
+        negativeMarks: computeNegativeMarks(q.marks, negativeMarking === true, negativeMarkingPercentage),
+        questionType: authoredQuestionType(q) ?? "TEXT",
+        answer: stored.answer ?? '',
+        options: stored.options,
+      };
+    });
 
-    if (!examResult.success || !examResult.examId) {
+    // Prompts, exam questions, and the exam commit together. A failed request
+    // aborts that transaction, or deletes the ids already stored when the
+    // server cannot run a transaction.
+    const committed = await commitExamCreation<ClientSession>(
+      {
+        prompts: promptsData,
+        questions: questionTemplates,
+        exam: {
+          examTitle,
+          examDescription,
+          subject,
+          examDegree,
+          examType,
+          passingPercentage,
+          duration: resolveDuration(duration),
+          scheduledAt: parsedScheduledAt,
+          createdBy: userId,
+          instructions: instructions || undefined,
+          negativeMarking: negativeMarking || false,
+          negativeMarkingPercentage: negativeMarking ? resolveNegativeMarkingPercentage(negativeMarkingPercentage) : undefined,
+          assignedUsers: assignedUsersList,
+        },
+      },
+      {
+        runTransaction: (work) => runOptionalMongoTransaction(work),
+        createPrompts: (prompts, session) => promptRepo.createBulk(prompts, { session }),
+        createExam: (exam, session) => examRepo.createWithPrompts(exam, { session }),
+        deletePrompts: async (ids) => {
+          await promptRepo.deleteManyByIds(ids);
+        },
+        deleteExamQuestions: async (ids) => {
+          await examQuestionRepo.deleteManyByIds(ids);
+        },
+      }
+    );
+
+    if (!committed.success || !committed.examId) {
       return NextResponse.json(
-        { success: false, error: examResult.error || "Failed to create exam" },
+        { success: false, error: committed.error || "Failed to create exam" },
         { status: 500 }
       );
     }
 
-    const examId = examResult.examId;
+    const examId = committed.examId;
 
     // The allocation inside `createWithPrompts` is best-effort and skips user
     // documents that do not exist yet, so repeat it for the creator (#16):
