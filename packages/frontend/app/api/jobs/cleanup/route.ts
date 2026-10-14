@@ -77,6 +77,20 @@ export async function POST(request: NextRequest) {
 
     const result = await markExpiredJobs(retention.days);
 
+    // A job whose expiration write failed keeps `s3_expired` false, so the next
+    // cleanup run selects it again. Answering 200 for that run would report the
+    // count of stored updates the admin does not actually have.
+    if (result.errors.length > 0) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: `Cleanup incomplete: ${result.errors.length} job(s) could not be processed`,
+          result
+        },
+        { status: 409 }
+      );
+    }
+
     return NextResponse.json({
       success: true,
       message: `Cleanup complete: ${result.expired} jobs marked as expired`,
