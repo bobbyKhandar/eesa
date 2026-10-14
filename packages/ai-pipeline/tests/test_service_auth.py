@@ -91,6 +91,7 @@ class TestSensitiveRoutesRequireAuth(unittest.TestCase):
         self.aws.executor.submit.assert_not_called()
         self.aws.submit_job.assert_not_called()
         self.aws.s3_client.put_object.assert_not_called()
+        self.aws.s3_client.upload_fileobj.assert_not_called()
 
     def test_job_reads_require_the_token_before_loading_metadata(self):
         status = self.client.get("/job/job-1/status")

@@ -37,6 +37,7 @@ app = Flask(__name__)
 CORS(app)
 
 aws_manager = AWSPipelineManager()
+# register_routes caps every request body with MAX_CONTENT_LENGTH.
 register_routes(app, aws_manager, pipeline_manager)
 
 # Start local pipeline if available
