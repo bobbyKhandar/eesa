@@ -20,21 +20,28 @@ interface ExamAttemptDocument extends ExamAttempt {
   _id: mongoose.Types.ObjectId;
 }
 
+/** Physical collection shared by the repository and the managed-collection registry. */
+export const EXAM_ATTEMPTS_COLLECTION = "examAttempts";
+
 const examAttemptSchema = new mongoose.Schema<ExamAttemptDocument>(
   {
     examId: { type: String, required: true },
     userId: { type: String, required: true },
     startedAt: { type: Date, required: true },
   },
-  { collection: "examAttempts" },
+  { collection: EXAM_ATTEMPTS_COLLECTION },
 );
 
 examAttemptSchema.index({ examId: 1, userId: 1 }, { unique: true });
 
-function getExamAttemptModel(): Model<ExamAttemptDocument> {
+export function getExamAttemptModel(): Model<ExamAttemptDocument> {
   return (
     (mongoose.models.ExamAttempt as Model<ExamAttemptDocument> | undefined) ??
-    mongoose.model<ExamAttemptDocument>("ExamAttempt", examAttemptSchema)
+    mongoose.model<ExamAttemptDocument>(
+      "ExamAttempt",
+      examAttemptSchema,
+      EXAM_ATTEMPTS_COLLECTION,
+    )
   );
 }
 

@@ -21,6 +21,7 @@ import {
 } from "./newFeatureModels";
 import { findDuplicatePhysicalCollections, MANAGED_COLLECTION_NAMES } from "./managedCollections";
 import type { ManagedCollectionName } from "./managedCollections";
+import { getExamAttemptModel } from "./repositories/ExamAttemptRepository";
 
 export interface ManagedCollection {
   name: ManagedCollectionName;
@@ -43,6 +44,7 @@ const MODEL_FACTORIES: Record<ManagedCollectionName, () => Model<any>> = {
   Syllabus: getSyllabusModel,
   UniqueQuestion: getUniqueQuestionModel,
   Subject: getSubjectModel,
+  examAttempts: getExamAttemptModel,
 };
 
 /**
