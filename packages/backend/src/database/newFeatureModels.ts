@@ -16,6 +16,7 @@ import {
   uniqueQuestionZod,
 } from "./schemas/index";
 import { FEATURE_SUBJECT_COLLECTION } from "./subjectCollections";
+import { uniqueQuestionIdentityIndex } from "./uniqueQuestionDedup";
 
 // Subject Schema
 const subjectSchema = zodSchema(subjectDocumentZodSchema, subjectSchemaOptions);
@@ -58,8 +59,12 @@ const uniqueQuestionSchema = zodSchema(uniqueQuestionZod, {
   collection: "uniquequestions",
 });
 
-// Add index for faster lookups
-uniqueQuestionSchema.index({ normalizedText: 1, subject: 1 });
+// One row per normalized question text and subject. Concurrent publishes
+// collide on this index and retry the upsert instead of inserting a second row.
+uniqueQuestionSchema.index(
+  uniqueQuestionIdentityIndex.fields,
+  uniqueQuestionIdentityIndex.options
+);
 uniqueQuestionSchema.index({ subject: 1, bloomsLevel: 1 });
 uniqueQuestionSchema.index({ occurrenceCount: -1 });
 

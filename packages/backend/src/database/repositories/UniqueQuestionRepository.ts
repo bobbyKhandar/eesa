@@ -1,5 +1,6 @@
 import { getUniqueQuestionModel } from "../newFeatureModels";
-import type { UniqueQuestion, UniqueQuestionInsert } from "../schemas/index";
+import type { UniqueQuestionInsert } from "../schemas/index";
+import { identityWriteAttempts, isDuplicateKeyError } from "../uniqueQuestionDedup";
 
 /** Fields callers are allowed to sort by. */
 const SORTABLE_FIELDS = ["occurrenceCount", "firstSeenAt", "lastSeenAt"] as const;
@@ -11,6 +12,18 @@ const SORTABLE_FIELDS = ["occurrenceCount", "firstSeenAt", "lastSeenAt"] as cons
  */
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function readUpsertResult(result: unknown): { question: unknown; isNew: boolean } | null {
+  if (!result || typeof result !== "object" || !("value" in result)) return null;
+  const record = result as {
+    value?: unknown;
+    lastErrorObject?: { updatedExisting?: boolean; upserted?: unknown };
+  };
+  if (record.value == null) return null;
+  const info = record.lastErrorObject;
+  const isNew = info?.updatedExisting === false || info?.upserted != null;
+  return { question: record.value, isNew };
 }
 
 function toFiniteInt(value: unknown, min: number, max: number): number | undefined {
@@ -26,11 +39,13 @@ export class UniqueQuestionRepository {
   /**
    * Upsert a unique question and link it to one analysis report.
    *
-   * Repeating the call for the same report (a publication retry) does not
-   * increment `occurrenceCount` or duplicate the appearance. A different
-   * report still counts as another occurrence.
+   * The write is one atomic upsert on `normalizedText` + `subject`. A
+   * duplicate-key error means another publisher inserted that pair; the call
+   * retries against the stored row. Repeating the call for the same report
+   * (a publication retry) does not increment `occurrenceCount` or duplicate
+   * the appearance. A different report still counts as another occurrence.
    */
-  async findOrCreate(data: UniqueQuestionInsert & { 
+  async findOrCreate(data: UniqueQuestionInsert & {
     analysisReportId: string;
     year: string;
     semester: string;
@@ -56,7 +71,7 @@ export class UniqueQuestionRepository {
       sourceReports: [],
       promptIds: [],
       appearances: [],
-      // Linked exactly once below, including on the insert path.
+      // Schema default is 1. $inc below is the only increment, including on insert.
       occurrenceCount: 0,
       firstSeenAt: data.firstSeenAt ?? now,
       lastSeenAt: now,
@@ -69,73 +84,57 @@ export class UniqueQuestionRepository {
       normalizedText: data.normalizedText,
       subject: data.subject,
     };
-
-    const upserted = await this.model.updateOne(
-      identity,
-      { $setOnInsert: insert },
-      // Schema defaults would also write occurrenceCount (1) into $setOnInsert.
-      // Keep the explicit 0 so the following link is the only increment.
-      { upsert: true, setDefaultsOnInsert: false }
-    );
-    const wasInserted = Boolean(upserted.upsertedCount || upserted.upsertedId);
-
-    const linked = await this.model.findOneAndUpdate(
-      {
-        ...identity,
-        sourceReports: { $ne: data.analysisReportId },
-      },
-      {
-        $addToSet: {
-          sourceReports: data.analysisReportId,
-          promptIds: { $each: promptIds },
-          appearances: appearance,
-        },
-        $inc: { occurrenceCount: 1 },
-        $set: {
-          lastSeenAt: now,
-          updatedAt: now,
-        },
-      },
-      { new: true }
-    );
-
-    if (linked) {
-      return { question: linked, isNew: wasInserted };
-    }
-
-    // This report is already linked. Refresh prompt ids without counting again.
-    const existing = await this.model.findOneAndUpdate(
-      {
-        ...identity,
+    const linkFilter = {
+      ...identity,
+      sourceReports: { $ne: data.analysisReportId },
+    };
+    const linkUpdate = {
+      $addToSet: {
         sourceReports: data.analysisReportId,
+        promptIds: { $each: promptIds },
+        appearances: appearance,
       },
-      {
-        $addToSet: { promptIds: { $each: promptIds } },
-        $set: { updatedAt: now },
+      $inc: { occurrenceCount: 1 },
+      $set: {
+        lastSeenAt: now,
+        updatedAt: now,
       },
-      { new: true }
-    );
+    };
 
-    if (existing) {
-      return { question: existing, isNew: false };
+    for (let attempt = 0; attempt < identityWriteAttempts(); attempt += 1) {
+      try {
+        const written: unknown = await this.model.findOneAndUpdate(
+          linkFilter,
+          { $setOnInsert: insert, ...linkUpdate },
+          // setDefaultsOnInsert would also write occurrenceCount: 1, and $inc
+          // would turn the first sighting into 2.
+          { upsert: true, new: true, setDefaultsOnInsert: false, includeResultMetadata: true }
+        );
+        const parsed = readUpsertResult(written);
+        if (parsed) return parsed;
+      } catch (error) {
+        if (!isDuplicateKeyError(error)) throw error;
+
+        const linked = await this.model.findOneAndUpdate(linkFilter, linkUpdate, { new: true });
+        if (linked) return { question: linked, isNew: false };
+
+        // This report is already on the row that won the insert.
+        const existing = await this.model.findOneAndUpdate(
+          { ...identity, sourceReports: data.analysisReportId },
+          {
+            $addToSet: { promptIds: { $each: promptIds } },
+            $set: { updatedAt: now },
+          },
+          { new: true }
+        );
+        if (existing) return { question: existing, isNew: false };
+      }
     }
 
     const raced = await this.model.findOne(identity);
-    if (raced) {
-      return { question: raced, isNew: false };
-    }
+    if (raced) return { question: raced, isNew: false };
 
-    const created = await this.model.create({
-      ...insert,
-      sourceReports: [data.analysisReportId],
-      promptIds,
-      appearances: [appearance],
-      occurrenceCount: 1,
-      firstSeenAt: now,
-      lastSeenAt: now,
-    });
-
-    return { question: created, isNew: true };
+    throw new Error("Unique question was not stored");
   }
 
   /**

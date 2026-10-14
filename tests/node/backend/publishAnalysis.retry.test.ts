@@ -17,7 +17,18 @@ import {
  */
 class MemoryCollection {
   docs: Array<Record<string, any>> = [];
+  /**
+   * The next two identity inserts overlap. The first waits until the second
+   * arrives, then the second receives a duplicate-key error after the first
+   * row is stored.
+   */
+  raceConcurrentIdentityInsert = false;
   private seq = 0;
+  private identityInsertLeader = false;
+  private releaseIdentityLeader: (() => void) | null = null;
+  private identityLeaderReleased: Promise<void> | null = null;
+  private markIdentityInserted: (() => void) | null = null;
+  private identityInserted: Promise<void> | null = null;
 
   async findOne(filter: Record<string, unknown>) {
     return this.docs.find((doc) => matches(doc, filter)) ?? null;
@@ -37,12 +48,62 @@ class MemoryCollection {
   async findOneAndUpdate(
     filter: Record<string, unknown>,
     update: Record<string, any>,
-    options?: { new?: boolean }
+    options?: { new?: boolean; upsert?: boolean; includeResultMetadata?: boolean }
   ) {
     const doc = this.docs.find((entry) => matches(entry, filter));
-    if (!doc) return null;
-    applyUpdate(doc, update);
-    return options?.new === false ? { ...doc } : doc;
+    if (doc) {
+      applyUpdate(doc, update);
+      const value = options?.new === false ? { ...doc } : doc;
+      return withMetadata(value, false, options);
+    }
+    if (!options?.upsert) return null;
+
+    const identity = {
+      normalizedText: filter.normalizedText,
+      subject: filter.subject,
+    };
+    if (this.docs.some((entry) => matches(entry, identity))) {
+      throw duplicateKeyError();
+    }
+
+    await this.loseIdentityInsertRace();
+    if (this.docs.some((entry) => matches(entry, identity))) {
+      throw duplicateKeyError();
+    }
+
+    const created: Record<string, any> = {
+      _id: `uq-${++this.seq}`,
+      ...(update.$setOnInsert ?? {}),
+    };
+    applyUpdate(created, update);
+    this.docs.push(created);
+    this.markIdentityInserted?.();
+    return withMetadata(created, true, options);
+  }
+
+  /**
+   * Overlap two upserts that both observe an empty identity. The follower
+   * waits until the leader has stored its row, then fails with E11000.
+   */
+  private async loseIdentityInsertRace(): Promise<void> {
+    if (!this.raceConcurrentIdentityInsert) return;
+
+    if (!this.identityInsertLeader) {
+      this.identityInsertLeader = true;
+      this.identityLeaderReleased = new Promise((resolve) => {
+        this.releaseIdentityLeader = resolve;
+      });
+      this.identityInserted = new Promise((resolve) => {
+        this.markIdentityInserted = resolve;
+      });
+      await this.identityLeaderReleased;
+      return;
+    }
+
+    this.raceConcurrentIdentityInsert = false;
+    this.releaseIdentityLeader?.();
+    await this.identityInserted;
+    throw duplicateKeyError();
   }
 
   async updateOne(
@@ -69,6 +130,27 @@ class MemoryCollection {
     this.docs.push(doc);
     return doc;
   }
+}
+
+function duplicateKeyError(): Error {
+  return Object.assign(new Error("E11000 duplicate key error collection: uniquequestions index: normalizedText_1_subject_1"), {
+    code: 11000,
+  });
+}
+
+function withMetadata(
+  doc: Record<string, any> | null,
+  inserted: boolean,
+  options?: { includeResultMetadata?: boolean }
+) {
+  if (!options?.includeResultMetadata) return doc;
+  return {
+    value: doc,
+    lastErrorObject: doc
+      ? { updatedExisting: !inserted, ...(inserted ? { upserted: doc._id } : {}) }
+      : { updatedExisting: false },
+    ok: doc ? 1 : 0,
+  };
 }
 
 function matches(doc: Record<string, any>, filter: Record<string, unknown>): boolean {
@@ -189,6 +271,67 @@ describe("unique question publication upsert", () => {
     assert.equal(memory.docs[0].occurrenceCount, 2);
     assert.deepEqual(memory.docs[0].sourceReports, ["report-1", "report-2"]);
     assert.deepEqual(memory.docs[0].promptIds, ["prompt-1", "prompt-9"]);
+  });
+
+  it("collapses concurrent publishes of the same question into one row", async () => {
+    const { repo, memory } = uniqueQuestionRepo();
+    memory.raceConcurrentIdentityInsert = true;
+
+    const [first, second] = await Promise.all([
+      repo.findOrCreate(questionInput),
+      repo.findOrCreate({
+        ...questionInput,
+        analysisReportId: "report-2",
+        promptIds: ["prompt-9"],
+        year: "2025",
+      }),
+    ]);
+
+    assert.equal(memory.docs.length, 1);
+    assert.equal(first.isNew, true);
+    assert.equal(second.isNew, false);
+    assert.equal(memory.docs[0].occurrenceCount, 2);
+    assert.deepEqual(memory.docs[0].sourceReports, ["report-1", "report-2"]);
+    assert.equal(memory.docs[0].appearances.length, 2);
+    assert.deepEqual([...memory.docs[0].promptIds].sort(), ["prompt-1", "prompt-9"]);
+  });
+
+  it("stores the same normalized text under another subject as its own row", async () => {
+    const { repo, memory } = uniqueQuestionRepo();
+
+    await repo.findOrCreate(questionInput);
+    await repo.findOrCreate({
+      ...questionInput,
+      subject: "Chemistry",
+      analysisReportId: "report-2",
+    });
+
+    assert.equal(memory.docs.length, 2);
+    assert.deepEqual(
+      memory.docs.map((doc) => doc.subject),
+      ["Physics", "Chemistry"]
+    );
+  });
+
+  it("does not count the same report twice when two publishes overlap", async () => {
+    const { repo, memory } = uniqueQuestionRepo();
+    memory.raceConcurrentIdentityInsert = true;
+
+    const [first, second] = await Promise.all([
+      repo.findOrCreate(questionInput),
+      repo.findOrCreate({
+        ...questionInput,
+        promptIds: ["prompt-2"],
+      }),
+    ]);
+
+    assert.equal(memory.docs.length, 1);
+    assert.equal(first.isNew, true);
+    assert.equal(second.isNew, false);
+    assert.equal(memory.docs[0].occurrenceCount, 1);
+    assert.deepEqual(memory.docs[0].sourceReports, ["report-1"]);
+    assert.equal(memory.docs[0].appearances.length, 1);
+    assert.deepEqual(memory.docs[0].promptIds, ["prompt-1", "prompt-2"]);
   });
 });
 

@@ -50,13 +50,17 @@ import {
 import { subjectZodSchema } from '../database/schemas/subjectSchemaZod.js';
 import { LEGACY_SUBJECT_COLLECTION } from '../database/subjectCollections.js';
 import { ensureSubjectCollectionsSeparated } from '../database/separateSubjectCollections.js';
+import { uniqueQuestionIdentityIndex } from '../database/uniqueQuestionDedup.js';
 
 // Create models
 const promptSchema = zodSchema(promptZodSchema, { timestamps: true });
 const PromptModel = models.Prompt || model('Prompt', promptSchema);
 
 const uniqueQuestionSchema = zodSchema(uniqueQuestionZod, { timestamps: true });
-uniqueQuestionSchema.index({ normalizedText: 1, subject: 1 });
+uniqueQuestionSchema.index(
+  uniqueQuestionIdentityIndex.fields,
+  uniqueQuestionIdentityIndex.options
+);
 const UniqueQuestionModel = models.UniqueQuestion || model('UniqueQuestion', uniqueQuestionSchema);
 
 const analysisReportSchema = zodSchema(analysisReportZodSchema, { timestamps: true });
