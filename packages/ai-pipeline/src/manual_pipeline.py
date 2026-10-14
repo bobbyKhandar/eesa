@@ -1168,6 +1168,61 @@ RULES:
         return text
 
 
+# A batch is successful only when every question has a usable classification.
+# Fewer entries, extra entries, and invalid fields are incomplete and retried.
+ENRICH_BATCH_MAX_ATTEMPTS = 3
+VALID_BLOOM_LEVELS = frozenset({
+    "Recall", "Understand", "Apply", "Analyze", "Evaluate", "Create",
+})
+VALID_DIFFICULTIES = frozenset({"Easy", "Medium", "Hard"})
+
+
+def _is_string_list(value) -> bool:
+    """True for a list of non-blank strings. An empty list is allowed."""
+    return (
+        isinstance(value, list)
+        and all(isinstance(item, str) and item.strip() for item in value)
+    )
+
+
+def _enrichment_field_problem(entry) -> str:
+    """Return why an enrichment entry is unusable, or an empty string."""
+    if not isinstance(entry, dict):
+        return "entry must be an object"
+    if entry.get("bloomLevel") not in VALID_BLOOM_LEVELS:
+        return (
+            "bloomLevel must be one of Recall, Understand, Apply, Analyze, "
+            "Evaluate, Create"
+        )
+    if entry.get("difficulty") not in VALID_DIFFICULTIES:
+        return "difficulty must be Easy, Medium, or Hard"
+    if "keywords" not in entry or not _is_string_list(entry.get("keywords")):
+        return "keywords must be a list of non-empty strings"
+    if "topicsCovered" not in entry or not _is_string_list(entry.get("topicsCovered")):
+        return "topicsCovered must be a list of non-empty strings"
+    return ""
+
+
+def _require_complete_enrichment(expected: int, entries) -> None:
+    """Reject a model payload that does not cover the batch with valid fields."""
+    if not isinstance(entries, list):
+        raise ValueError(
+            f"expected {expected} enrichment entries, got 0: "
+            "response was not a JSON array"
+        )
+    if len(entries) != expected:
+        raise ValueError(
+            f"expected {expected} enrichment entries, got {len(entries)}"
+        )
+    for index, entry in enumerate(entries):
+        problem = _enrichment_field_problem(entry)
+        if problem:
+            raise ValueError(
+                f"expected {expected} enrichment entries, got {len(entries)}: "
+                f"invalid entry at index {index} ({problem})"
+            )
+
+
 class EnrichProcessor(PhaseProcessor):
     """Enrich questions with Bloom's taxonomy"""
     
@@ -1193,6 +1248,7 @@ class EnrichProcessor(PhaseProcessor):
         
         exams = parsed_data.get('exams', [])
         total_enriched = 0
+        expected_questions = 0
         
         # Process each exam
         for exam in exams:
@@ -1201,33 +1257,46 @@ class EnrichProcessor(PhaseProcessor):
                 continue
             
             subject = exam.get('subject', 'Unknown')
+            expected_questions += len(questions)
             
-            # Enrich in batches of 10
+            # Enrich in batches of 10. Apply a batch only after it covers
+            # every question with valid fields. Retry a short or invalid
+            # response, then fail the job instead of advancing a partial result.
             batch_size = 10
             for i in range(0, len(questions), batch_size):
                 batch = questions[i:i+batch_size]
-                
-                try:
-                    enrichments = self._enrich_batch(batch, subject)
-                    
-                    # Merge enrichments
-                    for j, enrichment in enumerate(enrichments):
-                        if i + j < len(questions):
-                            questions[i + j].update(enrichment)
-                            total_enriched += 1
-                            
-                except Exception as e:
-                    print(f"    ⚠ Batch {i//batch_size + 1} enrichment failed: {e}")
-                    # Continue with other batches
+                batch_number = i // batch_size + 1
+                enrichments, failure = self._enrich_batch_until_complete(
+                    batch, subject, batch_number
+                )
+                if failure:
+                    self.db.update_job(
+                        job.job_id,
+                        status=Status.FAILED.value,
+                        error_message=failure,
+                        error_phase=self.phase.value
+                    )
+                    return False, failure
+
+                for j, enrichment in enumerate(enrichments):
+                    questions[i + j].update(enrichment)
+                    total_enriched += 1
         
-        if total_enriched == 0:
+        if total_enriched != expected_questions:
+            if expected_questions == 0:
+                message = "No questions enriched"
+            else:
+                message = (
+                    f"Incomplete enrichment: enriched {total_enriched} of "
+                    f"{expected_questions} questions"
+                )
             self.db.update_job(
                 job.job_id,
                 status=Status.FAILED.value,
-                error_message="No questions enriched",
+                error_message=message,
                 error_phase=self.phase.value
             )
-            return False, "No questions enriched"
+            return False, message
         
         # Add enrichment metadata
         parsed_data['enriched_at'] = datetime.now().isoformat()
@@ -1257,8 +1326,31 @@ class EnrichProcessor(PhaseProcessor):
         
         return True, f"Enriched {total_enriched} questions"
     
+    def _enrich_batch_until_complete(
+        self, questions: List[Dict], subject: str, batch_number: int
+    ) -> Tuple[Optional[List[Dict]], str]:
+        """Retry one batch until it is complete, or report why it is not."""
+        last_error = "no enrichment response"
+        for attempt in range(1, ENRICH_BATCH_MAX_ATTEMPTS + 1):
+            try:
+                return self._enrich_batch(questions, subject), ""
+            except Exception as exc:
+                last_error = str(exc)
+                print(
+                    f"    ⚠ Batch {batch_number} enrichment attempt "
+                    f"{attempt}/{ENRICH_BATCH_MAX_ATTEMPTS} failed: {exc}"
+                )
+        return None, (
+            f"Incomplete enrichment for batch {batch_number} after "
+            f"{ENRICH_BATCH_MAX_ATTEMPTS} attempts: {last_error}"
+        )
+
     def _enrich_batch(self, questions: List[Dict], subject: str) -> List[Dict]:
-        """Enrich a batch of questions"""
+        """Enrich a batch of questions.
+
+        Raises ValueError when the model response does not contain one valid
+        enrichment object per question.
+        """
         questions_text = "\n".join(
             f"{i+1}. {q.get('question_text', '')[:200]}"
             for i, q in enumerate(questions)
@@ -1303,12 +1395,24 @@ Return ONLY the JSON array."""
         response_text = re.sub(r'```json\s*', '', response_text)
         response_text = re.sub(r'```\s*', '', response_text)
         
+        expected = len(questions)
         start = response_text.find('[')
         end = response_text.rfind(']')
-        if start != -1 and end != -1:
-            return json.loads(response_text[start:end+1])
-        
-        return []
+        if start == -1 or end == -1 or end < start:
+            raise ValueError(
+                f"expected {expected} enrichment entries, got 0: "
+                "response was not a JSON array"
+            )
+
+        try:
+            entries = json.loads(response_text[start:end+1])
+        except json.JSONDecodeError as exc:
+            raise ValueError(
+                f"expected {expected} enrichment entries, got 0: {exc}"
+            ) from exc
+
+        _require_complete_enrichment(expected, entries)
+        return entries
 
 
 class OrganizeProcessor(PhaseProcessor):
