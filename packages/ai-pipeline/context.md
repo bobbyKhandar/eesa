@@ -81,7 +81,7 @@
 |---|---|
 | `src/enrich_questions_s3_pipeline.py` | Standalone S3-based enrichment with `ThreadPoolExecutor(20)` |
 | `src/organize_by_subject.py` | Local filesystem-based subject organization |
-| `src/manual_pipeline.py` | 1818-line CLI pipeline (upload → OCR → parse → enrich → organize) with SQLite tracking |
+| `src/manual_pipeline.py` | CLI pipeline (upload → OCR → parse → enrich → organize) with SQLite tracking. Enrichment accepts a batch only when every question has a valid Bloom level, difficulty, `keywords` list, and `topicsCovered` list. An incomplete batch is retried up to 3 times, then the job fails instead of advancing to organize |
 | `src/redis_client.py` | Redis queue/hash operations for local pipeline job management |
 | `src/redisMaster.py` | Documentation of Redis data structure design |
 | `src/reprocess_errors.py` | Error reprocessing for Bedrock parsing/enrichment failures |

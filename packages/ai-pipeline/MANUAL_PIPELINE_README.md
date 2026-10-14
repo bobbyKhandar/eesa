@@ -68,9 +68,11 @@ python manual_pipeline.py export-errors
 
 ### Phase 4: Enrich
 - Downloads parsed questions
-- Classifies with Bloom's taxonomy
-- Adds difficulty, keywords, topics
-- Saves to `manual_pipeline/{job_id}/enriched_output/`
+- Classifies with Bloom's taxonomy in batches of 10
+- Each batch must return one entry per question. `bloomLevel` must be Recall, Understand, Apply, Analyze, Evaluate, or Create. `difficulty` must be Easy, Medium, or Hard. `keywords` and `topicsCovered` must be lists of strings (empty lists are allowed)
+- A short response, extra entries, or invalid fields are retried up to 3 times for that batch
+- If a batch is still incomplete, the job fails and stays in the enrich phase. A partial classification is not uploaded and does not advance to organize
+- Saves a complete result to `manual_pipeline/{job_id}/enriched_output/`
 
 ### Phase 5: Organize
 - Groups exams by subject
