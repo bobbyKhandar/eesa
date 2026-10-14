@@ -176,6 +176,29 @@ class TestRecoveryJsonRoot(unittest.TestCase):
         self.assertIn("invalid enrichment schema", error)
 
 
+class TestEnrichedErrorSourceName(unittest.TestCase):
+    """Enrichment recovery must locate the documented error filename format."""
+
+    def test_documented_format_preserves_the_json_extension(self):
+        self.assertEqual(
+            reprocess._parsed_source_name("paper.json_bloom.error.txt"), "paper.json"
+        )
+        self.assertEqual(
+            reprocess._parsed_source_name("COMP_SEM_VI_2017.json_bloom.error.txt"),
+            "COMP_SEM_VI_2017.json",
+        )
+
+    def test_legacy_extensionless_format_gains_the_json_extension(self):
+        self.assertEqual(
+            reprocess._parsed_source_name("Algo_bloom.error.txt"), "Algo.json"
+        )
+
+    def test_unsupported_names_return_none(self):
+        self.assertIsNone(reprocess._parsed_source_name("paper.txt"))
+        self.assertIsNone(reprocess._parsed_source_name("_bloom.error.txt"))
+        self.assertIsNone(reprocess._parsed_source_name("paper_bloom.fail.txt"))
+
+
 class TestReprocessStageFiles(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -250,6 +273,52 @@ class TestReprocessStageFiles(unittest.TestCase):
         data = json.loads(output.read_text(encoding="utf-8"))
         self.assertEqual(data["exams"][0]["subject"], "Algorithms")
         self.assertEqual(data["exams"][0]["questions"][0]["bloomLevel"], "Apply")
+
+    def test_enrichment_recovery_locates_the_documented_json_error_source(self):
+        parsed = {
+            "exams": [
+                {
+                    "subject": "Algorithms",
+                    "questions": [{"question_text": "Apply Dijkstra", "marks": "10"}],
+                }
+            ]
+        }
+        (self.parsed_questions / "paper.json").write_text(json.dumps(parsed), encoding="utf-8")
+        error_file = Path(self.tmp.name) / "paper.json_bloom.error.txt"
+        error_file.write_text("previous failure", encoding="utf-8")
+
+        with patch.object(reprocess, "call_bedrock_api", return_value=_fenced(ENRICHMENT_ARRAY)):
+            with redirect_stdout(io.StringIO()):
+                saved = reprocess.reprocess_enriched_error(error_file)
+
+        output = self.reprocessed / "enriched" / "paper_enriched.json"
+        self.assertTrue(saved)
+        data = json.loads(output.read_text(encoding="utf-8"))
+        self.assertEqual(data["exams"][0]["subject"], "Algorithms")
+        self.assertEqual(data["exams"][0]["questions"][0]["bloomLevel"], "Apply")
+        self.assertFalse((self.parsed_questions / "paper.json.json").exists())
+
+    def test_missing_source_report_names_the_original_file(self):
+        error_file = Path(self.tmp.name) / "paper.json_bloom.error.txt"
+        error_file.write_text("previous failure", encoding="utf-8")
+
+        with redirect_stdout(io.StringIO()) as stdout:
+            saved = reprocess.reprocess_enriched_error(error_file)
+
+        self.assertFalse(saved)
+        printed = stdout.getvalue()
+        self.assertIn("Original parsed file not found: paper.json", printed)
+        self.assertNotIn("paper.json.json", printed)
+
+    def test_unsupported_error_filename_is_reported(self):
+        error_file = Path(self.tmp.name) / "paper_bloom.fail.txt"
+        error_file.write_text("previous failure", encoding="utf-8")
+
+        with redirect_stdout(io.StringIO()) as stdout:
+            saved = reprocess.reprocess_enriched_error(error_file)
+
+        self.assertFalse(saved)
+        self.assertIn("Unsupported enriched error filename: paper_bloom.fail.txt", stdout.getvalue())
 
     def test_enrichment_recovery_reports_an_object_root_as_failure(self):
         parsed = {

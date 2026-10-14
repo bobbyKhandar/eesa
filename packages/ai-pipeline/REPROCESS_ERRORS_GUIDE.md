@@ -13,6 +13,7 @@ The reprocessing pipeline handles two types of errors:
 2. **Enriched Errors** (`enrichedQuestions/errors/*_bloom.error.txt`)
    - Files that failed during Bloom's taxonomy enrichment
    - Contains failed Bedrock responses with invalid JSON
+   - Accepted formats: `{subject_name}_{timestamp}.json_bloom.error.txt` (documented) and the legacy extensionless `{subject_name}_bloom.error.txt`
 
 ## Error File Structure
 
@@ -29,7 +30,11 @@ Q2 (a) Explain different features of Macro Facility...
 
 ### Enriched Error Files
 **Location**: `ai_pipeline/enrichedQuestions/errors/`
-**Format**: `{subject_name}_{timestamp}.json_bloom.error.txt`
+**Formats**:
+- `{subject_name}_{timestamp}.json_bloom.error.txt` (documented)
+- `{subject_name}_bloom.error.txt` (legacy extensionless)
+
+The error filename embeds the parsed source name. `{subject_name}_{timestamp}.json_bloom.error.txt` recovers `{subject_name}_{timestamp}.json` with the original filename preserved; the legacy extensionless `{subject_name}_bloom.error.txt` recovers `{subject_name}.json`. Any other filename is reported as unsupported instead of guessed.
 
 **Content**: Failed Bedrock responses
 ```
@@ -294,9 +299,9 @@ aws configure
 
 ### Original File Not Found
 ```
-⚠️ Original parsed file not found: {filename}.json
+⚠️ Original parsed file not found: {filename}
 ```
-**Solution**: Enrichment requires the original parsed JSON. Reprocess parsed errors first (choice 1), then enriched errors (choice 2).
+**Solution**: Enrichment requires the original parsed JSON. The printed `{filename}` is the recovered source name (`{subject}_{timestamp}.json` for documented error filenames, `{subject}.json` for legacy extensionless ones). Reprocess parsed errors first (choice 1), then enriched errors (choice 2).
 
 ### All Requests Failing
 **Check**:

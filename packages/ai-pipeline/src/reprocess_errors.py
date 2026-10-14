@@ -5,6 +5,12 @@ This script processes files that failed during the initial parsing or enrichment
 1. parsedQuestions/errors/*.txt.error.txt - Failed during initial OCR parsing
 2. enrichedQuestions/errors/*.json_bloom.error.txt - Failed during Bloom's taxonomy enrichment
 
+Accepted enrichment error formats:
+- `{subject}_{timestamp}.json_bloom.error.txt` (documented) recovers the
+  parsed source `{subject}_{timestamp}.json`, keeping the original filename.
+- `{subject}_bloom.error.txt` (legacy extensionless) recovers `{subject}.json`.
+Any other enrichment error filename is reported instead of guessed.
+
 It resends these files through the appropriate AWS Bedrock pipeline to attempt recovery.
 """
 
@@ -235,6 +241,33 @@ def _require_complete_batch(expected: int, entries, expected_indexes: set) -> No
         )
 
 
+# Enrichment errors carry the parsed source name inside the error filename.
+# The documented format keeps the source extension:
+# `{subject}_{timestamp}.json_bloom.error.txt` -> `{subject}_{timestamp}.json`.
+# The older extensionless format is still accepted:
+# `{subject}_bloom.error.txt` -> `{subject}.json`.
+ENRICHMENT_ERROR_SUFFIX = "_bloom.error.txt"
+
+
+def _parsed_source_name(error_file_name: str) -> Optional[str]:
+    """Parsed source filename encoded in an enrichment error filename.
+
+    The exact error suffix is removed and the original filename is
+    preserved, so `paper.json_bloom.error.txt` maps to `paper.json`
+    instead of `paper.json.json`. A legacy extensionless name such as
+    `paper_bloom.error.txt` still gains the `.json` extension. Returns
+    None for a name that is not a supported enrichment error.
+    """
+    if not error_file_name.endswith(ENRICHMENT_ERROR_SUFFIX):
+        return None
+    source = error_file_name[: -len(ENRICHMENT_ERROR_SUFFIX)]
+    if not source:
+        return None
+    if not source.endswith(".json"):
+        source = f"{source}.json"
+    return source
+
+
 def _question_block(question: Dict, index: int) -> str:
     """Render one question for the enrichment prompt, keeping its index."""
     marks = question.get('marks', 'N/A')
@@ -433,9 +466,17 @@ def reprocess_enriched_error(error_file_path: Path) -> bool:
     print(f"🌸 Reprocessing enriched error: {error_file_path.name}")
     
     try:
-        # Extract original JSON filename
-        original_name = error_file_path.stem.replace('_bloom.error', '')
-        original_json_path = PARSED_QUESTIONS_DIR / f"{original_name}.json"
+        # Extract original JSON filename. The documented error name keeps
+        # the source extension, so only legacy extensionless names get .json.
+        source_name = _parsed_source_name(error_file_path.name)
+        if source_name is None:
+            print(
+                f"   ⚠️  Unsupported enriched error filename: {error_file_path.name} "
+                f"(expected *{ENRICHMENT_ERROR_SUFFIX})"
+            )
+            return False
+        original_json_path = PARSED_QUESTIONS_DIR / source_name
+        original_name = Path(source_name).stem
         
         # Check if original parsed JSON exists
         if not original_json_path.exists():
