@@ -49,9 +49,9 @@ Q2 (a) Explain different features of Macro Facility...
 ### Stage 1: Parsed Error Reprocessing
 1. **Read** raw OCR text from error file
 2. **Send** to Bedrock with question extraction prompt
-3. **Clean** response to extract valid JSON array/object
-4. **Validate** JSON structure and fix common issues
-5. **Save** to `reprocessedFromErrors/parsed/{exam_name}.json`
+3. **Clean** the response by stripping markdown fences and parsing the full JSON root
+4. **Validate** that the root is an object with an `exams` list. A bare array or any other shape is a failure and is not saved
+5. **Save** the exams envelope to `reprocessedFromErrors/parsed/{exam_name}.json`
 
 **Bedrock Prompt Structure**:
 ```
@@ -84,7 +84,7 @@ User: Extract all questions from this exam paper text...
 1. **Locate** original parsed JSON file
 2. **Extract** questions from original file
 3. **Send** to Bedrock with Bloom's classification prompt
-4. **Clean** response to extract valid JSON array
+4. **Clean** the response by stripping markdown fences and parsing the full JSON root, which must be a JSON array. Any other shape is a failure and is not saved
 5. **Validate** Bloom's classifications
 6. **Merge** Bloom's data back into questions
 7. **Save** to `reprocessedFromErrors/enriched/{subject}_enriched.json`

@@ -49,24 +49,76 @@ bedrock_runtime = boto3.client('bedrock-runtime', config=config)
 
 def clean_json_response(response_text: str) -> str:
     """
-    Clean Bedrock response to extract valid JSON.
-    Prioritizes array extraction over object extraction.
+    Strip markdown fences and return the complete JSON root.
+
+    The root is the first JSON value in the response. An exams object stays
+    intact instead of collapsing to its nested array, and an enrichment
+    response stays a JSON array.
     """
-    # Remove markdown code blocks
     response_text = re.sub(r'```json\s*', '', response_text)
-    response_text = re.sub(r'```\s*$', '', response_text)
-    
-    # Try to extract JSON array first (for questions parsing)
-    array_match = re.search(r'\[\s*\{.*\}\s*\]', response_text, re.DOTALL)
-    if array_match:
-        return array_match.group(0)
-    
-    # Then try JSON object (for exam structure)
-    obj_match = re.search(r'\{\s*".*\}', response_text, re.DOTALL)
-    if obj_match:
-        return obj_match.group(0)
-    
-    return response_text.strip()
+    response_text = re.sub(r'```\s*', '', response_text)
+    text = response_text.strip()
+    start = _json_root_start(text)
+    if start is None:
+        return text
+
+    try:
+        _value, end = json.JSONDecoder().raw_decode(text, start)
+        return text[start:end].strip()
+    except json.JSONDecodeError:
+        # Keep the root span so validate_and_fix_json can repair it.
+        closer = '}' if text[start] == '{' else ']'
+        end = text.rfind(closer)
+        if end > start:
+            return text[start:end + 1]
+        return text[start:].strip()
+
+
+def _json_root_start(text: str) -> Optional[int]:
+    """Index of the first object or array, whichever begins the JSON root."""
+    object_at = text.find('{')
+    array_at = text.find('[')
+    if object_at == -1 and array_at == -1:
+        return None
+    if object_at == -1:
+        return array_at
+    if array_at == -1:
+        return object_at
+    return min(object_at, array_at)
+
+
+def stage_schema_error(payload, stage: str) -> Optional[str]:
+    """Return why this root is unusable for the recovery stage, or None."""
+    if stage == "parsing":
+        if isinstance(payload, dict) and isinstance(payload.get("exams"), list):
+            return None
+        return "invalid parsing schema: expected an object with an exams list"
+    if stage == "enrichment":
+        if isinstance(payload, list):
+            return None
+        return "invalid enrichment schema: expected a JSON array"
+    return f"unknown recovery stage: {stage}"
+
+
+def extract_stage_payload(response_text: str, stage: str) -> Tuple[Optional[object], Optional[str]]:
+    """
+    Parse the JSON root and validate it for one recovery stage.
+
+    Parsing requires an object with an exams list. Enrichment requires a
+    JSON array. Invalid schema is an error so the caller does not save it.
+    """
+    cleaned = clean_json_response(response_text)
+    validated, error = validate_and_fix_json(cleaned)
+    if error or validated is None:
+        return None, error or "JSON validation failed"
+    try:
+        payload = json.loads(validated)
+    except json.JSONDecodeError as exc:
+        return None, f"JSON validation failed: {exc}"
+    schema_error = stage_schema_error(payload, stage)
+    if schema_error:
+        return None, schema_error
+    return payload, None
 
 
 def validate_and_fix_json(json_str: str) -> Tuple[Optional[str], Optional[str]]:
@@ -198,14 +250,14 @@ Return only valid JSON, no explanations."""
             print(f"   ❌ No response from Bedrock")
             return False
         
-        # Clean and validate JSON
-        cleaned_json = clean_json_response(response)
-        validated_json, error = validate_and_fix_json(cleaned_json)
+        # Parse the full JSON root and require the exams envelope.
+        parsed_data, error = extract_stage_payload(response, "parsing")
         
         if error:
             print(f"   ❌ JSON validation error: {error}")
             # Save failed response for debugging
             failed_path = REPROCESSED_DIR / "failed" / f"{original_name}_parse_failed.txt"
+            cleaned_json = clean_json_response(response)
             with open(failed_path, 'w', encoding='utf-8') as f:
                 f.write(f"=== RAW RESPONSE ===\n{response}\n\n")
                 f.write(f"=== CLEANED ===\n{cleaned_json}\n\n")
@@ -215,8 +267,6 @@ Return only valid JSON, no explanations."""
         # Save successfully parsed JSON
         output_path = REPROCESSED_DIR / "parsed" / f"{original_name}.json"
         with open(output_path, 'w', encoding='utf-8') as f:
-            # Pretty print the JSON
-            parsed_data = json.loads(validated_json)
             json.dump(parsed_data, f, indent=2, ensure_ascii=False)
         
         print(f"   ✅ Successfully reparsed to: {output_path.name}")
@@ -297,22 +347,19 @@ Return only valid JSON array, no explanations."""
             print(f"   ❌ No response from Bedrock")
             return False
         
-        # Clean and validate JSON
-        cleaned_json = clean_json_response(response)
-        validated_json, error = validate_and_fix_json(cleaned_json)
+        # Parse the full JSON root and require an enrichment array.
+        bloom_classifications, error = extract_stage_payload(response, "enrichment")
         
         if error:
             print(f"   ❌ JSON validation error: {error}")
             # Save failed response for debugging
             failed_path = REPROCESSED_DIR / "failed" / f"{original_name}_bloom_failed.txt"
+            cleaned_json = clean_json_response(response)
             with open(failed_path, 'w', encoding='utf-8') as f:
                 f.write(f"=== RAW RESPONSE ===\n{response}\n\n")
                 f.write(f"=== CLEANED ===\n{cleaned_json}\n\n")
                 f.write(f"=== ERROR ===\n{error}")
             return False
-        
-        # Parse Bloom's classifications
-        bloom_classifications = json.loads(validated_json)
         
         # Merge Bloom's data back into questions
         for classification in bloom_classifications:
