@@ -1,4 +1,4 @@
-import { S3Client, PutObjectCommand, GetObjectCommand, ListObjectsV2Command, DeleteObjectsCommand, _Object } from "@aws-sdk/client-s3";
+import { S3Client, PutObjectCommand, GetObjectCommand, ListObjectsV2Command, DeleteObjectsCommand, _Object, type ListObjectsV2CommandOutput } from "@aws-sdk/client-s3";
 import mongoose from "mongoose";
 import type { Model } from "mongoose";
 import { connect } from "../database/connect";
@@ -152,18 +152,40 @@ export async function createBackup(): Promise<BackupMetadata> {
 }
 
 export async function listBackups(): Promise<BackupMetadata[]> {
-  const response = await s3Client.send(new ListObjectsV2Command({
-    Bucket: S3_BACKUP_BUCKET,
-    Prefix: `${BACKUP_PREFIX}/`,
-    Delimiter: '/',
-  }));
+  // S3 caps one ListObjectsV2 response at 1,000 results, and with a delimiter
+  // each backup folder counts as one common prefix. A catalogue larger than
+  // that arrives truncated: because folder ids are ISO timestamps, the entries
+  // left off sort after (newer than) the ones on the first page, so returning
+  // the first page alone hides the newest recovery points from restore and
+  // delete. Follow NextContinuationToken until the listing is complete so the
+  // response is the whole catalogue, and only sort it afterwards.
+  const backupPrefixes: string[] = [];
+  const contents: _Object[] = [];
+  let continuationToken: string | undefined;
+
+  do {
+    const response: ListObjectsV2CommandOutput = await s3Client.send(
+      new ListObjectsV2Command({
+        Bucket: S3_BACKUP_BUCKET,
+        Prefix: `${BACKUP_PREFIX}/`,
+        Delimiter: '/',
+        ContinuationToken: continuationToken,
+      })
+    );
+
+    for (const prefix of response.CommonPrefixes ?? []) {
+      if (prefix.Prefix) backupPrefixes.push(prefix.Prefix);
+    }
+    for (const object of response.Contents ?? []) {
+      contents.push(object);
+    }
+
+    continuationToken = response.IsTruncated ? response.NextContinuationToken : undefined;
+  } while (continuationToken);
 
   const backupMetadatas: BackupMetadata[] = [];
-  const contents = response.Contents || [];
 
-  const prefixes = response.CommonPrefixes || [];
-  for (const prefix of prefixes) {
-    const folderPrefix = prefix.Prefix || '';
+  for (const folderPrefix of backupPrefixes) {
     const id = folderPrefix.replace(BACKUP_PREFIX + '/', '').replace(/\/$/, '');
 
     if (!id) continue;
