@@ -122,6 +122,8 @@ python manual_pipeline.py parse --batch-size 100
 python manual_pipeline.py enrich --dry-run
 ```
 
+`--batch-size` must be an integer greater than or equal to 1. Zero and negative values are rejected by the CLI and by `process_batch`.
+
 ### List Jobs
 ```bash
 # List all OCR jobs

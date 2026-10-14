@@ -28,7 +28,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 from manual_pipeline import (
     DatabaseManager, S3Manager,
     OCRProcessor, ParseProcessor, EnrichProcessor, OrganizeProcessor,
-    Phase, Status, DB_PATH, DATA_DIR
+    Phase, Status, DB_PATH, DATA_DIR, positive_batch_size
 )
 
 # Progress file
@@ -215,8 +215,8 @@ def main():
                         help='Phase to run')
     parser.add_argument('--total', type=int, default=1000,
                         help='Total jobs to process')
-    parser.add_argument('--batch-size', type=int, default=10,
-                        help='Batch size')
+    parser.add_argument('--batch-size', type=positive_batch_size, default=10,
+                        help='Batch size (integer >= 1)')
     parser.add_argument('--delay', type=float, default=5.0,
                         help='Delay between batches (seconds)')
     parser.add_argument('--status', action='store_true',
