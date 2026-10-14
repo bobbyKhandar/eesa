@@ -39,6 +39,24 @@ def resolve_s3_bucket(requested: Optional[str], configured: str) -> str:
     return configured
 
 
+def clustering_update_outcome(clustering_result: Optional[Dict]) -> Optional[str]:
+    """Classify clustering write-back as ``failed``, ``partial``, or neither.
+
+    A missing result is handled by the caller. A dict is ``failed`` when the
+    clustering result says so, and ``partial`` when ``failed_keys`` names
+    organized files that were not updated. A clean result returns None.
+    """
+    if not isinstance(clustering_result, dict):
+        return None
+    status = clustering_result.get("status")
+    failed_keys = clustering_result.get("failed_keys") or []
+    if status == "failed":
+        return "failed"
+    if status == "partial" or failed_keys:
+        return "partial"
+    return None
+
+
 def chunked_parsing_outcome(parsing_result: Optional[Dict]) -> Optional[str]:
     """Classify a chunked parse payload as ``failed``, ``partial``, or neither.
 
@@ -384,6 +402,7 @@ class AWSPipelineManager:
             print(f"[{job_id}] Stage 5: Question Clustering")
             metadata['stages']['clustering'] = {'status': 'in_progress', 'started_at': datetime.now().isoformat()}
             self.save_job_metadata(job_id, metadata)
+            clustering_updates_incomplete = False
             if not cluster_questions_for_job:
                 print(f"[{job_id}] Clustering module not available, skipping")
                 metadata['stages']['clustering'] = {
@@ -393,6 +412,7 @@ class AWSPipelineManager:
                 }
             else:
                 clustering_result = cluster_questions_for_job(job_id, filename)
+                update_outcome = clustering_update_outcome(clustering_result)
                 if not clustering_result:
                     print(f"[{job_id}] Clustering failed, continuing")
                     metadata['stages']['clustering'] = {
@@ -400,6 +420,28 @@ class AWSPipelineManager:
                         'completed_at': datetime.now().isoformat(),
                         'error': 'Clustering analysis failed'
                     }
+                elif update_outcome:
+                    failed_keys = list(clustering_result.get('failed_keys') or [])
+                    stage_error = clustering_result.get(
+                        'error',
+                        'Clustering failed to update organized files',
+                    )
+                    print(f"[{job_id}] Clustering {update_outcome}: {stage_error}")
+                    metadata['stages']['clustering'] = {
+                        'status': update_outcome,
+                        'completed_at': datetime.now().isoformat(),
+                        'error': stage_error,
+                        'failed_keys': failed_keys,
+                        'file_updates': clustering_result.get('file_updates') or [],
+                        'total_questions': clustering_result.get('total_questions', 0),
+                        'similar_pairs': clustering_result.get('total_similar_pairs', 0),
+                        'n_clusters': clustering_result.get('n_clusters', 0),
+                        'embedding_model': clustering_result.get('embedding_model', ''),
+                    }
+                    if not parsing_partial:
+                        metadata['failed_stage'] = 'clustering'
+                        metadata['error'] = stage_error
+                    clustering_updates_incomplete = True
                 else:
                     metadata['stages']['clustering'] = {
                         'status': 'success',
@@ -411,7 +453,11 @@ class AWSPipelineManager:
                     }
             self.save_job_metadata(job_id, metadata)
 
-            metadata['status'] = 'partial_success' if parsing_partial else 'success'
+            metadata['status'] = (
+                'partial_success'
+                if parsing_partial or clustering_updates_incomplete
+                else 'success'
+            )
             metadata['completed_at'] = datetime.now().isoformat()
             self.save_job_metadata(job_id, metadata)
             print(f"[{job_id}] Pipeline complete!")

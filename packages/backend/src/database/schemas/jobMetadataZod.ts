@@ -73,13 +73,19 @@ export const jobMetadataZodSchema = z.object({
     }).optional(),
     
     clustering: z.object({
-      status: z.enum(['pending', 'in_progress', 'success', 'failed', 'skipped']),
+      status: z.enum(['pending', 'in_progress', 'success', 'failed', 'skipped', 'partial']),
       started_at: z.date().optional(),
       completed_at: z.date().optional(),
       total_questions: z.number().optional(),
       similar_pairs: z.number().optional(),
       n_clusters: z.number().optional(),
       embedding_model: z.string().optional(),
+      failed_keys: z.array(z.string()).optional(),
+      file_updates: z.array(z.object({
+        source_key: z.string(),
+        status: z.enum(['updated', 'failed']),
+        error: z.string().optional(),
+      })).optional(),
       error: z.string().optional()
     }).optional()
   }).optional(),
