@@ -55,7 +55,7 @@
 | `src/parsing_pipeline.py` | Bedrock parsing with Gemma 3 27B — extracts Q&A from OCR text. Chunked parsing lists `failed_chunks` and sets `status` to `success`, `partial`, or `failed` |
 | `src/enrich_questions_job_based.py` | Bedrock enrichment — Bloom's taxonomy, difficulty, keywords, syllabus. Chunked enrichment reads `chunk_metadata` and keeps continuation markers for the merger |
 | `src/organize_by_subject_job_based.py` | Groups enriched questions into subject-organized JSON on S3 |
-| `src/intelligent_chunking.py` | Splits large OCR text (20k+ chars) at question boundaries for batch processing |
+| `src/intelligent_chunking.py` | Splits large OCR text (20k+ chars) at question boundaries. If no boundary exists, or one section exceeds `max_chars_per_chunk`, falls back to paragraph, then line, then hard character splits so every chunk stays within the maximum. Continuation pieces set `is_continuation` |
 | `src/chunk_merger.py` | Validates and merges chunked parsing results. `build_enriched_chunk` copies parsing's `chunk_metadata` — including `is_continuation` and `starts_at_question` — onto each enriched chunk so an exam that crosses a chunk boundary stays one exam |
 | `src/question_clustering.py` | LanceDB vector store + FAISS/HDBSCAN for similarity clustering and appearance frequency |
 | `src/local_ocr_engine.py` | EasyOCR-based OCR engine with GPU auto-detect |
@@ -111,6 +111,6 @@
 - **Use `ThreadPoolExecutor` or `threading.Thread`** for concurrent task execution. Avoid `multiprocessing` (legacy, see `imagePreprocess.py`).
 - **Local pipeline requires Redis.** AWS pipeline does not (uses S3 + in-memory tracking).
 - **LanceDB is local-only** — stored in `lancedb_data/` on the filesystem, not S3.
-- **Chunk large OCR text (>20k chars)** using `intelligent_chunking.py` before passing to Bedrock. Parsing stores each chunk's details under `chunk_metadata`. Chunked enrichment must copy that object, including `is_continuation`, onto the enriched chunk before `chunk_merger` runs. Reading a `metadata` key drops the marker and splits one exam into two.
+- **Chunk large OCR text (>20k chars)** using `intelligent_chunking.py` before passing to Bedrock. Every chunk respects `max_chars_per_chunk`: question boundaries are preferred, and a missing boundary or an overlong section falls back to paragraph, then line, then hard character splits. Parsing stores each chunk's details under `chunk_metadata`. Chunked enrichment must copy that object, including `is_continuation`, onto the enriched chunk before `chunk_merger` runs. Reading a `metadata` key drops the marker and splits one exam into two.
 - **Chunked parse failures stay visible.** `parse_chunked_document` returns `failed_chunks` and `status`: `success` only when every chunk parses, `partial` when some chunks fail, and `failed` when all of them do. Chunks that parsed still go through enrichment. `AWSPipelineManager` marks the job `partial_success` when some chunks failed and `failed` when every chunk fails. A non-chunked token-limit failure stays `partial_success`.
 - **S3 is the canonical data store** for all AWS pipeline stages. Each stage reads the previous stage's output from S3 and writes its own output to S3.

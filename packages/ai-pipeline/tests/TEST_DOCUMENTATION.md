@@ -17,8 +17,15 @@ tests/
 ├── test_pipeline_manager.py       # Pipeline Manager unit tests
 ├── test_server.py                 # AI Server unit tests
 ├── test_redis_client.py           # Redis Client unit tests
-└── test_clean_integration.py      # Integration tests
+├── test_clean_integration.py      # Integration tests
+└── test_intelligent_chunking.py   # OCR chunks stay within max_chars_per_chunk
 ```
+
+### OCR chunk maximum (`test_intelligent_chunking.py`)
+- Unstructured OCR and a single overlong question are split on paragraphs, then lines, then characters
+- Each piece stays within the configured maximum, including the 20,000-character AWS limit
+- Continuation pieces keep `is_continuation` and a distinct `chunk_id`
+- Sections that already fit still split on question boundaries
 
 ## 🧪 Test Coverage by Component
 
