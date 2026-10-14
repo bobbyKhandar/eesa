@@ -79,7 +79,7 @@
 ### Supporting Modules
 | File | Role |
 |---|---|
-| `src/enrich_questions_s3_pipeline.py` | Standalone S3-based enrichment with `ThreadPoolExecutor(20)` |
+| `src/enrich_questions_s3_pipeline.py` | Standalone S3-based enrichment with `ThreadPoolExecutor(20)`. `processed` and the enriched object key use a source identity (input-relative path plus a short hash of the input directory). Legacy basename entries do not skip a file unless `source_namespace` pins that state to the current directory |
 | `src/organize_by_subject.py` | Local filesystem-based subject organization |
 | `src/manual_pipeline.py` | CLI pipeline (upload → OCR → parse → enrich → organize) with SQLite tracking. Enrichment accepts a batch only when every question has a valid Bloom level, difficulty, `keywords` list, and `topicsCovered` list. An incomplete batch is retried up to 3 times, then the job fails instead of advancing to organize |
 | `src/redis_client.py` | Redis queue/hash operations for local pipeline job management |

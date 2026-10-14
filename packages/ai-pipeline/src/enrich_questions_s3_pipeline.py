@@ -1,6 +1,8 @@
 import boto3
+import hashlib
 import os
 import json
+import re
 import time
 from datetime import datetime
 from typing import Dict, List, Optional
@@ -40,6 +42,185 @@ state_lock = threading.Lock()
 
 # State file local path
 LOCAL_STATE_FILE = os.path.join(os.path.dirname(__file__), '../processing_state.json')
+
+# Source identity: "{relative_path}__ns{12 hex chars of the input directory}".
+# The hash is of the normalized input directory, so two directories that both
+# contain questions.json do not share a processed entry or an S3 object key.
+NAMESPACE_HASH_LENGTH = 12
+_NAMESPACED_IDENTITY_RE = re.compile(rf"^.+__ns[0-9a-f]{{{NAMESPACE_HASH_LENGTH}}}$")
+
+
+def normalize_input_namespace(input_dir: str) -> str:
+    """Absolute input directory used as the enrichment namespace.
+
+    Symlinks are resolved, ``.`` and ``..`` are collapsed, and a trailing
+    separator is removed. Windows paths are case-folded.
+    """
+    if not isinstance(input_dir, str) or not input_dir.strip():
+        raise ValueError("input directory is required")
+    return os.path.normcase(os.path.normpath(os.path.realpath(input_dir)))
+
+
+def namespace_hash(input_dir: str) -> str:
+    """Short stable hash of the normalized input directory."""
+    namespace = normalize_input_namespace(input_dir)
+    digest = hashlib.sha256(namespace.encode("utf-8")).hexdigest()
+    return digest[:NAMESPACE_HASH_LENGTH]
+
+
+def relative_source_path(input_dir: str, file_path: str) -> str:
+    """POSIX path of a file relative to its input directory."""
+    root = normalize_input_namespace(input_dir)
+    full = os.path.normcase(os.path.normpath(os.path.realpath(file_path)))
+    relative = Path(os.path.relpath(full, root)).as_posix()
+    if relative == ".." or relative.startswith("../"):
+        raise ValueError(f"File {file_path} is outside input directory {input_dir}")
+    return relative
+
+
+def source_identity(input_dir: str, file_path: str) -> str:
+    """Stable id for one input file.
+
+    ``questions.json`` under two different input directories produces two ids.
+    The relative path keeps the file readable; the hash keeps the directory.
+    """
+    relative = relative_source_path(input_dir, file_path)
+    return f"{relative}__ns{namespace_hash(input_dir)}"
+
+
+def enriched_output_key(source_id: str) -> str:
+    """S3 key for an enriched file. The source id is part of the key."""
+    return f"{S3_ENRICHED_PREFIX}{source_id}_enriched.json"
+
+
+def _is_namespaced_identity(entry: object) -> bool:
+    return isinstance(entry, str) and _NAMESPACED_IDENTITY_RE.fullmatch(entry) is not None
+
+
+def _is_legacy_basename(entry: object) -> bool:
+    """True for pre-namespace state values that stored only the file name."""
+    if not isinstance(entry, str) or not entry.strip():
+        return False
+    if entry in (".", ".."):
+        return False
+    if "/" in entry or "\\" in entry:
+        return False
+    return not _is_namespaced_identity(entry)
+
+
+def _append_unique(items: List[str], entry: str) -> None:
+    if entry not in items:
+        items.append(entry)
+
+
+def _unique_paths_by_basename(file_paths: List[str]) -> Dict[str, List[str]]:
+    grouped: Dict[str, List[str]] = {}
+    seen = set()
+    for file_path in file_paths:
+        normalized = os.path.normcase(os.path.normpath(os.path.realpath(file_path)))
+        if normalized in seen:
+            continue
+        seen.add(normalized)
+        grouped.setdefault(os.path.basename(file_path), []).append(file_path)
+    return grouped
+
+
+def migrate_legacy_enrichment_state(
+    state: Dict,
+    input_dir: str,
+    file_paths: List[str],
+) -> Dict:
+    """Rewrite basename-only state entries without skipping the wrong file.
+
+    Namespaced identities stay in ``processed``, ``failed``, and
+    ``retry_counts`` and still skip only that exact input.
+
+    A bare basename is rewritten to a source identity only when
+    ``source_namespace`` normalizes to this input directory and exactly one
+    file in ``file_paths`` has that basename. The namespace is never inferred
+    from the directory being run. A later run can still adopt entries that an
+    earlier run parked, once ``source_namespace`` is set.
+
+    Every other basename stays out of the active lists, in
+    ``legacy_unscoped_processed``, ``legacy_unscoped_failed``, and
+    ``legacy_unscoped_retry_counts``. Those entries do not skip a new file
+    that happens to share the name, including the same name in another
+    directory. If two files in the pinned directory share the basename,
+    neither one is skipped.
+    """
+    if state is None:
+        state = {}
+
+    recorded = state.get("source_namespace")
+    adopt = False
+    if isinstance(recorded, str) and recorded.strip():
+        adopt = normalize_input_namespace(recorded) == normalize_input_namespace(input_dir)
+
+    by_basename = _unique_paths_by_basename(file_paths)
+
+    def adopted_identity(entry: str) -> Optional[str]:
+        if not adopt or not _is_legacy_basename(entry):
+            return None
+        matches = by_basename.get(entry, [])
+        if len(matches) != 1:
+            return None
+        return source_identity(input_dir, matches[0])
+
+    buckets = {
+        "processed": [],
+        "failed": [],
+        "retry_counts": {},
+        "legacy_unscoped_processed": [],
+        "legacy_unscoped_failed": [],
+        "legacy_unscoped_retry_counts": {},
+    }
+
+    def consume(entry: object, status: str) -> None:
+        active_key = status
+        parked_key = f"legacy_unscoped_{status}"
+        if _is_namespaced_identity(entry):
+            _append_unique(buckets[active_key], entry)
+            return
+        if isinstance(entry, str):
+            rewritten = adopted_identity(entry)
+            if rewritten:
+                _append_unique(buckets[active_key], rewritten)
+                return
+            _append_unique(buckets[parked_key], entry)
+
+    for entry in list(state.get("processed") or []):
+        consume(entry, "processed")
+    for entry in list(state.get("legacy_unscoped_processed") or []):
+        consume(entry, "processed")
+    for entry in list(state.get("failed") or []):
+        consume(entry, "failed")
+    for entry in list(state.get("legacy_unscoped_failed") or []):
+        consume(entry, "failed")
+
+    combined_retry: Dict[str, object] = {}
+    for key, count in list((state.get("legacy_unscoped_retry_counts") or {}).items()):
+        combined_retry[key] = count
+    for key, count in list((state.get("retry_counts") or {}).items()):
+        combined_retry[key] = count
+
+    for key, count in combined_retry.items():
+        if _is_namespaced_identity(key):
+            buckets["retry_counts"][key] = count
+            continue
+        if isinstance(key, str):
+            rewritten = adopted_identity(key)
+            if rewritten:
+                buckets["retry_counts"][rewritten] = count
+                continue
+            buckets["legacy_unscoped_retry_counts"][key] = count
+
+    state["processed"] = buckets["processed"]
+    state["failed"] = buckets["failed"]
+    state["retry_counts"] = buckets["retry_counts"]
+    state["legacy_unscoped_processed"] = buckets["legacy_unscoped_processed"]
+    state["legacy_unscoped_failed"] = buckets["legacy_unscoped_failed"]
+    state["legacy_unscoped_retry_counts"] = buckets["legacy_unscoped_retry_counts"]
+    return state
 
 
 def _ensure_s3_bucket_exists() -> bool:
@@ -369,22 +550,21 @@ def _enrich_single_file(file_path: str, filename: str, use_instructions: bool = 
         return None
 
 
-def _upload_enriched_to_s3(enriched_data: Dict, filename: str) -> bool:
+def _upload_enriched_to_s3(enriched_data: Dict, source_id: str) -> bool:
     """
-    Upload enriched JSON to S3.
-    Internal function.
+    Upload enriched JSON to S3 under the source identity.
+
+    The object key includes the input-relative path and namespace hash, so
+    two inputs that share a basename do not overwrite each other.
     """
     try:
-        # Prepare output filename
-        base_name = os.path.splitext(filename)[0]
-        output_filename = f"{base_name}_enriched.json"
-        
         # Add metadata
         enriched_data['processed_at'] = datetime.now().isoformat()
         enriched_data['enrichment_version'] = '1.0'
+        enriched_data['source_identity'] = source_id
         
         # Construct S3 key
-        s3_key = f"{S3_ENRICHED_PREFIX}{output_filename}"
+        s3_key = enriched_output_key(source_id)
         
         # Upload to S3
         s3_client.put_object(
@@ -423,6 +603,14 @@ def process_all_questions(input_dir: str, skip_processed: bool = True):
     
     # Get all JSON files
     all_files = list(Path(input_dir).glob('*.json'))
+
+    # Basename-only entries from older runs are not treated as this directory
+    # unless source_namespace pins them here. See migrate_legacy_enrichment_state.
+    state = migrate_legacy_enrichment_state(
+        state,
+        input_dir,
+        [str(path) for path in all_files],
+    )
     
     # Separate into non-error and error files
     non_error_files = [f for f in all_files if 'error' not in f.name.lower()]
@@ -446,24 +634,28 @@ def process_all_questions(input_dir: str, skip_processed: bool = True):
     
     def process_file_wrapper(file_path, filename, use_instructions=True, is_retry=False, retry_num=0):
         """Wrapper function for concurrent processing with state updates"""
-        # Skip if already processed
-        if skip_processed and filename in state['processed']:
+        source_id = source_identity(input_dir, str(file_path))
+        # Skip only an exact source identity. A bare basename left over from
+        # an older state file must not skip a different directory's file.
+        if skip_processed and source_id in state['processed']:
             with stats_lock:
                 stats['skipped'] += 1
             return {
                 'filename': filename,
+                'source_id': source_id,
                 'status': 'skipped',
                 'message': 'Already processed'
             }
         
         # For retry files, check retry count
         if is_retry:
-            retry_count = state['retry_counts'].get(filename, 0)
+            retry_count = state['retry_counts'].get(source_id, 0)
             if retry_count >= MAX_RETRIES:
                 with stats_lock:
                     stats['skipped'] += 1
                 return {
                     'filename': filename,
+                    'source_id': source_id,
                     'status': 'skipped',
                     'message': f'Max retries reached ({MAX_RETRIES})'
                 }
@@ -473,15 +665,15 @@ def process_all_questions(input_dir: str, skip_processed: bool = True):
         
         if enriched_data:
             # Upload to S3 using INTERNAL function
-            if _upload_enriched_to_s3(enriched_data, filename):
+            if _upload_enriched_to_s3(enriched_data, source_id):
                 # Update state safely
                 with state_lock:
-                    if filename not in state['processed']:
-                        state['processed'].append(filename)
-                    if filename in state['failed']:
-                        state['failed'].remove(filename)
-                    if filename in state['retry_counts']:
-                        del state['retry_counts'][filename]
+                    if source_id not in state['processed']:
+                        state['processed'].append(source_id)
+                    if source_id in state['failed']:
+                        state['failed'].remove(source_id)
+                    if source_id in state['retry_counts']:
+                        del state['retry_counts'][source_id]
                 
                 with stats_lock:
                     stats['newly_processed'] += 1
@@ -501,15 +693,16 @@ def process_all_questions(input_dir: str, skip_processed: bool = True):
                 # Upload failed
                 with state_lock:
                     if is_retry:
-                        state['retry_counts'][filename] = state['retry_counts'].get(filename, 0) + 1
-                    if filename not in state['failed']:
-                        state['failed'].append(filename)
+                        state['retry_counts'][source_id] = state['retry_counts'].get(source_id, 0) + 1
+                    if source_id not in state['failed']:
+                        state['failed'].append(source_id)
                 
                 with stats_lock:
                     stats['failed'] += 1
                 
                 return {
                     'filename': filename,
+                    'source_id': source_id,
                     'status': 'failed',
                     'message': 'S3 upload failed'
                 }
@@ -517,15 +710,16 @@ def process_all_questions(input_dir: str, skip_processed: bool = True):
             # Enrichment failed
             with state_lock:
                 if is_retry:
-                    state['retry_counts'][filename] = state['retry_counts'].get(filename, 0) + 1
-                if filename not in state['failed']:
-                    state['failed'].append(filename)
+                    state['retry_counts'][source_id] = state['retry_counts'].get(source_id, 0) + 1
+                if source_id not in state['failed']:
+                    state['failed'].append(source_id)
             
             with stats_lock:
                 stats['failed'] += 1
             
             return {
                 'filename': filename,
+                'source_id': source_id,
                 'status': 'failed',
                 'message': 'Enrichment failed'
             }
@@ -581,7 +775,8 @@ def process_all_questions(input_dir: str, skip_processed: bool = True):
     error_files_to_process = []
     for f in error_files:
         filename = f.name
-        retry_count = state['retry_counts'].get(filename, 0)
+        source_id = source_identity(input_dir, str(f))
+        retry_count = state['retry_counts'].get(source_id, 0)
         if retry_count < MAX_RETRIES:
             error_files_to_process.append((f, filename, False, True, retry_count))
     
