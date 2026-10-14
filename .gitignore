@@ -97,3 +97,4 @@ __pycache__/
 # Workspace dependency manifests must be tracked for a correct dep graph
 !packages/backend/package.json
 !packages/frontend/package.json
+!packages/ai-pipeline/requirements.txt

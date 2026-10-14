@@ -1,0 +1,15 @@
+# Production WSGI runtime. Keep this list identical to
+# [project.dependencies] in pyproject.toml.
+# Install from packages/ai-pipeline:
+#   pip install -r requirements.txt
+# Editable install of the same set:
+#   pip install -e .
+# Optional local OCR and clustering:
+#   pip install -e ".[local,clustering]"
+flask>=3.0.0,<4
+flask-cors>=4.0.0,<6
+werkzeug>=3.0.0,<4
+boto3>=1.34.0,<2
+botocore>=1.34.0,<2
+gunicorn>=22.0.0,<26
+numpy>=1.24.0,<3

@@ -34,13 +34,8 @@ all_matches = table.search(vector).where("semester = '5'").limit(100)
 ### 1. Install Python Dependencies
 
 ```bash
-cd ai_pipeline
-pip install lancedb hdbscan pyarrow
-```
-
-Or install all requirements:
-```bash
-pip install -r requirements-ocr.txt
+cd packages/ai-pipeline
+pip install -e ".[clustering]"
 ```
 
 ### 2. Verify Installation
@@ -224,7 +219,7 @@ Saved to S3: `jobs/{job_id}/clustering_summary.json`
 ### Module Not Available
 If clustering is skipped:
 ```bash
-pip install lancedb hdbscan pyarrow
+pip install -e ".[clustering]"
 ```
 
 ### LanceDB Storage Issues

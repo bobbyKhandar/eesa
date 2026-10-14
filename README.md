@@ -196,7 +196,7 @@ packages/ai-pipeline/
 ├── imagePreprocess.py               # Image preprocessing module
 ├── constants.py                     # Enums (JobStatus, Severity, etc.)
 ├── tests/                           # 15 test files
-├── requirements-ocr.txt
+├── requirements.txt
 ├── pyproject.toml
 ├── wsgi.py                          # Gunicorn WSGI entry point
 └── start_server.py                  # Server starter
@@ -223,8 +223,9 @@ cd eesa
 # Install all Node.js workspace packages (backend + frontend)
 npm install
 
-# AI Pipeline Python dependencies
-cd packages/ai-pipeline && pip install -r requirements-ocr.txt && cd ../..
+# AI Pipeline production WSGI dependencies (Flask, boto3, gunicorn).
+# Local OCR and clustering: pip install -e ".[local,clustering]"
+cd packages/ai-pipeline && pip install -r requirements.txt && cd ../..
 ```
 
 ### 2. Configure Environment Variables

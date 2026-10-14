@@ -139,8 +139,8 @@ AI Pipeline is a comprehensive OCR (Optical Character Recognition) processing sy
 
 ### Prerequisites
 
-- **Python** 3.8+
-- **Redis Server** 6.0+
+- **Python** 3.10+
+- **Redis Server** 6.0+ (local OCR queue only)
 - **CUDA** (optional, for GPU acceleration)
 
 ### System Dependencies
@@ -160,30 +160,22 @@ brew install python redis
 
 ### Python Dependencies
 
+Runtime dependencies and the Python floor live in `pyproject.toml`. `requirements.txt` is the same production set: Flask, flask-cors, Werkzeug, boto3, botocore, Gunicorn, and numpy. That set is what `wsgi:app` needs. OpenCV, EasyOCR, PyTorch, PyMuPDF, Pillow, and Redis are the `local` extra. LanceDB, PyArrow, HDBSCAN, and scikit-learn are the `clustering` extra.
+
 ```bash
-# Clone the repository
-git clone https://github.com/bobbyKhandar/eesa.git
-cd eesa/ai_pipeline
+cd packages/ai-pipeline
 
-# Create virtual environment (recommended)
-python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
+python -m venv .venv
+source .venv/bin/activate  # On Windows: .venv\Scripts\activate
 
-# Install dependencies
+# Production API / WSGI server
 pip install -r requirements.txt
-```
 
-### Required Python Packages
+# Same runtime set, editable
+pip install -e .
 
-```text
-easyocr>=1.7.0
-opencv-python>=4.8.0
-PyMuPDF>=1.23.0
-redis>=5.0.0
-flask>=3.0.0
-numpy>=1.24.0
-Pillow>=10.0.0
-torch>=2.0.0
+# Local OCR and clustering
+pip install -e ".[local,clustering]"
 ```
 
 ---

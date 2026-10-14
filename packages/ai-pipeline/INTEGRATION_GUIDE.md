@@ -35,8 +35,10 @@
 
 #### Step 1: Install Dependencies
 ```bash
-cd ai_pipeline
+cd packages/ai-pipeline
 pip install -r requirements.txt
+# Local OCR pipeline (OpenCV, EasyOCR, PyMuPDF, Redis):
+pip install -e ".[local]"
 ```
 
 #### Step 2: Start Redis
