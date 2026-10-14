@@ -91,7 +91,7 @@ def _load_pipeline():
         def __init__(self, *args, **kwargs):
             pass
 
-        def preprocess_image(self, image):
+        def preprocess_image(self, image, options=None):
             return image
 
     _stub("local_image_processor_pipeline", ImageProcessor=_ImageProcessor)

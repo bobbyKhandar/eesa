@@ -26,6 +26,12 @@ try:
     from .local_image_processor_pipeline import ImageProcessor
     from .pdf_handler import PDFHandler, default_dpi
     from .docx_handler import extract_docx_result, should_extract_docx
+    from .processing_options import (
+        ocr_options,
+        pdf_render_options,
+        preprocessing_options,
+        validate_batch_options,
+    )
     from .ocr_file_result import (
         batch_terminal_status,
         classify_file_outcome,
@@ -37,6 +43,12 @@ except ImportError:
     from local_image_processor_pipeline  import ImageProcessor
     from pdf_handler import PDFHandler, default_dpi
     from docx_handler import extract_docx_result, should_extract_docx
+    from processing_options import (
+        ocr_options,
+        pdf_render_options,
+        preprocessing_options,
+        validate_batch_options,
+    )
     from ocr_file_result import (
         batch_terminal_status,
         classify_file_outcome,
@@ -136,18 +148,26 @@ class PipelineManager:
         
         Args:
             file_locations: List of file paths to process
-            options: Optional processing parameters
+            options: Optional processing parameters (see processing_options.py)
             
         Returns:
             batch_id: Unique identifier for tracking the batch
+            
+        Raises:
+            ProcessingOptionsError: An option is unsupported or malformed. The
+                batch is not queued, so a caller is told instead of having the
+                option stored and ignored.
         """
         batch_id = str(uuid.uuid4())
+        
+        # Validate before anything is stored so unsupported options are rejected
+        validated_options = validate_batch_options(options)
         
         # Create batch request
         batch_request = BatchRequest(
             batch_id=batch_id,
             file_locations=file_locations,
-            options=options or {}
+            options=validated_options
         )
         
         # Store batch metadata
@@ -159,7 +179,7 @@ class PipelineManager:
             "processed_files": 0,
             "failed_files": 0,
             "created_at": batch_request.created_at,
-            "options": batch_request.options
+            "options": validated_options
         }
         
         # Store in Redis
@@ -280,7 +300,9 @@ class PipelineManager:
             redis_client.hash_set(f"batch:{batch_id}", "metadata", metadata)
             
             file_locations = metadata["file_locations"]
-            options = metadata.get("options") or {}
+            # Options were validated at submission. Re-checking here keeps a
+            # record edited outside the pipeline from being silently ignored.
+            options = validate_batch_options(metadata.get("options"))
             batch_results = {}
             batch_errors = []
             clean_files = 0
@@ -297,7 +319,7 @@ class PipelineManager:
                     if should_extract_docx(file_location, options):
                         file_result = self._process_docx_file(file_location)
                     else:
-                        file_result = self._process_pdf_file(file_location, batch_id)
+                        file_result = self._process_pdf_file(file_location, batch_id, options)
 
                     # Keep the payload even when pages failed so callers can see which were lost.
                     batch_results[file_location] = file_result
@@ -392,14 +414,24 @@ class PipelineManager:
         """Extract text from a DOCX upload without opening it as a PDF."""
         return extract_docx_result(file_location)
 
-    def _process_pdf_file(self, file_location: str, batch_id: Optional[str] = None) -> Dict[str, Any]:
+    def _process_pdf_file(self, file_location: str, batch_id: Optional[str] = None,
+                          options: Dict[str, Any] = None) -> Dict[str, Any]:
         """Process a single PDF file through the OCR pipeline.
 
         Pages are rendered one at a time. Each image is dropped before the
         next page is requested so a long PDF does not keep every pixmap alive.
+
+        ``options`` are the validated batch options. They select the render
+        resolution, the page span, the preprocessing parameters, and the OCR
+        confidence threshold. Anything omitted keeps the stage default.
         """
         try:
-            dpi = default_dpi()
+            render_options = pdf_render_options(options)
+            preprocess_options = preprocessing_options(options)
+            engine_options = ocr_options(options)
+
+            dpi = render_options.get("dpi", default_dpi())
+            page_range = render_options.get("page_range")
             validation = self.pdf_handler.validate_pdf(file_location, dpi=dpi)
             if not validation.get("valid"):
                 errors = validation.get("errors") or ["PDF validation failed"]
@@ -409,7 +441,7 @@ class PipelineManager:
             total_confidence = 0
             total_pages = 0
 
-            for page_data in self.pdf_handler.iter_pages(file_location, dpi=dpi):
+            for page_data in self.pdf_handler.iter_pages(file_location, dpi=dpi, page_range=page_range):
                 total_pages += 1
                 image = None
                 processed_image = None
@@ -417,7 +449,7 @@ class PipelineManager:
                     # Drop the handler's reference before OCR so the next
                     # iter_pages step can free this render.
                     image = page_data.pop("image", None)
-                    processed_image = self.image_processor.preprocess_image(image)
+                    processed_image = self.image_processor.preprocess_image(image, preprocess_options)
 
                     # Save preprocessed image for analysis/debugging if batch_id provided
                     try:
@@ -438,7 +470,7 @@ class PipelineManager:
                         print(f"⚠️ Could not save processed image for {file_location} page {page_data.get('page_number')}: {save_err}")
 
                     # Perform OCR
-                    ocr_result = self.ocr_engine.process_image(processed_image)
+                    ocr_result = self.ocr_engine.process_image(processed_image, **engine_options)
 
                     if ocr_result["success"]:
                         page_result = {

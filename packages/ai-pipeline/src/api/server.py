@@ -81,21 +81,26 @@ class LazyLocalPipeline:
 def _import_pipeline_manager():
     """Import the local singleton.
 
-    A missing ``pipeline_manager`` module tries the package-relative import.
-    An ``ImportError`` raised while that module loads (OpenCV, EasyOCR, and
-    the rest of the local stack) is kept so the 503 names the missing
-    dependency. Redis connection failures are ``RuntimeError`` and propagate
-    unchanged.
+    The package-relative import is tried first so the manager module is the
+    same copy the route module loaded: ``api.routes`` and
+    ``src.api.routes`` import their siblings differently, and a manager from
+    the other copy would raise a different ``ProcessingOptionsError`` class
+    than the local routes catch. A relative import that is not available
+    (this module loaded as a top-level ``api`` package) falls back to the
+    plain module name.
+
+    An ``ImportError`` raised while the manager module loads (OpenCV,
+    EasyOCR, and the rest of the local stack) is kept so the 503 names the
+    missing dependency. Redis connection failures are ``RuntimeError`` and
+    propagate unchanged.
     """
     try:
-        from pipeline_manager import pipeline_manager as manager
-    except ImportError as first_error:
-        if getattr(first_error, "name", None) != "pipeline_manager":
-            raise
-        try:
-            from .pipeline_manager import pipeline_manager as manager
-        except ImportError:
-            raise first_error from None
+        from ..pipeline_manager import pipeline_manager as manager
+        return manager
+    except ImportError:
+        pass
+
+    from pipeline_manager import pipeline_manager as manager
     return manager
 
 

@@ -37,11 +37,9 @@ export async function processExamWithEC2OCR(request: ExamAnalysisRequest) {
 
     // Step 2: Submit batch for OCR processing
     console.log('📤 Submitting PDFs to EC2 for OCR...');
-    const submitResponse = await ec2OcrClient.submitBatch(pdfPaths, {
-      ocr_language: 'en',
-      preprocessing: true,
-      confidence_threshold: 0.6,
-    });
+        const submitResponse = await ec2OcrClient.submitBatch(pdfPaths, {
+          confidence_threshold: 0.6,
+        });
     
     const batchId = submitResponse.batch_id;
     console.log(`📋 Batch submitted: ${batchId}`);
@@ -183,8 +181,7 @@ export async function getOCRServiceStats() {
 export async function extractTextFromPDF(pdfPath: string): Promise<string> {
   try {
     const result = await ec2OcrClient.processFiles([pdfPath], {
-      ocr_language: 'en',
-      preprocessing: true,
+      confidence_threshold: 0.6,
     });
 
     if (result.results.length === 0 || result.results[0].status !== 'success') {
