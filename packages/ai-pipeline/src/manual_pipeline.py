@@ -627,6 +627,18 @@ class S3Manager:
         except:
             return False
 
+    def delete_object(self, s3_key: str) -> Tuple[bool, str]:
+        """Delete an object from S3.
+
+        Used to compensate when tracking of an uploaded object fails, so a
+        retry does not collide with an orphaned key.
+        """
+        try:
+            self.s3.delete_object(Bucket=self.bucket, Key=s3_key)
+            return True, ""
+        except Exception as e:
+            return False, str(e)
+
 
 # ==========================================
 # Phase Processors
@@ -819,16 +831,40 @@ class UploadProcessor(PhaseProcessor):
             success, result = self.s3.upload_pdf(pdf_path, job.job_id, stored_name)
 
             if success:
+                s3_key = result
                 # store the display filename as the last-3-dirs + filename
                 job.filename = stored_name
-                job.s3_original_key = result
+                job.s3_original_key = s3_key
                 job.current_phase = Phase.OCR.value  # Move to next phase
                 job.status = Status.PENDING.value
-                self.db.add_job(job)
+
+                # Only count the file once the job row is durably saved.
+                if not self.db.add_job(job):
+                    # The upload succeeded but the job cannot be tracked.
+                    # Delete the object (best effort) so a retry does not
+                    # collide with an orphaned key, and report the failure
+                    # with enough detail to recover.
+                    deleted, delete_error = self.s3.delete_object(s3_key)
+                    if deleted:
+                        results["errors"].append(
+                            f"Failed to record job for {pdf_path} "
+                            f"(S3 key: {s3_key}); deleted the uploaded "
+                            f"object, so re-run upload to retry."
+                        )
+                    else:
+                        results["errors"].append(
+                            f"Failed to record job for {pdf_path} "
+                            f"(S3 key: {s3_key}); could not delete the "
+                            f"uploaded object ({delete_error}). Delete it "
+                            f"manually, then re-run upload to retry."
+                        )
+                    print(f"  ✗ Not tracked: {stored_name}")
+                    continue
+
                 # record mapping in cache if available
                 if cache:
                     try:
-                        cache.set_file_map(file_hash, stored_name, result)
+                        cache.set_file_map(file_hash, stored_name, s3_key)
                     except Exception:
                         pass
                 results["added"] += 1
