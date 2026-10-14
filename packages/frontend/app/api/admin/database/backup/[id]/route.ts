@@ -59,6 +59,24 @@ export async function DELETE(
 
     const { id } = await params;
     const result = await deleteBackup(id);
+
+    // S3 can accept the delete request and still report keys it refused to
+    // remove. Reporting that as a success would drop the row while the backup
+    // objects are still stored, so the conflict carries the keys that remain.
+    if (!result.success) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: result.message,
+          failedKeys: result.failedKeys,
+          deletedObjects: result.deletedObjects,
+          failedObjects: result.failedObjects,
+          errors: result.errors,
+        },
+        { status: 409 }
+      );
+    }
+
     return NextResponse.json({ success: true, data: result });
   } catch (error: any) {
     console.error('Error deleting backup:', error);

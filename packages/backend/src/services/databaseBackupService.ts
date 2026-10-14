@@ -12,7 +12,11 @@ import {
   isValidBackupId,
   planRestore,
   RESTORE_BATCH_SIZE,
+  summarizeBackupDeletes,
   summarizeBackupReads,
+  BACKUP_DELETE_BATCH_SIZE,
+  type BackupDeleteOutcome,
+  type BackupDeleteResponse,
 } from "./backupPlan";
 import {
   applyStagedRestore,
@@ -299,7 +303,7 @@ export async function restoreBackup(id: string): Promise<RestoreResult> {
   return toRestoreResult(outcome);
 }
 
-export async function deleteBackup(id: string): Promise<{ success: boolean; deletedObjects: number }> {
+export async function deleteBackup(id: string): Promise<BackupDeleteOutcome> {
   if (!isValidBackupId(id)) {
     throw new InvalidBackupIdError(id);
   }
@@ -319,21 +323,29 @@ export async function deleteBackup(id: string): Promise<{ success: boolean; dele
     .filter((key?: string): key is string => typeof key === 'string' && key.length > 0);
 
   // S3 accepts up to 1000 keys per DeleteObjects call.
-  for (let i = 0; i < keys.length; i += 1000) {
-    const chunk = keys.slice(i, i + 1000);
-    await s3Client.send(new DeleteObjectsCommand({
+  const responses: BackupDeleteResponse[] = [];
+  for (let i = 0; i < keys.length; i += BACKUP_DELETE_BATCH_SIZE) {
+    const chunk = keys.slice(i, i + BACKUP_DELETE_BATCH_SIZE);
+    responses.push(await s3Client.send(new DeleteObjectsCommand({
       Bucket: S3_BACKUP_BUCKET,
       Delete: {
         Objects: chunk.map((Key) => ({ Key })),
         Quiet: true,
       },
-    }));
+    })));
   }
 
-  return {
-    success: true,
-    deletedObjects: keys.length,
-  };
+  // A request S3 accepted can still report per-key failures in Errors, so the
+  // backup is only gone when no response refused one of its keys.
+  const outcome = summarizeBackupDeletes(keys, responses);
+  if (!outcome.success) {
+    console.error(
+      `[DatabaseBackupService] Backup ${id} was only partially deleted:`,
+      outcome.errors
+    );
+  }
+
+  return outcome;
 }
 
 function bindingForCollection(
