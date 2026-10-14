@@ -18,6 +18,11 @@ from .upload_limits import (
     stored_files_rejection,
 )
 
+try:
+    from ..processing_options import ProcessingOptionsError
+except ImportError:  # imported as a top-level ``api`` package
+    from processing_options import ProcessingOptionsError
+
 
 def _open_local_pipeline(pipeline_manager):
     """Return ``(manager, error)`` without requiring the local pipeline at import.
@@ -258,6 +263,10 @@ def register_routes(app, aws_manager, pipeline_manager):
                 "message": "Local batch submitted successfully",
                 "files_queued": len(file_locations)
             }), 202
+        except ProcessingOptionsError as e:
+            # The batch was not queued. An unsupported or malformed option is a
+            # caller mistake, not a server failure.
+            return jsonify({"success": False, "error": str(e)}), 400
         except Exception as e:
             return jsonify({"error": str(e)}), 500
 

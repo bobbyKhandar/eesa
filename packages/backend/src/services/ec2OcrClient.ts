@@ -7,10 +7,20 @@ import axios, { AxiosInstance } from 'axios';
 
 export interface BatchSubmitRequest {
   file_locations: string[];
+  // Options the local OCR pipeline honors. Anything else is rejected with 400.
   options?: {
-    ocr_language?: string;
-    preprocessing?: boolean;
+    dpi?: number;
+    page_range?: [number, number];
+    max_width?: number;
+    max_height?: number;
+    min_width?: number;
+    min_height?: number;
+    skip_quality_analysis?: boolean;
+    enhance_contrast?: boolean;
+    denoise?: boolean;
+    binarize?: boolean;
     confidence_threshold?: number;
+    file_type?: 'pdf' | 'docx' | 'image';
   };
 }
 

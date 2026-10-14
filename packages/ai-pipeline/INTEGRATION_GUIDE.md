@@ -178,7 +178,6 @@ batch_id = pipeline_manager.submit_batch(
         'max_width': 2000,
         'enhance_contrast': True,
         'denoise': True,
-        'sharpen': True,
         'binarize': True,
         'confidence_threshold': 0.5
     }
@@ -233,23 +232,22 @@ const result = await client.waitForBatch(batchId, pollInterval, timeout);
 
 ## 🔧 Configuration Options
 
+Options are per batch. Submission validates them: an option the pipeline
+cannot honor, or a recognized option with a malformed value, is rejected with
+HTTP 400 and the offending name instead of being stored and ignored.
+
 ### Image Processing
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
-| `max_width` | int | 2000 | Maximum image width |
-| `max_height` | int | 2000 | Maximum image height |
-| `min_width` | int | 300 | Minimum image width |
-| `min_height` | int | 300 | Minimum image height |
-| `enhance_contrast` | bool | true | Enable CLAHE |
-| `clahe_clip_limit` | float | 2.0 | CLAHE clip limit |
-| `clahe_grid_size` | tuple | (8, 8) | CLAHE grid size |
-| `denoise` | bool | true | Enable denoising |
-| `denoise_h` | int | 10 | Denoising strength |
-| `sharpen` | bool | true | Enable sharpening |
-| `sharpen_strength` | float | 0.5 | Sharpening (0-1) |
-| `binarize` | bool | true | Enable binarization |
-| `adaptive_block_size` | int | 11 | Threshold block size |
+| `max_width` | int | 3000 | Maximum image width |
+| `max_height` | int | 3000 | Maximum image height |
+| `min_width` | int | 600 | Minimum image width |
+| `min_height` | int | 600 | Minimum image height |
+| `skip_quality_analysis` | bool | false | Skip the adaptive quality assessment |
+| `enhance_contrast` | bool | false | Force CLAHE contrast enhancement |
+| `denoise` | bool | false | Force bilateral denoising |
+| `binarize` | bool | false | Force Otsu binarization |
 
 ### OCR Options
 
@@ -262,7 +260,13 @@ const result = await client.waitForBatch(batchId, pollInterval, timeout);
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
 | `dpi` | int | 400 | Rendering DPI |
-| `page_range` | tuple | None | (start, end) pages |
+| `page_range` | list | None | `[start, end]` pages, end exclusive |
+
+### Routing Options
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `file_type` | str | - | `pdf`, `docx`, or `image`. `docx` routes the file to text extraction instead of OCR |
 
 ---
 

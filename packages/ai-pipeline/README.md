@@ -341,45 +341,54 @@ for file_path, file_result in result.results.items():
 
 ### Processing Options
 
-Configure processing behavior with these options:
+Options are per batch. Submission validates every option: an option the
+pipeline cannot honor, or a recognized option with a malformed value, is
+rejected with HTTP 400 and the offending name instead of being stored and
+silently ignored. These are the supported options.
 
-#### Image Processing Options
+#### PDF Rendering Options
+
+```python
+options = {
+    'dpi': 400,               # Render resolution (positive integer)
+    'page_range': [0, 4],     # [start, end] page span; end is exclusive
+}
+```
+
+#### Image Preprocessing Options
 
 ```python
 options = {
     # Resizing
-    'max_width': 2000,           # Maximum image width
-    'max_height': 2000,          # Maximum image height
-    'min_width': 300,            # Minimum image width
-    'min_height': 300,           # Minimum image height
-    
-    # Contrast Enhancement
-    'enhance_contrast': True,    # Enable CLAHE
-    'clahe_clip_limit': 2.0,     # CLAHE clip limit
-    'clahe_grid_size': (8, 8),   # CLAHE grid size
-    
-    # Denoising
-    'denoise': True,             # Enable denoising
-    'denoise_h': 10,             # Denoising strength
-    'denoise_template_size': 7,  # Template window size
-    'denoise_search_size': 21,   # Search window size
-    
-    # Sharpening
-    'sharpen': True,             # Enable sharpening
-    'sharpen_strength': 0.5,     # Sharpening strength (0-1)
-    
-    # Binarization
-    'binarize': True,            # Enable binarization
-    'adaptive_block_size': 11,   # Block size for adaptive threshold
-    'adaptive_c': 2              # Constant for adaptive threshold
+    'max_width': 3000,            # Maximum image width
+    'max_height': 3000,           # Maximum image height
+    'min_width': 600,             # Minimum image width
+    'min_height': 600,            # Minimum image height
+
+    # Quality analysis and forced steps
+    'skip_quality_analysis': False,  # Skip the adaptive quality assessment
+    'enhance_contrast': False,       # Force CLAHE contrast enhancement
+    'denoise': False,                # Force bilateral denoising
+    'binarize': False,               # Force Otsu binarization
 }
 ```
+
+By default the processor assesses each page and only applies the corrections
+that page needs. The forced steps above override that assessment.
 
 #### OCR Options
 
 ```python
 options = {
     'confidence_threshold': 0.5  # Minimum confidence (0-1)
+}
+```
+
+#### Routing Options
+
+```python
+options = {
+    'file_type': 'docx'  # pdf, docx, or image
 }
 ```
 
@@ -602,6 +611,15 @@ options = {'max_width': 1500, 'max_height': 1500}
 - Enable preprocessing: `enhance_contrast=True, denoise=True`
 - Adjust confidence threshold: `confidence_threshold=0.7`
 - Check image quality
+
+#### Batch Rejected With "Unsupported processing options"
+```
+{'success': False, 'error': 'Unsupported processing options: sharpen. Supported options: ...'}
+```
+**Solution:** The batch was not queued. Remove the option or rename it to a
+supported one from the [Processing Options](#processing-options) section. A
+recognized option with a bad value, such as `confidence_threshold=1.5`, is
+rejected the same way.
 
 ### Debug Mode
 
