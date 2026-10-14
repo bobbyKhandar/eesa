@@ -98,6 +98,13 @@ class BatchRunner:
         while processed_total < total:
             batch_num += 1
             
+            # A run interrupted between the in_progress update and the outcome
+            # update left its jobs claimed, which the counts below ignore.
+            # Reclaim them so this phase does not stop with work left behind.
+            reclaimed = self.db.reclaim_stale_in_progress(phase)
+            if reclaimed:
+                print(f"Reclaimed {reclaimed} stale in_progress job(s) for {phase}")
+            
             # Get pending jobs count
             pending_jobs = self.db.get_jobs_by_phase(phase, Status.PENDING.value, limit=1)
             retry_jobs = self.db.get_jobs_by_phase(phase, Status.RETRY_PENDING.value, limit=1)

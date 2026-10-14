@@ -234,7 +234,19 @@ Every error is:
 1. Logged to SQLite `error_log` table
 2. Saved to JSON file in `errors/{phase}/`
 3. Recorded on the job with `error_message` and `error_phase`
-4. Job status set to `failed`
+4. Job status set to `failed` and `retry_count` incremented
+
+A handled error never leaves a job `in_progress`. Each processor records an
+unsuccessful result through one shared transition, and `process_batch`
+records a returned failure the processor did not record itself, so the job
+is selected again by the phase queries and by `retry-errors`. A logging
+failure is reported and never blocks the status update.
+
+A run interrupted between the `in_progress` update and the outcome update
+(Ctrl-C, crash, killed container) leaves the row claimed. Those rows are
+reclaimed to `pending` once they are older than an hour, both before a batch
+selects work and before `batch_runner.py` counts a phase as empty, so the run
+stops only when there really is no work.
 
 ### Manual Error Recovery
 ```bash
@@ -250,6 +262,13 @@ python manual_pipeline.py retry-errors --phase parse
 # 4. Re-run the phase
 python manual_pipeline.py parse --batch-size 10
 ```
+
+Retry targets are validated. `--phase` accepts only `ocr`, `parse`,
+`enrich`, and `organize`; anything else is refused instead of moving jobs
+into a phase nothing processes. `--job-id` retries a `failed` or
+`retry_pending` job from its `error_phase`, or from `current_phase` when that
+phase is empty, and reports a job that is not failed or has no retryable
+phase.
 
 ### Common Errors
 
@@ -306,6 +325,14 @@ For 3000 PDFs (avg 10 pages each):
 # Check if jobs exist
 python manual_pipeline.py list ocr --status pending
 python manual_pipeline.py list ocr --status failed
+```
+
+A run older than an hour that was interrupted leaves a job `in_progress`. The
+next batch reclaims it to `pending`, so check that status too, and use
+`retry-errors --job-id <id>` to re-queue one immediately:
+```bash
+python manual_pipeline.py list ocr --status in_progress
+python manual_pipeline.py check-job <job_id>
 ```
 
 ### Database Issues
