@@ -261,16 +261,16 @@ class ImageProcessor:
         """Adjust image brightness to target level using gamma correction"""
         current_brightness = image.mean()
         
-        if current_brightness < 1:
+        # Guard endpoint means: log(0) is undefined and log(1) (mean 255) is 0
+        if current_brightness < 1 or current_brightness >= 255:
             return image
         
-        # Calculate gamma to reach target brightness
+        # Calculate gamma to reach target brightness: (mean/255)^gamma = target/255
         gamma = np.log(target / 255.0) / np.log(current_brightness / 255.0)
         gamma = np.clip(gamma, 0.5, 2.0)  # Limit gamma range
         
-        # Apply gamma correction
-        inv_gamma = 1.0 / gamma
-        table = np.array([((i / 255.0) ** inv_gamma) * 255 for i in range(256)]).astype("uint8")
+        # Apply gamma correction directly (gamma < 1 brightens, gamma > 1 darkens)
+        table = np.array([((i / 255.0) ** gamma) * 255 for i in range(256)]).astype("uint8")
         return cv2.LUT(image, table)
     
     def _denoise_bilateral(self, image: np.ndarray, h: int = 5) -> np.ndarray:
