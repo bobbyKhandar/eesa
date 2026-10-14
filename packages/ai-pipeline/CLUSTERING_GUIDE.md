@@ -168,9 +168,20 @@ Saved to S3: `jobs/{job_id}/clustering_summary.json`
   "high_similarity_pairs": 3,
   "n_clusters": 8,
   "similarity_threshold": 0.85,
-  "embedding_model": "amazon.titan-embed-text-v2:0"
+  "embedding_model": "amazon.titan-embed-text-v2:0",
+  "status": "partial",
+  "success": false,
+  "updated_files": 1,
+  "expected_files": 2,
+  "failed_keys": ["jobs/{job_id}/organized_output/db.json"],
+  "file_updates": [
+    {"source_key": "jobs/{job_id}/organized_output/os.json", "status": "updated"},
+    {"source_key": "jobs/{job_id}/organized_output/db.json", "status": "failed", "error": "S3 timeout"}
+  ]
 }
 ```
+
+`status` is `success` only when every organized file that had similarity data was updated. Some failed writes are `partial`. Every expected write failing is `failed`. `failed_keys` is also stored on the job's clustering stage so a retry can see which files were left unchanged. Files with no similar questions are not expected updates.
 
 ## Benefits
 

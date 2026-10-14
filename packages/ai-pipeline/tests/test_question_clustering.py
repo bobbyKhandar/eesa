@@ -286,5 +286,169 @@ class TestRepeatedQuestionNumbersAcrossExams(unittest.TestCase):
         )
 
 
+def _organized_exam(question_text, year):
+    return {
+        "exams": [
+            {
+                "subject": "Operating Systems",
+                "year": year,
+                "semester": "V",
+                "examType": "main",
+                "branch": "CSE",
+                "questions": [_question("Q1", question_text, year)],
+            }
+        ]
+    }
+
+
+class TestClusteringSourceFileUpdates(unittest.TestCase):
+    """S3 write-back failures must be returned, not printed and ignored."""
+
+    def _run(self, sources, get_object, put_object, find_similar=None):
+        job_id = "job-s3-updates"
+        module = _clustering
+        module.get_or_create_lancedb_table = lambda table_name="questions": MagicMock()
+        module.generate_embedding = lambda text: np.array([1.0, 0.0, 0.0], dtype=np.float32)
+        if find_similar is None:
+            def find_similar(*args, **kwargs):
+                return [
+                    {
+                        "id": "prior-question",
+                        "question_number": "Q9",
+                        "similarity": 0.91,
+                        "year": "2019",
+                    }
+                ]
+        module.find_similar_questions_lancedb = find_similar
+        module.cluster_with_hdbscan = lambda vectors: np.array([1] * len(vectors))
+        module.s3_client = MagicMock()
+        module.s3_client.list_objects_v2.return_value = {
+            "Contents": [{"Key": key} for key in sources]
+        }
+        module.s3_client.get_object.side_effect = get_object
+        module.s3_client.put_object.side_effect = put_object
+        return module.cluster_questions_for_job(job_id, "paper.pdf")
+
+    def test_one_failed_source_update_is_partial_and_names_the_key(self):
+        job_id = "job-s3-updates"
+        kept_key = f"jobs/{job_id}/organized_output/os.json"
+        failed_key = f"jobs/{job_id}/organized_output/db.json"
+        sources = {
+            kept_key: _organized_exam("process scheduling", "2021"),
+            failed_key: _organized_exam("deadlock detection", "2022"),
+        }
+        reads = {}
+        written = {}
+
+        def get_object(Bucket, Key):
+            reads[Key] = reads.get(Key, 0) + 1
+            if Key == failed_key and reads[Key] > 1:
+                raise RuntimeError("S3 read failed")
+            return {"Body": io.BytesIO(json.dumps(sources[Key]).encode("utf-8"))}
+
+        def put_object(Bucket, Key, Body, ContentType=None):
+            written[Key] = json.loads(Body)
+
+        result = self._run(sources, get_object, put_object)
+
+        self.assertIsInstance(result, dict)
+        self.assertFalse(result["success"])
+        self.assertEqual(result["status"], "partial")
+        self.assertEqual(result["failed_keys"], [failed_key])
+        self.assertEqual(result["updated_files"], 1)
+        self.assertEqual(result["expected_files"], 2)
+        outcomes = {item["source_key"]: item for item in result["file_updates"]}
+        self.assertEqual(outcomes[kept_key]["status"], "updated")
+        self.assertEqual(outcomes[failed_key]["status"], "failed")
+        self.assertIn("S3 read failed", outcomes[failed_key]["error"])
+        self.assertIn(kept_key, written)
+        self.assertNotIn(failed_key, written)
+        summary_key = f"jobs/{job_id}/clustering_summary.json"
+        self.assertEqual(written[summary_key]["failed_keys"], [failed_key])
+        self.assertEqual(written[summary_key]["status"], "partial")
+
+    def test_every_source_update_failing_is_failed_and_lists_every_key(self):
+        job_id = "job-s3-updates"
+        first_key = f"jobs/{job_id}/organized_output/os.json"
+        second_key = f"jobs/{job_id}/organized_output/db.json"
+        sources = {
+            first_key: _organized_exam("process scheduling", "2021"),
+            second_key: _organized_exam("deadlock detection", "2022"),
+        }
+        written = {}
+
+        def get_object(Bucket, Key):
+            return {"Body": io.BytesIO(json.dumps(sources[Key]).encode("utf-8"))}
+
+        def put_object(Bucket, Key, Body, ContentType=None):
+            if Key.endswith("clustering_summary.json"):
+                written[Key] = json.loads(Body)
+                return
+            raise RuntimeError("S3 upload failed")
+
+        result = self._run(sources, get_object, put_object)
+
+        self.assertIsInstance(result, dict)
+        self.assertFalse(result["success"])
+        self.assertEqual(result["status"], "failed")
+        self.assertEqual(result["failed_keys"], [first_key, second_key])
+        self.assertEqual(result["updated_files"], 0)
+        self.assertEqual(result["expected_files"], 2)
+        self.assertEqual(
+            [item["status"] for item in result["file_updates"]],
+            ["failed", "failed"],
+        )
+        self.assertIn("S3 upload failed", result["file_updates"][0]["error"])
+        summary_key = f"jobs/{job_id}/clustering_summary.json"
+        self.assertEqual(written[summary_key]["status"], "failed")
+        self.assertEqual(written[summary_key]["failed_keys"], [first_key, second_key])
+
+    def test_successful_updates_stay_success_with_no_failed_keys(self):
+        job_id = "job-s3-updates"
+        source_key = f"jobs/{job_id}/organized_output/os.json"
+        sources = {source_key: _organized_exam("process scheduling", "2021")}
+        written = {}
+
+        def get_object(Bucket, Key):
+            return {"Body": io.BytesIO(json.dumps(sources[Key]).encode("utf-8"))}
+
+        def put_object(Bucket, Key, Body, ContentType=None):
+            written[Key] = json.loads(Body)
+
+        result = self._run(sources, get_object, put_object)
+
+        self.assertTrue(result["success"])
+        self.assertEqual(result["status"], "success")
+        self.assertEqual(result["failed_keys"], [])
+        self.assertEqual(result["updated_files"], 1)
+        self.assertEqual(result["expected_files"], 1)
+        self.assertEqual(result["file_updates"], [{"source_key": source_key, "status": "updated"}])
+        self.assertIn(source_key, written)
+
+    def test_questions_with_no_matches_are_not_failed_updates(self):
+        job_id = "job-s3-updates"
+        source_key = f"jobs/{job_id}/organized_output/os.json"
+        sources = {source_key: _organized_exam("unique question", "2021")}
+
+        def get_object(Bucket, Key):
+            return {"Body": io.BytesIO(json.dumps(sources[Key]).encode("utf-8"))}
+
+        def put_object(Bucket, Key, Body, ContentType=None):
+            return None
+
+        result = self._run(
+            sources,
+            get_object,
+            put_object,
+            find_similar=lambda *args, **kwargs: [],
+        )
+
+        self.assertTrue(result["success"])
+        self.assertEqual(result["status"], "success")
+        self.assertEqual(result["failed_keys"], [])
+        self.assertEqual(result["file_updates"], [])
+        self.assertEqual(result["expected_files"], 0)
+
+
 if __name__ == "__main__":
     unittest.main()

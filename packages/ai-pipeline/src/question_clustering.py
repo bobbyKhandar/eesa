@@ -320,7 +320,10 @@ def cluster_questions_for_job(job_id: str, filename: str) -> Optional[Dict]:
         filename: Original filename
         
     Returns:
-        Result metadata or None if failed
+        Result metadata, including ``file_updates`` and ``failed_keys``.
+        ``status`` is ``success`` only when every expected organized file was
+        updated, ``partial`` when some updates fail, and ``failed`` when every
+        expected update fails. ``None`` when clustering itself cannot run.
     """
     try:
         print(f"\n{'='*60}")
@@ -513,6 +516,7 @@ def cluster_questions_for_job(job_id: str, filename: str) -> Optional[Dict]:
         for sim_data in questions_with_similarity:
             questions_by_file[sim_data['source_key']].append(sim_data)
         
+        file_updates = []
         updated_files = 0
         for source_key, sim_list in questions_by_file.items():
             try:
@@ -550,11 +554,30 @@ def cluster_questions_for_job(job_id: str, filename: str) -> Optional[Dict]:
                     ContentType='application/json'
                 )
                 updated_files += 1
+                file_updates.append({
+                    'source_key': source_key,
+                    'status': 'updated',
+                })
                 
             except Exception as e:
                 print(f"   ⚠ Failed to update {source_key}: {e}")
-        
-        print(f"   ✓ Updated {updated_files} files with clustering data")
+                file_updates.append({
+                    'source_key': source_key,
+                    'status': 'failed',
+                    'error': str(e),
+                })
+
+        failed_keys = [
+            item['source_key'] for item in file_updates if item['status'] == 'failed'
+        ]
+        expected_files = len(file_updates)
+        if failed_keys:
+            print(
+                f"   ⚠ Updated {updated_files} of {expected_files} files; "
+                f"failed: {', '.join(failed_keys)}"
+            )
+        else:
+            print(f"   ✓ Updated {updated_files} files with clustering data")
         
         # Step 8: Save clustering summary
         summary = {
@@ -568,8 +591,25 @@ def cluster_questions_for_job(job_id: str, filename: str) -> Optional[Dict]:
             'n_noise': int(n_noise) if cluster_labels is not None else 0,
             'similarity_threshold': SIMILARITY_THRESHOLD,
             'embedding_model': EMBEDDING_MODEL,
-            'storage': 'lancedb'
+            'storage': 'lancedb',
+            'updated_files': updated_files,
+            'expected_files': expected_files,
+            'file_updates': file_updates,
+            'failed_keys': failed_keys,
         }
+        if expected_files and updated_files == 0:
+            summary['success'] = False
+            summary['status'] = 'failed'
+            summary['error'] = f"Failed to update {expected_files} organized files"
+        elif failed_keys:
+            summary['success'] = False
+            summary['status'] = 'partial'
+            summary['error'] = (
+                f"{len(failed_keys)} of {expected_files} organized files failed to update"
+            )
+        else:
+            summary['success'] = True
+            summary['status'] = 'success'
         
         summary_key = f"{S3_JOBS_PREFIX}{job_id}/clustering_summary.json"
         s3_client.put_object(
@@ -579,7 +619,12 @@ def cluster_questions_for_job(job_id: str, filename: str) -> Optional[Dict]:
             ContentType='application/json'
         )
         
-        print(f"\n✅ Clustering complete!")
+        if summary['status'] == 'success':
+            print(f"\n✅ Clustering complete!")
+        elif summary['status'] == 'partial':
+            print(f"\n⚠ Clustering finished with incomplete question updates")
+        else:
+            print(f"\n❌ Clustering failed to update organized files")
         print(f"   📊 Summary: {summary['total_similar_pairs']} similar pairs, {summary['n_clusters']} topics")
         print(f"   💾 LanceDB: {len(records_to_add)} questions indexed")
         
