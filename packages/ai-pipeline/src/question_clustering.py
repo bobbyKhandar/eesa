@@ -36,6 +36,44 @@ EMBEDDING_DIM = 512
 # LanceDB Configuration
 LANCEDB_PATH = os.getenv('LANCEDB_PATH', './lancedb_data')  # Local storage path
 
+# Reserved organization metadata basenames. Exam payloads live alongside these
+# files and may contain "index" in the subject folder or filename (for example
+# "Index Numbers" or "Database Indexing"), so only these exact basenames are
+# treated as index metadata.
+INDEX_METADATA_BASENAMES = frozenset({"_index.json", "_master_index.json"})
+
+
+def is_index_metadata_key(key: str) -> bool:
+    """Return True only for the organization's reserved index metadata files."""
+    return os.path.basename(key).lower() in INDEX_METADATA_BASENAMES
+
+
+def is_organized_exam_key(key: str) -> bool:
+    """Return True for organized exam payloads, including index-named subjects."""
+    return key.endswith(".json") and not is_index_metadata_key(key)
+
+
+def _load_organized_manifest_keys(job_id: str) -> List[str]:
+    """Return manifest-listed organized exam keys, or [] when unavailable."""
+    try:
+        manifest_key = f"{S3_JOBS_PREFIX}{job_id}/organized_output/_master_index.json"
+        obj_response = s3_client.get_object(Bucket=S3_BUCKET, Key=manifest_key)
+        manifest = json.loads(obj_response['Body'].read().decode('utf-8'))
+    except Exception:
+        return []
+    if not isinstance(manifest, dict) or not isinstance(manifest.get("subjects"), dict):
+        return []
+    keys: List[str] = []
+    for info in manifest["subjects"].values():
+        if not isinstance(info, dict):
+            continue
+        for entry in info.get("files") or []:
+            if isinstance(entry, dict) and isinstance(entry.get("s3_key"), str):
+                key = entry["s3_key"]
+                if is_organized_exam_key(key) and key not in keys:
+                    keys.append(key)
+    return keys
+
 
 def generate_embedding(text: str) -> Optional[np.ndarray]:
     """
@@ -351,37 +389,50 @@ def cluster_questions_for_job(job_id: str, filename: str) -> Optional[Dict]:
             print(f"   ✗ No organized output found")
             return None
         
-        # Collect all questions from all exams
+        # Collect all questions from all exams. The master manifest is the
+        # authoritative list of organized exam files so an omitted key cannot
+        # be reported as complete.
+        listed_keys = [
+            obj['Key'] for obj in response['Contents']
+            if is_organized_exam_key(obj['Key'])
+        ]
+        for manifest_key in _load_organized_manifest_keys(job_id):
+            if manifest_key not in listed_keys:
+                print(f"   ⚠ Manifest-listed exam missing from listing: {manifest_key}")
+                listed_keys.append(manifest_key)
+
         all_questions = []
-        
-        for obj in response['Contents']:
-            key = obj['Key']
-            if key.endswith('.json') and 'index' not in key.lower():
+
+        for key in listed_keys:
+            try:
                 obj_response = s3_client.get_object(Bucket=S3_BUCKET, Key=key)
                 data = json.loads(obj_response['Body'].read().decode('utf-8'))
-                
-                if isinstance(data, dict) and 'exams' in data:
-                    for exam_index, exam in enumerate(data['exams']):
-                        if 'questions' not in exam:
-                            continue
-                        exam_identity = exam_cluster_identity(exam, exam_index)
-                        for question_index, q in enumerate(exam['questions']):
-                            # Add exam metadata to question
-                            q['subject'] = exam.get('subject', 'Unknown')
-                            q['year'] = exam.get('year', 'Unknown')
-                            q['semester'] = exam.get('semester', 'Unknown')
-                            q['exam_type'] = exam.get('examType', 'main')
-                            q['branch'] = exam.get('branch', 'CSE')
-                            q['source_file'] = key
-                            q['job_id'] = job_id
-                            q['_cluster_question_id'] = cluster_question_id(
-                                job_id,
-                                key,
-                                exam_identity,
-                                question_cluster_identity(q, question_index),
-                            )
+            except Exception as e:
+                print(f"   ⚠ Skipping unreadable organized exam {key}: {e}")
+                continue
 
-                            all_questions.append(q)
+            if isinstance(data, dict) and 'exams' in data:
+                for exam_index, exam in enumerate(data['exams']):
+                    if 'questions' not in exam:
+                        continue
+                    exam_identity = exam_cluster_identity(exam, exam_index)
+                    for question_index, q in enumerate(exam['questions']):
+                        # Add exam metadata to question
+                        q['subject'] = exam.get('subject', 'Unknown')
+                        q['year'] = exam.get('year', 'Unknown')
+                        q['semester'] = exam.get('semester', 'Unknown')
+                        q['exam_type'] = exam.get('examType', 'main')
+                        q['branch'] = exam.get('branch', 'CSE')
+                        q['source_file'] = key
+                        q['job_id'] = job_id
+                        q['_cluster_question_id'] = cluster_question_id(
+                            job_id,
+                            key,
+                            exam_identity,
+                            question_cluster_identity(q, question_index),
+                        )
+
+                        all_questions.append(q)
         
         if not all_questions:
             print(f"   ✗ No questions found in organized output")
