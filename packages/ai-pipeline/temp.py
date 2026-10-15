@@ -1,3 +1,4 @@
+import argparse
 import os
 from openpyxl import load_workbook, Workbook
 
@@ -40,9 +41,29 @@ def merge_excels_with_branch(input_dir, output_file):
     merged_wb.save(output_file)
     print(f"\n✅ Merged all into: {output_file}")
 
-# === USAGE ===
+def parse_args(argv=None):
+    parser = argparse.ArgumentParser(
+        description="Merge per-branch Excel exports into one workbook with a branch column."
+    )
+    parser.add_argument(
+        "input_dir",
+        nargs="?",
+        default="C:/project/miniproject/outputs/excel_exports",
+        help="Directory containing per-branch .xlsx files",
+    )
+    parser.add_argument(
+        "output_file",
+        nargs="?",
+        default="C:/project/miniproject/outputs/merged_questions_with_branch.xlsx",
+        help="Path of the merged output workbook",
+    )
+    return parser.parse_args(argv)
 
 
-input_dir = "C:/project/miniproject/outputs/excel_exports"
-output_file = "C:/project/miniproject/outputs/merged_questions_with_branch.xlsx"
-merge_excels_with_branch(input_dir, output_file)
+def main(argv=None):
+    args = parse_args(argv)
+    merge_excels_with_branch(args.input_dir, args.output_file)
+
+
+if __name__ == "__main__":
+    main()
