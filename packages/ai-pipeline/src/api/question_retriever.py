@@ -17,6 +17,66 @@ from typing import Dict, List, Optional, Any
 INDEX_METADATA_BASENAMES = frozenset({"_index.json", "_master_index.json"})
 
 
+# Shared output contract for processed-question retrieval.
+# Parsing (packages/ai-pipeline/src/parsing_pipeline.py) emits ``questionType``
+# as "text" or "mcq" with ``options`` (array of choice strings) only for MCQs.
+# Enrichment and organization preserve the whole question object, so the
+# retriever must preserve both fields while normalizing names/types.
+QUESTION_TYPE_TEXT = "text"
+QUESTION_TYPE_MCQ = "mcq"
+QUESTION_TYPES = frozenset({QUESTION_TYPE_TEXT, QUESTION_TYPE_MCQ})
+
+_MCQ_TYPE_ALIASES = frozenset({
+    "mcq",
+    "multiple_choice",
+    "multiple choice",
+    "single_choice",
+    "single choice",
+    "objective",
+})
+
+
+def _normalize_question_type(question: Dict) -> str:
+    """Return the canonical ``questionType`` ("mcq" or "text")."""
+    raw = question.get("questionType", question.get("question_type", question.get("type")))
+    if raw is None:
+        # A question carrying choices without an explicit type is an MCQ;
+        # otherwise default to text so no choice payload is dropped silently.
+        options_raw = question.get("options")
+        if options_raw is None:
+            options_raw = question.get("choices")
+        if isinstance(options_raw, (list, tuple)) and len(options_raw) > 0:
+            return QUESTION_TYPE_MCQ
+        return QUESTION_TYPE_TEXT
+    normalized = str(raw).strip().lower().replace("-", " ").replace("_", " ")
+    normalized = " ".join(normalized.split())
+    if normalized in _MCQ_TYPE_ALIASES:
+        return QUESTION_TYPE_MCQ
+    return QUESTION_TYPE_TEXT
+
+
+def _normalize_question_options(question: Dict) -> List[str]:
+    """Return the complete MCQ choices as a list of non-empty strings."""
+    raw = question.get("options")
+    if raw is None:
+        raw = question.get("choices")
+    if raw is None:
+        return []
+    if isinstance(raw, str):
+        raw = [raw]
+    if not isinstance(raw, (list, tuple)):
+        return []
+    normalized: List[str] = []
+    for option in raw:
+        if option is None:
+            continue
+        text = option if isinstance(option, str) else str(option)
+        text = text.strip()
+        if text:
+            normalized.append(text)
+    return normalized
+
+
 def is_index_metadata_key(key: str) -> bool:
     """Return True only for the organization's reserved index metadata files."""
     return os.path.basename(key).lower() in INDEX_METADATA_BASENAMES
@@ -387,7 +447,11 @@ def get_job_questions(s3_client: Any, s3_bucket: str, s3_jobs_prefix: str, job_i
 
 
 def _normalize_exam_questions(exam: Dict):
-    """Normalize question fields in-place to match database schema."""
+    """Normalize question fields in-place to match database schema.
+
+    Preserves the parsing-stage ``questionType`` ("text"/"mcq") and the
+    complete MCQ ``options`` while normalizing field names/types.
+    """
     if 'questions' not in exam:
         return
     normalized = []
@@ -401,10 +465,14 @@ def _normalize_exam_questions(exam: Dict):
         except (ValueError, TypeError):
             confidence_value = 0.0
 
-        normalized.append({
+        question_type = _normalize_question_type(q)
+        question_options = _normalize_question_options(q)
+
+        entry = {
             'questionNumber': q.get('question_number', q.get('questionNumber', 'N/A')),
             'questionText': q.get('question_text', q.get('questionText', '')),
             'marks': marks_value,
+            'questionType': question_type,
             'bloomLevel': q.get('bloomLevel', 'Unknown'),
             'bloomJustification': q.get('bloomJustification', ''),
             'confidence': confidence_value,
@@ -417,5 +485,11 @@ def _normalize_exam_questions(exam: Dict):
             'similarQuestionIds': q.get('similarQuestionIds', []),
             'appearanceFrequency': q.get('appearanceFrequency'),
             'clusterId': q.get('clusterId')
-        })
+        }
+        # Mirror the parsing contract: MCQs carry their complete choices;
+        # text questions omit the key unless the source carried choices,
+        # in which case the payload is preserved rather than dropped.
+        if question_type == QUESTION_TYPE_MCQ or question_options:
+            entry['options'] = question_options
+        normalized.append(entry)
     exam['questions'] = normalized
