@@ -11,6 +11,26 @@ import atexit
 import threading
 import time
 from pathlib import Path
+
+# Direct-file bootstrap: `python src/api/server.py` gives this module no
+# package context, so the relative imports below would fail with
+# "attempted relative import with no known parent package". Establish the
+# `api` package in-process (without executing `api/__init__.py`, which would
+# import this file back) and set `__package__` so the sibling imports
+# resolve. Package execution (`python -m api.server` from `src/`, `wsgi.py`,
+# `src/server.py`) already has a package and skips this block.
+if __package__ in (None, ""):
+    _src_dir = Path(__file__).resolve().parent.parent
+    if str(_src_dir) not in sys.path:
+        sys.path.insert(0, str(_src_dir))
+    if "api" not in sys.modules:
+        import types as _types
+
+        _api_pkg = _types.ModuleType("api")
+        _api_pkg.__path__ = [str(_src_dir / "api")]
+        sys.modules["api"] = _api_pkg
+    __package__ = "api"
+
 from flask import Flask
 from flask_cors import CORS
 
@@ -20,7 +40,8 @@ from .service_auth import assert_trusted_bind
 
 # Add parent directory to Python path for pipeline module imports
 current_dir = Path(__file__).parent.parent
-sys.path.insert(0, str(current_dir))
+if str(current_dir) not in sys.path:
+    sys.path.insert(0, str(current_dir))
 
 
 class LazyLocalPipeline:
