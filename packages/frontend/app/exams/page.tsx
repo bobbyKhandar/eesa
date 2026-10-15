@@ -9,6 +9,12 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Badge } from "@/frontend/components/ui/badge"
 import { Search, Plus, Clock, Users, BookOpen, ArrowRight } from "lucide-react"
 import { useUser } from "@clerk/nextjs"
+import {
+  EXAM_CATEGORIES,
+  filterExamsByCategory,
+  sortBrowserExams,
+  toggleCategory,
+} from "@/frontend/lib/examBrowserFilters"
 
 interface ExamSummary {
   id: string
@@ -19,6 +25,7 @@ interface ExamSummary {
   type?: string
   duration?: number
   questions: number
+  assignedUsers?: number
   maxMarks?: number
   createdAt?: string
   status: string
@@ -26,11 +33,6 @@ interface ExamSummary {
 
 function textOf(value: unknown): string {
   return typeof value === "string" ? value : ""
-}
-
-function timeOf(value: unknown): number {
-  const time = new Date(textOf(value)).getTime()
-  return Number.isNaN(time) ? 0 : time
 }
 
 export default function ExamsPage() {
@@ -41,6 +43,7 @@ export default function ExamsPage() {
   const [searchQuery, setSearchQuery] = useState("")
   const [sortBy, setSortBy] = useState("recent")
   const [filterStatus, setFilterStatus] = useState("all")
+  const [selectedCategory, setSelectedCategory] = useState<string | null>(null)
 
   useEffect(() => {
     if (!isLoaded) return
@@ -85,9 +88,9 @@ export default function ExamsPage() {
     }
   }, [isLoaded, user?.id])
 
-  // Filter exams based on search query and status
+  // Filter exams based on search query, status, and selected category
   const query = searchQuery.toLowerCase()
-  const filteredExams = exams.filter((exam) => {
+  const searchedExams = exams.filter((exam) => {
     const matchesSearch =
       textOf(exam.title).toLowerCase().includes(query) ||
       textOf(exam.description).toLowerCase().includes(query) ||
@@ -98,17 +101,17 @@ export default function ExamsPage() {
 
     return matchesSearch && matchesStatus
   })
+  const filteredExams = filterExamsByCategory(searchedExams, selectedCategory)
 
-  // Sort exams
-  const sortedExams = [...filteredExams].sort((a, b) => {
-    if (sortBy === "recent") {
-      return timeOf(b.createdAt) - timeOf(a.createdAt)
-    } else if (sortBy === "duration") {
-      return (a.duration || 0) - (b.duration || 0)
-    } else {
-      return textOf(a.title).localeCompare(textOf(b.title))
-    }
-  })
+  // Sort exams (popular orders by enrolled users, then question count)
+  const sortedExams = sortBrowserExams(filteredExams, sortBy)
+
+  const resetBrowserFilters = () => {
+    setSearchQuery("")
+    setSelectedCategory(null)
+    setFilterStatus("all")
+    setSortBy("recent")
+  }
 
   const renderExams = (emptyMessage: string) => {
     if (sortedExams.length > 0) {
@@ -168,13 +171,14 @@ export default function ExamsPage() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="recent">Most Recent</SelectItem>
+                  <SelectItem value="popular">Most Popular</SelectItem>
                   <SelectItem value="alphabetical">Alphabetical</SelectItem>
                   <SelectItem value="duration">Duration</SelectItem>
                 </SelectContent>
               </Select>
             </div>
 
-            <Tabs defaultValue="all" className="w-full" onValueChange={setFilterStatus}>
+            <Tabs value={filterStatus} className="w-full" onValueChange={setFilterStatus}>
               <TabsList className="grid grid-cols-4 mb-4">
                 <TabsTrigger value="all">All</TabsTrigger>
                 <TabsTrigger value="active">Active</TabsTrigger>
@@ -207,44 +211,31 @@ export default function ExamsPage() {
               </CardHeader>
               <CardContent>
                 <div className="flex flex-wrap gap-2">
-                  <Button variant="outline" size="sm">
-                    Computer Science
-                  </Button>
-                  <Button variant="outline" size="sm">
-                    Data Science
-                  </Button>
-                  <Button variant="outline" size="sm">
-                    Web Development
-                  </Button>
-                  <Button variant="outline" size="sm">
-                    Programming
-                  </Button>
-                  <Button variant="outline" size="sm">
-                    Mathematics
-                  </Button>
-                  <Button variant="outline" size="sm">
-                    Physics
-                  </Button>
+                  {EXAM_CATEGORIES.map((category) => {
+                    const active = selectedCategory === category
+                    return (
+                      <Button
+                        key={category}
+                        variant={active ? "default" : "outline"}
+                        size="sm"
+                        aria-pressed={active}
+                        onClick={() => setSelectedCategory(toggleCategory(selectedCategory, category))}
+                      >
+                        {category}
+                      </Button>
+                    )
+                  })}
                 </div>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader>
-                <CardTitle>Difficulty</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="flex flex-wrap gap-2">
-                  <Button variant="outline" size="sm">
-                    Beginner
-                  </Button>
-                  <Button variant="outline" size="sm">
-                    Intermediate
-                  </Button>
-                  <Button variant="outline" size="sm">
-                    Advanced
-                  </Button>
-                </div>
+                {selectedCategory && (
+                  <div className="mt-3 flex items-center justify-between gap-2 text-sm">
+                    <span className="text-gray-500 dark:text-gray-400">
+                      Filtering by {selectedCategory}
+                    </span>
+                    <Button variant="ghost" size="sm" onClick={() => setSelectedCategory(null)}>
+                      Clear
+                    </Button>
+                  </div>
+                )}
               </CardContent>
             </Card>
 
@@ -253,13 +244,23 @@ export default function ExamsPage() {
                 <CardTitle>Quick Actions</CardTitle>
               </CardHeader>
               <CardContent className="space-y-2">
-                <Button variant="outline" className="w-full justify-start gap-2">
+                <Button variant="outline" className="w-full justify-start gap-2" onClick={resetBrowserFilters}>
                   <BookOpen className="h-4 w-4" /> My Enrolled Exams
                 </Button>
-                <Button variant="outline" className="w-full justify-start gap-2">
+                <Button
+                  variant={sortBy === "recent" ? "default" : "outline"}
+                  className="w-full justify-start gap-2"
+                  aria-pressed={sortBy === "recent"}
+                  onClick={() => setSortBy("recent")}
+                >
                   <Clock className="h-4 w-4" /> Recent Exams
                 </Button>
-                <Button variant="outline" className="w-full justify-start gap-2">
+                <Button
+                  variant={sortBy === "popular" ? "default" : "outline"}
+                  className="w-full justify-start gap-2"
+                  aria-pressed={sortBy === "popular"}
+                  onClick={() => setSortBy("popular")}
+                >
                   <Users className="h-4 w-4" /> Popular Exams
                 </Button>
               </CardContent>
