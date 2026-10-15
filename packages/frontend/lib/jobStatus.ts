@@ -57,3 +57,29 @@ export function shouldPollJobStatus(status: unknown): boolean {
   if (typeof status !== "string" || status.length === 0) return true;
   return !isTerminalJobStatus(status);
 }
+
+/**
+ * Decide which job statuses have extracted questions worth showing in the
+ * admin job-details modal. `partial_success` means a later stage failed but
+ * earlier stages may already have produced reviewable questions, so it must
+ * behave like `success` here (the details modal used to gate on `success`
+ * only and hid those questions).
+ */
+export function shouldShowJobQuestions(status: unknown): boolean {
+  return status === "success" || status === "partial_success";
+}
+
+export const JOB_PIPELINE_STAGES = ["ocr", "parsing", "enrichment", "organization"] as const;
+
+/**
+ * List pipeline stages that did not complete successfully. Used to clearly
+ * mark incomplete work on `partial_success` jobs in the details modal.
+ */
+export function getIncompleteJobStages(
+  stages: Record<string, { status?: unknown } | null | undefined> | null | undefined
+): string[] {
+  if (!stages || typeof stages !== "object") return [...JOB_PIPELINE_STAGES];
+  return (JOB_PIPELINE_STAGES as readonly string[]).filter(
+    (stage) => (stages as Record<string, { status?: unknown } | null | undefined>)[stage]?.status !== "success"
+  );
+}
