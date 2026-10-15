@@ -296,14 +296,14 @@ Or use **VSCode** (`.vscode/launch.json`) — open Run & Debug (Ctrl+Shift+D), s
 ### 4. Run in Production
 
 ```bash
-# From the repository root: compiles packages/backend, then next build
-npm run build
+# prebuild compiles packages/backend, then next build
+npm run build --prefix packages/frontend
 
 # Serves the built frontend on port 3000
 npm run start --prefix packages/frontend
 ```
 
-The ordered build matters: a clean checkout has no `packages/backend/dist`, and `next build` fails on `Cannot find module '@/backend/dist/...'` until the backend compile has run. The frontend `build` script runs the same compile on its own, so `npm run build` inside `packages/frontend` also works.
+The ordered build matters: a clean checkout has no `packages/backend/dist`, and `next build` fails on `Cannot find module '@/backend/dist/...'` until the backend compile has run. The frontend `prebuild` step runs that compile first. The repository root deliberately has no `build` script: Vercel runs a root `build` script in place of its own Next.js build, which broke every deployment.
 
 ---
 
@@ -359,7 +359,6 @@ All routes registered on the canonical server at `src/api/server.py`. See `packa
 
 | Script | Description |
 |--------|-------------|
-| `npm run build` | Production build — compiles `packages/backend`, then runs `next build` |
 | `npm run dev` | Start the Next.js dev server (compiles the backend first) |
 
 ### Backend (`packages/backend/package.json`)

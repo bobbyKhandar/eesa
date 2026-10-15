@@ -49,35 +49,13 @@ function makeFixture({ sources, excludes = [], dist = true }) {
 }
 
 describe("backend build ordering", () => {
-  it("compiles the backend before the frontend in the root production build", () => {
-    const build = read("package.json").scripts.build;
-    assert.equal(
-      typeof build,
-      "string",
-      "the repo root must expose a build script",
-    );
-
-    const backendStep = build.indexOf("packages/backend");
-    const frontendStep = build.indexOf("packages/frontend");
-    assert.notEqual(
-      backendStep,
-      -1,
-      `root build must compile the backend: ${build}`,
-    );
-    assert.notEqual(
-      frontendStep,
-      -1,
-      `root build must run the frontend build: ${build}`,
-    );
-    assert.ok(
-      backendStep < frontendStep,
-      `the backend must compile first: ${build}`,
-    );
-    assert.match(
-      build,
-      /&&/,
-      `the steps must be ordered, not concurrent: ${build}`,
-    );
+  it("leaves the root without a build script so Vercel runs the frontend build", () => {
+    // Vercel builds this repo from the root and runs the root `build` script
+    // whenever one exists, in place of its own Next.js build. A root script
+    // that only delegates to packages/frontend breaks every deployment (#209).
+    // The backend is still compiled first through the frontend `prebuild`.
+    const scripts = read("package.json").scripts;
+    assert.equal(scripts.build, undefined);
   });
 
   it("starts the frontend dev server from the root", () => {
