@@ -10,6 +10,104 @@ from typing import List, Dict, Optional
 import re
 
 
+def _normalize_question_number(value) -> str:
+    """Normalize a display number for comparison (case/whitespace-insensitive)."""
+    return str(value or '').strip().lower()
+
+
+def _normalize_question_text(value) -> str:
+    """Normalize question text for identity comparison."""
+    return re.sub(r'\s+', ' ', str(value or '').strip().lower())
+
+
+def _is_or_number(value) -> bool:
+    """True when a display number is an OR alternative marker."""
+    return _normalize_question_number(value) == 'or'
+
+
+def _question_texts_match(q1: Dict, q2: Dict) -> bool:
+    """True when two questions carry the same non-empty text."""
+    text1 = _normalize_question_text(q1.get('question_text', ''))
+    text2 = _normalize_question_text(q2.get('question_text', ''))
+    return bool(text1) and text1 == text2
+
+
+def _question_texts_overlap(q1: Dict, q2: Dict) -> bool:
+    """True when one question text contains the other (proven overlap).
+
+    Requires a meaningful overlap length so short fragments or single
+    words do not count as proof that two entries are the same question.
+    """
+    text1 = _normalize_question_text(q1.get('question_text', ''))
+    text2 = _normalize_question_text(q2.get('question_text', ''))
+    if not text1 or not text2:
+        return False
+    if text1 == text2:
+        return True
+    if len(text1) < 20 or len(text2) < 20:
+        return False
+    return text1 in text2 or text2 in text1
+
+
+def _is_proven_duplicate(q1: Dict, q2: Dict) -> bool:
+    """True only when two entries are proven to be the same question.
+
+    Same display number alone is not proof: OR alternatives share the
+    number "OR" by contract, and other distinct questions can share a
+    display number. Require matching numbers plus matching/overlapping
+    content before treating one entry as a duplicate of the other.
+    """
+    if _normalize_question_number(q1.get('question_number', '')) != \
+            _normalize_question_number(q2.get('question_number', '')):
+        return False
+    return _question_texts_match(q1, q2) or _question_texts_overlap(q1, q2)
+
+
+def _looks_like_split_fragment(first: Dict, second: Dict) -> bool:
+    """True when boundary texts look like one question split in two.
+
+    A split leaves the first half without terminal punctuation and/or the
+    second half starting lowercase as a continuation fragment. Two
+    complete standalone questions (both ending with terminal punctuation
+    and the second starting uppercase) are not a split.
+    """
+    text1 = str(first.get('question_text', '') or '').strip()
+    text2 = str(second.get('question_text', '') or '').strip()
+    if not text1 or not text2:
+        # An empty half carries no distinct content; joining loses nothing.
+        return True
+    ends_complete = text1.rstrip().endswith(('.', '?', '!', ':', ';'))
+    starts_continuation = text2[:1].islower()
+    return (not ends_complete) or starts_continuation
+
+
+def _should_merge_boundary_questions(first: Dict, second: Dict) -> bool:
+    """True when two same-numbered boundary questions are one question.
+
+    OR alternatives are distinct by parsing contract, so two "OR"
+    entries merge only on proven content overlap. Non-OR entries merge on
+    proven overlap or when the texts look like halves of a split
+    question. Distinct questions that merely share a display number stay
+    separate.
+    """
+    if _normalize_question_number(first.get('question_number', '')) != \
+            _normalize_question_number(second.get('question_number', '')):
+        # Different display numbers are never the same boundary question.
+        # (Callers pre-check number similarity; this keeps the helper safe
+        # when used directly.)
+        return False
+    if _question_texts_match(first, second) or _question_texts_overlap(first, second):
+        return True
+    if _is_or_number(first.get('question_number', '')):
+        return False
+    return _looks_like_split_fragment(first, second)
+
+
+def _count_or_alternatives(questions: List[Dict]) -> int:
+    """Count entries whose display number marks an OR alternative."""
+    return sum(1 for q in questions if _is_or_number(q.get('question_number', '')))
+
+
 class ChunkMerger:
     """Merges parsed question chunks intelligently"""
     
@@ -43,15 +141,72 @@ class ChunkMerger:
                 # Single continuation chunk - needs manual review
                 return self._handle_orphan_continuation(chunk)
         
+        # Count inputs before merging so preservation can be validated.
+        input_questions = sum(
+            len(exam.get('questions', []) or [])
+            for chunk in parsed_chunks
+            for exam in (chunk.get('exams', []) or [])
+            if isinstance(exam, dict)
+        )
+        input_or_alternatives = sum(
+            _count_or_alternatives(exam.get('questions', []) or [])
+            for chunk in parsed_chunks
+            for exam in (chunk.get('exams', []) or [])
+            if isinstance(exam, dict)
+        )
+
         # Sort chunks by continuation status and question numbers
         sorted_chunks = self._sort_chunks(parsed_chunks)
-        
+
         # Merge chunks sequentially
         result = self._merge_sequential_chunks(sorted_chunks)
-        
-        # Post-process: fix numbering gaps, deduplicate
+
+        # Post-process: fix numbering gaps, deduplicate proven overlaps only
         result = self._post_process_merge(result)
-        
+
+        boundary_merges = int(result.pop('boundary_merges', 0) or 0)
+        output_questions = sum(
+            len(exam.get('questions', []) or [])
+            for exam in (result.get('exams', []) or [])
+            if isinstance(exam, dict)
+        )
+        output_or_alternatives = sum(
+            _count_or_alternatives(exam.get('questions', []) or [])
+            for exam in (result.get('exams', []) or [])
+            if isinstance(exam, dict)
+        )
+        duplicates_removed = sum(
+            int(exam.get('duplicates_removed', 0) or 0)
+            for exam in (result.get('exams', []) or [])
+            if isinstance(exam, dict)
+        )
+        for exam in (result.get('exams', []) or []):
+            if isinstance(exam, dict):
+                exam.pop('duplicates_removed', None)
+        result['merge_stats'] = {
+            'input_questions': input_questions,
+            'output_questions': output_questions,
+            'duplicates_removed': duplicates_removed,
+            'boundary_merges': boundary_merges,
+            'input_or_alternatives': input_or_alternatives,
+            'output_or_alternatives': output_or_alternatives,
+        }
+        if output_or_alternatives < input_or_alternatives:
+            result['warning'] = (
+                'Merged result dropped OR alternatives '
+                f"({input_or_alternatives} -> {output_or_alternatives}); "
+                'manual review required'
+            )
+            result['manual_review_required'] = True
+        elif output_questions + duplicates_removed + boundary_merges != input_questions:
+            result['warning'] = (
+                'Merged question count does not reconcile '
+                f"(in={input_questions} out={output_questions} "
+                f"dups={duplicates_removed} boundary={boundary_merges}); "
+                'manual review required'
+            )
+            result['manual_review_required'] = True
+
         return result
     
     def _sort_chunks(self, chunks: List[Dict]) -> List[Dict]:
@@ -69,29 +224,31 @@ class ChunkMerger:
     def _merge_sequential_chunks(self, chunks: List[Dict]) -> Dict:
         """Merge chunks in sequence"""
         if not chunks:
-            return {'exams': [], 'subjectsCreated': []}
-        
+            return {'exams': [], 'subjectsCreated': [], 'boundary_merges': 0}
+
         # Start with first chunk as base
         base_chunk = chunks[0]
         result = {
             'exams': [],
-            'subjectsCreated': list(base_chunk.get('subjectsCreated', []))
+            'subjectsCreated': list(base_chunk.get('subjectsCreated', [])),
+            'boundary_merges': 0,
         }
-        
+
         # If base is continuation, it's an error case
         if base_chunk.get('is_continuation'):
             result['warning'] = 'First chunk is a continuation - metadata may be incomplete'
             result['manual_review_required'] = True
-        
+
         # Add base chunk exams
         if base_chunk.get('exams'):
             result['exams'].extend(base_chunk['exams'])
-        
+
         # Merge subsequent chunks
         for chunk in chunks[1:]:
             if chunk.get('is_continuation'):
                 # This is a continuation - merge its questions with previous exam
-                self._merge_continuation_chunk(result, chunk)
+                if self._merge_continuation_chunk(result, chunk):
+                    result['boundary_merges'] += 1
             else:
                 # This is a new exam - add it separately
                 if chunk.get('exams'):
@@ -100,11 +257,14 @@ class ChunkMerger:
                     for subject in chunk['subjectsCreated']:
                         if subject not in result['subjectsCreated']:
                             result['subjectsCreated'].append(subject)
-        
+
         return result
-    
-    def _merge_continuation_chunk(self, result: Dict, continuation_chunk: Dict):
-        """Merge a continuation chunk into the last exam"""
+
+    def _merge_continuation_chunk(self, result: Dict, continuation_chunk: Dict) -> bool:
+        """Merge a continuation chunk into the last exam.
+
+        Returns True when a boundary question was joined into one entry.
+        """
         if not result['exams']:
             # No previous exam to merge into - create placeholder
             result['exams'].append({
@@ -117,45 +277,55 @@ class ChunkMerger:
                 'questions': [],
                 'warning': 'Continuation chunk with no base exam'
             })
-        
+
         last_exam = result['exams'][-1]
-        
+
         # Check if continuation chunk has exams
         if not continuation_chunk.get('exams'):
-            return
-        
+            return False
+
         continuation_exam = continuation_chunk['exams'][0]  # Usually only one exam in continuation
         continuation_questions = continuation_exam.get('questions', [])
-        
+        boundary_merged = False
+
         # Check for question overlap (possible duplicate)
         if continuation_questions:
             last_merged_questions = last_exam.get('questions', [])
-            
+
             if last_merged_questions:
                 # Check if last question from previous chunk matches first from this chunk
                 last_q_num = last_merged_questions[-1].get('question_number', '')
                 first_cont_q_num = continuation_questions[0].get('question_number', '')
-                
-                # If same question number, try to merge them
+
+                # If same question number, merge only proven overlaps.
+                # Distinct OR alternatives (and other distinct questions
+                # sharing a display number) must stay separate.
                 if self._are_same_question(last_q_num, first_cont_q_num):
-                    merged_q = self._merge_questions(
+                    if _should_merge_boundary_questions(
                         last_merged_questions[-1],
-                        continuation_questions[0]
-                    )
-                    last_merged_questions[-1] = merged_q
-                    continuation_questions = continuation_questions[1:]  # Skip first
-        
+                        continuation_questions[0],
+                    ):
+                        merged_q = self._merge_questions(
+                            last_merged_questions[-1],
+                            continuation_questions[0]
+                        )
+                        last_merged_questions[-1] = merged_q
+                        continuation_questions = continuation_questions[1:]  # Skip first
+                        boundary_merged = True
+
         # Add remaining continuation questions
         if 'questions' not in last_exam:
             last_exam['questions'] = []
         last_exam['questions'].extend(continuation_questions)
-        
+
         # Update subjects if continuation has better metadata
         if continuation_exam.get('subject') and continuation_exam['subject'] != '':
             if last_exam.get('subject') == '' or last_exam.get('subject') == 'MANUAL_REVIEW_REQUIRED':
                 last_exam['subject'] = continuation_exam['subject']
                 if continuation_exam['subject'] not in result['subjectsCreated']:
                     result['subjectsCreated'].append(continuation_exam['subject'])
+
+        return boundary_merged
     
     def _are_same_question(self, q_num1: str, q_num2: str) -> bool:
         """Check if two question numbers refer to the same question"""
@@ -171,15 +341,23 @@ class ChunkMerger:
     def _merge_questions(self, q1: Dict, q2: Dict) -> Dict:
         """Merge two question objects (likely the same question split across chunks)"""
         merged = q1.copy()
-        
-        # Combine question text (take longer one or concatenate)
-        text1 = q1.get('question_text', '').strip()
-        text2 = q2.get('question_text', '').strip()
-        
-        if text2 and len(text2) > len(text1):
-            merged['question_text'] = text2
-        elif text2 and not text1.endswith(text2[:20]):  # Check if continuation
-            merged['question_text'] = text1 + ' ' + text2
+
+        # Combine question text (take longer one or concatenate halves)
+        text1 = str(q1.get('question_text', '') or '').strip()
+        text2 = str(q2.get('question_text', '') or '').strip()
+
+        if text1 and text2:
+            norm1 = _normalize_question_text(text1)
+            norm2 = _normalize_question_text(text2)
+            if norm1 == norm2 or norm1 in norm2 or norm2 in norm1:
+                # Proven overlap: keep the fuller text, do not concatenate
+                # an identical question with itself.
+                if len(text2) > len(text1):
+                    merged['question_text'] = q2.get('question_text', text2)
+            elif not text1.endswith(text2[:20]):  # Check if continuation
+                merged['question_text'] = text1 + ' ' + text2
+        elif text2:
+            merged['question_text'] = q2.get('question_text', text2)
         
         # Take non-empty marks
         if not merged.get('marks') and q2.get('marks'):
@@ -196,25 +374,40 @@ class ChunkMerger:
         return merged
     
     def _post_process_merge(self, result: Dict) -> Dict:
-        """Post-process merged result to fix issues"""
+        """Post-process merged result to fix issues.
+
+        Deduplicates only proven overlaps (same display number plus
+        matching/overlapping content). Distinct OR alternatives and other
+        distinct questions sharing a display number are preserved.
+        """
         for exam in result.get('exams', []):
             questions = exam.get('questions', [])
-            
-            # Remove duplicate questions
-            seen_numbers = set()
-            unique_questions = []
+
+            # Remove only proven duplicate questions
+            unique_questions: List[Dict] = []
+            duplicates_removed = 0
             for q in questions:
-                q_num = q.get('question_number', '')
-                if q_num not in seen_numbers:
-                    seen_numbers.add(q_num)
+                duplicate_of = None
+                for kept in unique_questions:
+                    if _is_proven_duplicate(kept, q):
+                        duplicate_of = kept
+                        break
+                if duplicate_of is None:
                     unique_questions.append(q)
-            
+                else:
+                    # Fold missing marks/options into the kept entry so no
+                    # enrichment content is lost with the duplicate.
+                    merged = self._merge_questions(duplicate_of, q)
+                    duplicate_of.update(merged)
+                    duplicates_removed += 1
+
             exam['questions'] = unique_questions
-            
+            exam['duplicates_removed'] = duplicates_removed
+
             # Add stats
             exam['total_questions'] = len(unique_questions)
             exam['question_sequence'] = self._extract_question_sequence(unique_questions)
-        
+
         return result
     
     def _extract_question_sequence(self, questions: List[Dict]) -> str:
@@ -346,7 +539,9 @@ def _merge_split_question(first: Dict, second: Dict) -> Dict:
     text_first = str(first.get('question_text', '') or '').strip()
     text_second = str(second.get('question_text', '') or '').strip()
     if text_first and text_second:
-        if text_first in text_second or text_second in text_first:
+        norm_first = _normalize_question_text(text_first)
+        norm_second = _normalize_question_text(text_second)
+        if norm_first in norm_second or norm_second in norm_first:
             # One payload repeated the question; keep the fuller text.
             merged['question_text'] = (
                 first['question_text'] if len(text_first) >= len(text_second)
@@ -389,7 +584,8 @@ def _append_continuation_exam(exams: List[Dict], continuation_exam: Dict) -> Non
     """Merge a continuation chunk's first exam into the exam already kept.
 
     A question that the chunk boundary split keeps one entry instead of
-    becoming two half questions.
+    becoming two half questions. Distinct OR alternatives (and other
+    distinct questions sharing a display number) stay separate.
     """
     if not exams or not isinstance(continuation_exam, dict):
         if isinstance(continuation_exam, dict):
@@ -403,8 +599,9 @@ def _append_continuation_exam(exams: List[Dict], continuation_exam: Dict) -> Non
     existing = list(existing) if isinstance(existing, list) else []
 
     if questions and existing and _same_question(existing[-1], questions[0]):
-        existing[-1] = _merge_split_question(existing[-1], questions[0])
-        questions = questions[1:]
+        if _should_merge_boundary_questions(existing[-1], questions[0]):
+            existing[-1] = _merge_split_question(existing[-1], questions[0])
+            questions = questions[1:]
 
     last_exam['questions'] = existing + questions
     if not last_exam.get('subject') and continuation_exam.get('subject'):
@@ -424,6 +621,18 @@ def merge_chunk_exams(parsed_chunks: List[Dict]) -> Dict:
     """
     exams: List[Dict] = []
     subjects: List[str] = []
+    input_questions = sum(
+        len(exam.get('questions', []) or [])
+        for parsed_chunk in parsed_chunks
+        for exam in ((parsed_chunk.get('exams') or []) if isinstance(parsed_chunk, dict) else [])
+        if isinstance(exam, dict)
+    )
+    input_or_alternatives = sum(
+        _count_or_alternatives(exam.get('questions', []) or [])
+        for parsed_chunk in parsed_chunks
+        for exam in ((parsed_chunk.get('exams') or []) if isinstance(parsed_chunk, dict) else [])
+        if isinstance(exam, dict)
+    )
 
     for parsed_chunk in parsed_chunks:
         chunk_exams = parsed_chunk.get('exams')
@@ -447,7 +656,28 @@ def merge_chunk_exams(parsed_chunks: List[Dict]) -> Dict:
                 if subject and subject not in subjects:
                     subjects.append(subject)
 
-    return {'exams': exams, 'subjectsCreated': subjects}
+    output_questions = sum(
+        len(exam.get('questions', []) or []) for exam in exams if isinstance(exam, dict)
+    )
+    output_or_alternatives = sum(
+        _count_or_alternatives(exam.get('questions', []) or [])
+        for exam in exams
+        if isinstance(exam, dict)
+    )
+    # Boundary joins merge at most one split question per continuation
+    # chunk; anything else must be preserved verbatim.
+    boundary_merges = max(input_questions - output_questions, 0)
+    return {
+        'exams': exams,
+        'subjectsCreated': subjects,
+        'merge_stats': {
+            'input_questions': input_questions,
+            'output_questions': output_questions,
+            'duplicates_removed': boundary_merges,
+            'input_or_alternatives': input_or_alternatives,
+            'output_or_alternatives': output_or_alternatives,
+        },
+    }
 
 
 def merge_chunks(parsed_chunks: List[Dict]) -> Dict:
@@ -495,13 +725,40 @@ def validate_merge_result(result: Dict) -> Dict:
             if ',' in exam['question_sequence']:  # Multiple ranges = gaps
                 warnings.append(f"Exam {i+1}: Question sequence has gaps: {exam['question_sequence']}")
     
+    merge_stats = result.get('merge_stats') if isinstance(result, dict) else None
+    if isinstance(merge_stats, dict):
+        input_questions = merge_stats.get('input_questions')
+        output_questions = merge_stats.get('output_questions')
+        duplicates_removed = merge_stats.get('duplicates_removed', 0)
+        input_or = merge_stats.get('input_or_alternatives')
+        output_or = merge_stats.get('output_or_alternatives')
+        if (
+            isinstance(input_or, int) and isinstance(output_or, int)
+            and output_or < input_or
+        ):
+            warnings.append(
+                f"Merge dropped OR alternatives ({input_or} -> {output_or})"
+            )
+        boundary_merges = merge_stats.get('boundary_merges', 0)
+        if (
+            isinstance(input_questions, int) and isinstance(output_questions, int)
+            and output_questions + (duplicates_removed or 0) + (boundary_merges or 0)
+            != input_questions
+        ):
+            warnings.append(
+                f"Merge lost questions (in={input_questions} out={output_questions} "
+                f"dups={duplicates_removed} boundary={boundary_merges})"
+            )
+
     stats = {
         'total_exams': len(result.get('exams', [])),
         'total_subjects': len(result.get('subjectsCreated', [])),
         'total_questions': sum(len(e.get('questions', [])) for e in result.get('exams', [])),
         'needs_review': result.get('manual_review_required', False)
     }
-    
+    if isinstance(merge_stats, dict):
+        stats['merge_stats'] = dict(merge_stats)
+
     return {
         'valid': len(warnings) == 0,
         'warnings': warnings,
