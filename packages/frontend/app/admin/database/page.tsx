@@ -81,6 +81,56 @@ export default function AdminDatabase() {
 
   const [truncateResult, setTruncateResult] = useState<{ success: boolean; message: string } | null>(null)
 
+  const [maintenanceRunning, setMaintenanceRunning] = useState<"check-integrity" | "validate-constraints" | null>(null)
+  const [maintenanceResult, setMaintenanceResult] = useState<{
+    success: boolean
+    message: string
+    collections?: Array<{
+      name: string
+      ok: boolean
+      documents?: number
+      indexes?: number
+      checked?: number
+      valid?: number
+      invalid?: number
+      error?: string
+    }>
+  } | null>(null)
+
+  const handleMaintenance = async (action: "check-integrity" | "validate-constraints") => {
+    setMaintenanceRunning(action)
+    setMaintenanceResult(null)
+    try {
+      const response = await fetch("/api/admin/database/maintenance", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action }),
+      })
+      const data = await response.json()
+      if (response.ok && data.success) {
+        const result = data.data
+        const checked = result.collectionsChecked ?? result.collections?.length ?? 0
+        const issues = result.collectionsWithIssues ?? 0
+        const label = action === "check-integrity" ? "Integrity check" : "Constraint validation"
+        setMaintenanceResult({
+          success: issues === 0,
+          message:
+            issues === 0
+              ? `${label} passed on ${checked} collection${checked === 1 ? "" : "s"}`
+              : `${label}: ${issues} of ${checked} collections need attention`,
+          collections: result.collections,
+        })
+        await fetchData({ silent: true })
+      } else {
+        setMaintenanceResult({ success: false, message: data.error || "Failed to run maintenance operation" })
+      }
+    } catch (err) {
+      setMaintenanceResult({ success: false, message: "Network error: " + (err instanceof Error ? err.message : "Unknown error") })
+    } finally {
+      setMaintenanceRunning(null)
+    }
+  }
+
   const handleTruncate = async () => {
     setTruncateResult(null)
     try {
@@ -498,20 +548,29 @@ export default function AdminDatabase() {
             <CardContent className="space-y-6">
               <div className="space-y-4">
                 <h3 className="text-lg font-medium">Optimization</h3>
+                <p className="text-sm text-muted-foreground">
+                  Table optimization is a SQL concept and does not apply to this MongoDB database;
+                  indexes are maintained automatically. These controls are disabled.
+                </p>
                 <div className="grid gap-2 md:grid-cols-2">
-                  <Button variant="outline">Optimize Tables</Button>
-                  <Button variant="outline">Rebuild Indexes</Button>
-                  <Button variant="outline">Update Statistics</Button>
-                  <Button variant="outline">Analyze Tables</Button>
+                  <Button variant="outline" disabled title="Not supported on MongoDB">Optimize Tables</Button>
+                  <Button variant="outline" disabled title="Not supported on MongoDB">Rebuild Indexes</Button>
+                  <Button variant="outline" disabled title="Not supported on MongoDB">Update Statistics</Button>
+                  <Button variant="outline" disabled title="Not supported on MongoDB">Analyze Tables</Button>
                 </div>
               </div>
               <div className="space-y-4">
                 <h3 className="text-lg font-medium">Cleanup</h3>
+                <p className="text-sm text-muted-foreground">
+                  No automated cleanup job is configured for these operations, so they are disabled
+                  rather than left as no-op buttons. Destructive operations stay guarded in the
+                  Danger Zone below.
+                </p>
                 <div className="grid gap-2 md:grid-cols-2">
-                  <Button variant="outline">Clean Temporary Data</Button>
-                  <Button variant="outline">Remove Old Logs</Button>
-                  <Button variant="outline">Purge Deleted Records</Button>
-                  <Button variant="outline">Compress Archives</Button>
+                  <Button variant="outline" disabled title="Not available: no cleanup job is configured for this operation">Clean Temporary Data</Button>
+                  <Button variant="outline" disabled title="Not available: no cleanup job is configured for this operation">Remove Old Logs</Button>
+                  <Button variant="outline" disabled title="Not available: no cleanup job is configured for this operation">Purge Deleted Records</Button>
+                  <Button variant="outline" disabled title="Not available: no cleanup job is configured for this operation">Compress Archives</Button>
                 </div>
               </div>
               <div className="space-y-4 border-t pt-4">
@@ -537,12 +596,81 @@ export default function AdminDatabase() {
               </div>
               <div className="space-y-4">
                 <h3 className="text-lg font-medium">Monitoring</h3>
+                <p className="text-sm text-muted-foreground">
+                  Read-only diagnostics over all managed collections. No data is modified.
+                </p>
                 <div className="grid gap-2 md:grid-cols-2">
-                  <Button variant="outline">Check Integrity</Button>
-                  <Button variant="outline">Validate Constraints</Button>
-                  <Button variant="outline">Monitor Locks</Button>
-                  <Button variant="outline">View Active Queries</Button>
+                  <Button
+                    variant="outline"
+                    onClick={() => handleMaintenance("check-integrity")}
+                    disabled={maintenanceRunning !== null}
+                  >
+                    {maintenanceRunning === "check-integrity" ? (
+                      <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Checking...</>
+                    ) : (
+                      "Check Integrity"
+                    )}
+                  </Button>
+                  <Button
+                    variant="outline"
+                    onClick={() => handleMaintenance("validate-constraints")}
+                    disabled={maintenanceRunning !== null}
+                  >
+                    {maintenanceRunning === "validate-constraints" ? (
+                      <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Validating...</>
+                    ) : (
+                      "Validate Constraints"
+                    )}
+                  </Button>
+                  <Button variant="outline" disabled title="Not available: live lock introspection requires server privileges that are not exposed to this admin surface">Monitor Locks</Button>
+                  <Button variant="outline" disabled title="Not available: live query introspection requires server privileges that are not exposed to this admin surface">View Active Queries</Button>
                 </div>
+                {maintenanceResult && (
+                  <div className={`p-3 rounded-md ${
+                    maintenanceResult.success
+                      ? "bg-green-50 dark:bg-green-950 text-green-900 dark:text-green-100 border border-green-200 dark:border-green-800"
+                      : "bg-red-50 dark:bg-red-950 text-red-900 dark:text-red-100 border border-red-200 dark:border-red-800"
+                  }`}>
+                    <div className="flex items-center gap-2">
+                      {maintenanceResult.success ? <CheckCircle className="h-4 w-4" /> : <AlertCircle className="h-4 w-4" />}
+                      <span className="text-sm font-medium">{maintenanceResult.message}</span>
+                    </div>
+                  </div>
+                )}
+                {maintenanceResult?.collections && maintenanceResult.collections.length > 0 && (
+                  <div className="rounded-md border">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Collection</TableHead>
+                          <TableHead>Status</TableHead>
+                          <TableHead>Details</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {maintenanceResult.collections.map((col) => (
+                          <TableRow key={col.name}>
+                            <TableCell className="font-medium">{col.name}</TableCell>
+                            <TableCell>
+                              <Badge variant={col.ok ? "default" : "destructive"} className="flex items-center w-fit" title={col.error}>
+                                {col.ok ? <CheckCircle className="h-3 w-3 mr-1" /> : <AlertCircle className="h-3 w-3 mr-1" />}
+                                {col.ok ? "OK" : "Issue"}
+                              </Badge>
+                            </TableCell>
+                            <TableCell className="text-sm text-muted-foreground">
+                              {col.error ?? [
+                                col.documents !== undefined ? `${col.documents.toLocaleString()} docs` : null,
+                                col.indexes !== undefined ? `${col.indexes} indexes` : null,
+                                col.checked !== undefined ? `${col.checked} checked` : null,
+                                col.invalid !== undefined ? `${col.invalid} invalid` : null,
+                              ].filter(Boolean).join(" · ")}
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                )}
               </div>
             </CardContent>
           </Card>

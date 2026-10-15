@@ -39,6 +39,18 @@ import {
   getAiPipelineBaseUrl,
 } from "../../packages/frontend/lib/aiPipeline.ts";
 
+import {
+  checkIntegrity,
+  InvalidMaintenanceActionError,
+  isMaintenanceAction,
+  MAINTENANCE_ACTIONS,
+  MAX_VALIDATION_SAMPLE_SIZE,
+  DEFAULT_VALIDATION_SAMPLE_SIZE,
+  normalizeValidationSampleSize,
+  runMaintenanceAction,
+  validateConstraints,
+} from "../../packages/backend/src/services/databaseMaintenanceService.ts";
+
 describe("managed collection registry", () => {
   it("covers every collection the admin dashboard reports", () => {
     for (const name of [
@@ -502,6 +514,268 @@ describe("admin database + jobs surfaces", () => {
     ]) {
       const source = stripComments(readRepoFile(surface));
       assert.doesNotMatch(source, /localhost:5000|192\.168\./, `${surface} must not hardcode the pipeline URL`);
+    }
+  });
+});
+
+/**
+ * Fake managed collections for the maintenance service. Injecting fakes keeps
+ * these tests offline: the service only opens a real connection when it falls
+ * back to the managed registry.
+ */
+function fakeIntegrityCollection(name: string, documents: number, indexes: number, error?: string): any {
+  return {
+    name,
+    model: {
+      countDocuments: async () => {
+        if (error) throw new Error(error);
+        return documents;
+      },
+      collection: {
+        indexes: async () => {
+          if (error) throw new Error(error);
+          return Array.from({ length: indexes }, (_, index) => ({ name: `idx_${index}` }));
+        },
+      },
+    },
+  };
+}
+
+function fakeValidatingCollection(name: string, docs: unknown[], invalidIndexes: number[] = [], error?: string): any {
+  const invalid = new Set(invalidIndexes);
+  function Model(this: any, doc: unknown) {
+    this.doc = doc;
+  }
+  (Model as any).find = () => ({
+    limit: (n: number) => ({
+      lean: async () => {
+        if (error) throw new Error(error);
+        return docs.slice(0, n);
+      },
+    }),
+  });
+  (Model as any).collection = { indexes: async () => [] };
+  (Model as any).countDocuments = async () => docs.length;
+  (Model as any).prototype.validate = async function (this: any) {
+    if (invalid.has(docs.indexOf(this.doc))) {
+      throw new Error("validation failed: name is required");
+    }
+  };
+  return { name, model: Model };
+}
+
+describe("maintenance action allowlist", () => {
+  it("exposes exactly the MongoDB-safe read-only diagnostics", () => {
+    assert.deepEqual([...MAINTENANCE_ACTIONS], ["check-integrity", "validate-constraints"]);
+  });
+
+  it("accepts allowlisted actions and rejects everything else", () => {
+    assert.equal(isMaintenanceAction("check-integrity"), true);
+    assert.equal(isMaintenanceAction("validate-constraints"), true);
+    for (const value of ["", "optimize-tables", "rebuild-indexes", "truncate", null, undefined, 42, {}]) {
+      assert.equal(isMaintenanceAction(value), false, `${String(value)} must be rejected`);
+    }
+  });
+
+  it("rejects unknown actions before any database work", async () => {
+    for (const value of ["optimize-tables", "", null, undefined]) {
+      await assert.rejects(
+        runMaintenanceAction(value, { collections: [] }),
+        (error: unknown) =>
+          error instanceof InvalidMaintenanceActionError &&
+          (error as Error).message.includes(String(value)),
+        `${String(value)} must throw InvalidMaintenanceActionError`
+      );
+    }
+  });
+
+  it("dispatches allowlisted actions to the matching diagnostic", async () => {
+    const integrity = await runMaintenanceAction("check-integrity", {
+      collections: [fakeIntegrityCollection("questions", 4, 2)],
+    });
+    assert.equal(integrity.action, "check-integrity");
+    assert.equal(integrity.collectionsChecked, 1);
+
+    const constraints = await runMaintenanceAction("validate-constraints", {
+      collections: [fakeValidatingCollection("questions", [{ name: "a" }])],
+    });
+    assert.equal(constraints.action, "validate-constraints");
+    assert.equal(constraints.totalChecked, 1);
+  });
+});
+
+describe("normalizeValidationSampleSize", () => {
+  it("defaults when the value is missing or unusable", () => {
+    for (const value of [undefined, null, "", "  ", "abc", 0, -3, 1.5, Number.NaN, Number.POSITIVE_INFINITY, true, {}]) {
+      assert.equal(normalizeValidationSampleSize(value), DEFAULT_VALIDATION_SAMPLE_SIZE, JSON.stringify(value));
+    }
+  });
+
+  it("keeps explicit in-range sizes, including numeric strings", () => {
+    assert.equal(normalizeValidationSampleSize(1), 1);
+    assert.equal(normalizeValidationSampleSize(7), 7);
+    assert.equal(normalizeValidationSampleSize("7"), 7);
+    assert.equal(normalizeValidationSampleSize(MAX_VALIDATION_SAMPLE_SIZE), MAX_VALIDATION_SAMPLE_SIZE);
+  });
+
+  it("caps oversized samples so a check cannot scan a whole collection", () => {
+    assert.equal(normalizeValidationSampleSize(MAX_VALIDATION_SAMPLE_SIZE + 1), MAX_VALIDATION_SAMPLE_SIZE);
+    assert.equal(normalizeValidationSampleSize(1000000), MAX_VALIDATION_SAMPLE_SIZE);
+  });
+});
+
+describe("checkIntegrity", () => {
+  it("reports per-collection counts and index totals", async () => {
+    const result = await checkIntegrity([
+      fakeIntegrityCollection("questions", 4, 2),
+      fakeIntegrityCollection("Subject", 0, 1),
+    ]);
+    assert.equal(result.action, "check-integrity");
+    assert.equal(result.collectionsChecked, 2);
+    assert.equal(result.collectionsWithIssues, 0);
+    assert.equal(result.totalDocuments, 4);
+    assert.deepEqual(
+      result.collections.map((entry) => [entry.name, entry.documents, entry.indexes, entry.ok]),
+      [["questions", 4, 2, true], ["Subject", 0, 1, true]]
+    );
+  });
+
+  it("marks an unreadable collection instead of aborting the run", async () => {
+    const result = await checkIntegrity([
+      fakeIntegrityCollection("questions", 4, 2),
+      fakeIntegrityCollection("Subject", 0, 0, "not authorized on Subject"),
+    ]);
+    assert.equal(result.collectionsChecked, 2);
+    assert.equal(result.collectionsWithIssues, 1);
+    assert.equal(result.totalDocuments, 4);
+    const failed = result.collections.find((entry) => entry.name === "Subject")!;
+    assert.equal(failed.ok, false);
+    assert.match(failed.error ?? "", /not authorized on Subject/);
+  });
+
+  it("performs no writes", async () => {
+    const calls: string[] = [];
+    const collection = fakeIntegrityCollection("questions", 1, 1);
+    for (const method of ["deleteMany", "deleteOne", "insertMany", "updateMany", "updateOne", "drop", "createIndex", "compact"]) {
+      collection.model[method] = async () => {
+        calls.push(method);
+        return {};
+      };
+      collection.model.collection[method] = collection.model[method];
+    }
+    await checkIntegrity([collection]);
+    assert.deepEqual(calls, []);
+  });
+});
+
+describe("validateConstraints", () => {
+  it("counts valid and invalid documents in the sample", async () => {
+    const result = await validateConstraints(10, [
+      fakeValidatingCollection("questions", [{ name: "a" }, {}, { name: "c" }], [1]),
+    ]);
+    assert.equal(result.action, "validate-constraints");
+    assert.equal(result.sampleSize, 10);
+    assert.equal(result.totalChecked, 3);
+    assert.equal(result.totalInvalid, 1);
+    assert.equal(result.collectionsWithIssues, 1);
+    const entry = result.collections[0];
+    assert.equal(entry.valid, 2);
+    assert.equal(entry.invalid, 1);
+    assert.equal(entry.ok, false);
+    assert.ok((entry.sampleErrors ?? []).length >= 1);
+  });
+
+  it("passes a clean sample with zero issues", async () => {
+    const result = await validateConstraints(10, [
+      fakeValidatingCollection("Subject", [{ name: "Maths" }]),
+    ]);
+    assert.equal(result.totalInvalid, 0);
+    assert.equal(result.collectionsWithIssues, 0);
+  });
+
+  it("bounds the sample even when the collection is large", async () => {
+    const docs = Array.from({ length: 100 }, (_, index) => ({ name: `doc-${index}` }));
+    const result = await validateConstraints(undefined, [fakeValidatingCollection("questions", docs)]);
+    assert.equal(result.sampleSize, DEFAULT_VALIDATION_SAMPLE_SIZE);
+    assert.equal(result.totalChecked, DEFAULT_VALIDATION_SAMPLE_SIZE);
+  });
+
+  it("marks an unreadable collection instead of aborting the run", async () => {
+    const result = await validateConstraints(5, [
+      fakeValidatingCollection("questions", [{ name: "a" }]),
+      fakeValidatingCollection("Subject", [], [], "not authorized on Subject"),
+    ]);
+    assert.equal(result.collectionsWithIssues, 1);
+    const failed = result.collections.find((entry) => entry.name === "Subject")!;
+    assert.equal(failed.ok, false);
+    assert.match(failed.error ?? "", /not authorized on Subject/);
+  });
+});
+
+describe("admin database maintenance surfaces", () => {
+  it("the maintenance route is admin-only and allowlisted", () => {
+    const source = stripComments(readRepoFile("packages/frontend/app/api/admin/database/maintenance/route.ts"));
+    assert.match(source, /requireAdmin\(\)/, "maintenance must require the admin role");
+    assert.match(source, /runMaintenanceAction/, "maintenance must dispatch through the allowlist");
+    assert.match(source, /InvalidMaintenanceActionError/, "unknown actions must be rejected");
+    assert.match(source, /status:\s*400/, "an unknown action must be a 400, not a 500");
+  });
+
+  it("the maintenance service and route perform no writes", () => {
+    for (const surface of [
+      "packages/backend/src/services/databaseMaintenanceService.ts",
+      "packages/frontend/app/api/admin/database/maintenance/route.ts",
+    ]) {
+      const source = stripComments(readRepoFile(surface));
+      for (const write of ["deleteMany", "deleteOne", "insertMany", "updateMany", "updateOne", "findOneAnd", "drop", "compact", "reIndex", "createIndex"]) {
+        assert.doesNotMatch(
+          source,
+          new RegExp(`\\b${write}\\s*\\(`),
+          `${surface} must stay read-only (found ${write} call)`
+        );
+      }
+    }
+  });
+
+  it("wires Check Integrity and Validate Constraints with progress and results", () => {
+    const source = stripComments(readRepoFile("packages/frontend/app/admin/database/page.tsx"));
+    assert.match(source, /handleMaintenance\("check-integrity"\)/, "Check Integrity must call the maintenance handler");
+    assert.match(source, /handleMaintenance\("validate-constraints"\)/, "Validate Constraints must call the maintenance handler");
+    assert.match(
+      source,
+      /fetch[(]"\/api\/admin\/database\/maintenance"/,
+      "the handler must POST to the maintenance API"
+    );
+    assert.match(source, /maintenanceRunning/, "the page must track maintenance progress");
+    assert.match(source, /Checking\.\.\./, "integrity progress must be shown while running");
+    assert.match(source, /Validating\.\.\./, "validation progress must be shown while running");
+    assert.match(source, /maintenanceResult/, "maintenance results must be rendered");
+  });
+
+  it("disables every unsupported maintenance control with an explanation", () => {
+    const source = stripComments(readRepoFile("packages/frontend/app/admin/database/page.tsx"));
+    for (const label of [
+      "Optimize Tables",
+      "Rebuild Indexes",
+      "Update Statistics",
+      "Analyze Tables",
+      "Clean Temporary Data",
+      "Remove Old Logs",
+      "Purge Deleted Records",
+      "Compress Archives",
+      "Monitor Locks",
+      "View Active Queries",
+    ]) {
+      assert.match(
+        source,
+        new RegExp(`<Button[^>]*disabled[^>]*>\\s*${label}\\s*<`),
+        `${label} must be a disabled control, not an enabled no-op`
+      );
+      assert.match(
+        source,
+        new RegExp(`<Button[^>]*title="[^"]+"[^>]*>\\s*${label}\\s*<|<Button[^>]*disabled[^>]*title="[^"]+"[^>]*>`),
+        `${label} must explain why it is disabled`
+      );
     }
   });
 });
