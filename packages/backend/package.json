@@ -7,7 +7,8 @@
     "build": "tsc",
     "generate-data": "tsx src/database/scripts/generate-sample-data.ts",
     "import-ocr": "node ./dist/scripts/importOcrQuestions.js",
-    "import-ocr:dry-run": "node ./dist/scripts/dryRunOcrImport.js"
+    "import-ocr:dry-run": "node ./dist/scripts/dryRunOcrImport.js",
+    "test:ec2-deployment": "tsx src/scripts/testEC2Deployment.ts"
   },
   "dependencies": {
     "@aws-sdk/client-bedrock-runtime": "^3.1022.0",

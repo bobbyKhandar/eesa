@@ -101,7 +101,6 @@ packages/backend/
 │   │   ├── examOcrService.ts        # OCR service orchestration
 │   │   ├── ocrService.ts
 │   │   ├── geminiAi.js              # Google Gemini AI integration
-│   │   ├── generateBloomsAnatomy.ts # Bloom's taxonomy classification
 │   │   ├── publishAnalysisService.ts
 │   │   ├── questionSimilarityService.ts
 │   │   ├── ec2OcrClient.ts

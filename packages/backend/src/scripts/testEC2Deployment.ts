@@ -1,9 +1,12 @@
 /**
  * Test script to verify EC2 OCR deployment
- * Run this after deploying to EC2 to ensure everything works
+ * Run this after deploying to EC2 to ensure everything works:
+ *   npx tsx src/scripts/testEC2Deployment.ts
+ * (from packages/backend)
  */
 
-import { ec2OcrClient } from './ec2OcrClient';
+import { fileURLToPath } from 'url';
+import { ec2OcrClient } from '../services/ec2OcrClient.js';
 
 async function testEC2Deployment() {
   console.log('🧪 Testing EC2 OCR Deployment');
@@ -72,8 +75,11 @@ async function testEC2Deployment() {
   }
 }
 
-// Run if executed directly
-if (require.main === module) {
+// Run only when executed directly (ESM-compatible entrypoint guard;
+// `require` is unavailable because the backend package is `"type": "module"`).
+// Importing this module has no side effects.
+const isMain = process.argv[1] === fileURLToPath(import.meta.url);
+if (isMain) {
   testEC2Deployment()
     .then(() => {
       console.log('Test completed');
