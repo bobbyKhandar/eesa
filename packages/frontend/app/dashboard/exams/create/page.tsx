@@ -512,8 +512,20 @@ async function uploadExamSet(): Promise<ApiResponse> {
         onRemove={removeQuestion}
         onUpdate={updateQuestion}
       />
-      <div className="flex justify-between">
-        <Button type="button" variant="outline" disabled={processingRequest}>Save as Draft</Button>
+      <div className="flex justify-between items-start gap-4">
+        <div className="space-y-1">
+          <Button
+            type="button"
+            variant="outline"
+            disabled
+            title="Draft saving is not available: the exam API has no draft mode, so drafts cannot be stored yet"
+          >
+            Save as Draft
+          </Button>
+          <p className="text-xs text-gray-500 dark:text-gray-400">
+            Draft saving is not available yet; use Create Exam to save.
+          </p>
+        </div>
         <Button
           type="submit"
           disabled={processingRequest}
