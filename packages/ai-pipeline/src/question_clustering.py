@@ -216,6 +216,37 @@ def cluster_with_hdbscan(embeddings: np.ndarray) -> Optional[np.ndarray]:
         return None
 
 
+def _deduplicate_records_by_id(records: List[Dict]) -> List[Dict]:
+    """Drop repeated stable ids, keeping the first occurrence in order."""
+    seen = set()
+    unique: List[Dict] = []
+    for record in records:
+        record_id = record.get("id")
+        if record_id is not None:
+            if record_id in seen:
+                continue
+            seen.add(record_id)
+        unique.append(record)
+    return unique
+
+
+def replace_job_records(table, job_id: str, records: List[Dict]) -> None:
+    """Replace this job's rows so reruns are idempotent.
+
+    Deletes prior rows for ``job_id`` before appending, preserving every
+    other job's rows. Falls back to a plain append when the table does not
+    support filtered deletes.
+    """
+    delete_fn = getattr(table, "delete", None)
+    if callable(delete_fn):
+        escaped = str(job_id).replace("'", "''")
+        try:
+            delete_fn(f"job_id = '{escaped}'")
+        except Exception as e:
+            print(f"   ⚠ Failed to clear previous records for job {job_id}: {e}")
+    table.add(records)
+
+
 def find_similar_questions_lancedb(
     table,
     query_vector: np.ndarray,
@@ -237,8 +268,10 @@ def find_similar_questions_lancedb(
         List of similar question records
     """
     try:
-        # Build query
-        query = table.search(query_vector.tolist()).limit(k + 5)  # Get extra to account for filtering
+        # Fetch extra headroom: repeated indexed copies of one identity would
+        # otherwise occupy the limited neighbor window and crowd out distinct
+        # questions. Deduplication below keeps the closest copy of each id.
+        query = table.search(query_vector.tolist()).limit(k * 2 + 10)
         
         # Add metadata filters if provided
         if filters:
@@ -248,10 +281,13 @@ def find_similar_questions_lancedb(
         # Execute search
         results = query.to_list()
         
-        # Filter out the query question itself and apply similarity threshold
+        # Filter out the query question itself, deduplicate repeated copies of
+        # any other identity, and apply the similarity threshold.
         similar = []
+        seen_ids = {question_id}
         for result in results:
-            if result['id'] == question_id:
+            record_id = result.get('id')
+            if record_id in seen_ids:
                 continue
             
             # LanceDB returns _distance, lower is better
@@ -261,6 +297,8 @@ def find_similar_questions_lancedb(
             if similarity >= SIMILARITY_THRESHOLD:
                 result['similarity'] = similarity
                 similar.append(result)
+                if record_id is not None:
+                    seen_ids.add(record_id)
         
         return similar[:k]
         
@@ -342,9 +380,21 @@ def calculate_appearance_frequency(
             except (ValueError, TypeError):
                 pass
     
+    # Deduplicate repeated indexed copies of the same identity before
+    # counting; otherwise a rerun-inflated neighbor list inflates appearances.
+    seen_similar_ids = set()
+    unique_similar_count = 0
+    for sim_q in similar_questions:
+        sim_id = sim_q.get('id')
+        if sim_id is not None:
+            if sim_id in seen_similar_ids:
+                continue
+            seen_similar_ids.add(sim_id)
+        unique_similar_count += 1
+
     years_list = sorted(list(years_set))
     return {
-        'count': len(similar_questions) + 1,  # Include current question
+        'count': unique_similar_count + 1,  # Include current question
         'years': years_list
     }
 
@@ -488,9 +538,11 @@ def cluster_questions_for_job(job_id: str, filename: str) -> Optional[Dict]:
         
         print(f"   ✓ Generated {len(records_to_add)} embeddings")
         
-        # Step 4: Add to LanceDB
+        # Step 4: Add to LanceDB (idempotent: replace this job's rows so a
+        # rerun or retry after an S3/summary failure does not append copies).
         print(f"\n💾 Adding questions to LanceDB...")
-        table.add(records_to_add)
+        records_to_add = _deduplicate_records_by_id(records_to_add)
+        replace_job_records(table, job_id, records_to_add)
         print(f"   ✓ Added {len(records_to_add)} questions to database")
         
         # Step 5: Find similar questions for each question
