@@ -29,13 +29,27 @@ Each `.txt` file contains a JSON5 array of questions:
 
 ## Scripts
 
+The maintained implementations are the TypeScript sources in this directory,
+compiled by the backend build into plain-node entry points:
+
+- `dryRunOcrImport.ts` → `dist/scripts/dryRunOcrImport.js`
+- `importOcrQuestions.ts` → `dist/scripts/importOcrQuestions.js`
+
+Build once before importing (from the repo root or `packages/backend`):
+
+```bash
+npm run build --prefix packages/backend
+# or: cd packages/backend && npm run build
+```
+
 ### 1. Dry Run (Preview)
-**File:** `dryRunOcrImport.js`
+**File:** `dryRunOcrImport.ts` (run as `dist/scripts/dryRunOcrImport.js`)
 
 Preview what would be imported without modifying the database.
 
 ```bash
-npm run import-ocr:dry-run
+npm run import-ocr:dry-run --prefix packages/backend
+# or from the repo root: npm run import-ocr:dry-run
 ```
 
 **Output:**
@@ -46,12 +60,13 @@ npm run import-ocr:dry-run
 - Sample file details
 
 ### 2. Full Import
-**File:** `importOcrQuestions.js`
+**File:** `importOcrQuestions.ts` (run as `dist/scripts/importOcrQuestions.js`)
 
 Import all questions into the database.
 
 ```bash
-npm run import-ocr
+npm run import-ocr --prefix packages/backend
+# or from the repo root: npm run import-ocr
 ```
 
 **Features:**
@@ -159,13 +174,16 @@ The scripts handle various error conditions:
 ## Example Usage
 
 ```bash
+# Step 0: Compile the backend so the dist/ entry points exist
+npm run build --prefix packages/backend
+
 # Step 1: Preview what will be imported
-npm run import-ocr:dry-run
+npm run import-ocr:dry-run --prefix packages/backend
 
 # Step 2: Review the output, check for errors
 
 # Step 3: Run actual import
-npm run import-ocr
+npm run import-ocr --prefix packages/backend
 
 # Output example:
 # 🚀 Starting OCR Questions Import...

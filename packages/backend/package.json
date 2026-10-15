@@ -5,7 +5,9 @@
   "type": "module",
   "scripts": {
     "build": "tsc",
-    "generate-data": "tsx src/database/scripts/generate-sample-data.ts"
+    "generate-data": "tsx src/database/scripts/generate-sample-data.ts",
+    "import-ocr": "node ./dist/scripts/importOcrQuestions.js",
+    "import-ocr:dry-run": "node ./dist/scripts/dryRunOcrImport.js"
   },
   "dependencies": {
     "@aws-sdk/client-bedrock-runtime": "^3.1022.0",

@@ -20,7 +20,9 @@
     "typecheck": "npm run typecheck -w my-v0-project",
     "lint": "npm run lint -w my-v0-project",
     "test:ai": "node --experimental-strip-types --import ./tests/node/register-hook.mjs --test tests/node/backend/*.test.ts tests/node/frontend/*.test.ts",
-    "test:python": "python3 -m pytest tests/python"
+    "test:python": "python3 -m pytest tests/python",
+    "import-ocr": "npm run import-ocr --prefix packages/backend",
+    "import-ocr:dry-run": "npm run import-ocr:dry-run --prefix packages/backend"
   },
   "devDependencies": {
     "@eslint/js": "^9.30.1",
