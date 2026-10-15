@@ -485,6 +485,10 @@ class AWSPipelineManager:
                         'completed_at': datetime.now().isoformat(),
                         'error': 'Clustering analysis failed'
                     }
+                    if not parsing_partial:
+                        metadata['failed_stage'] = 'clustering'
+                        metadata['error'] = 'Clustering analysis failed'
+                    clustering_updates_incomplete = True
                 elif update_outcome:
                     failed_keys = list(clustering_result.get('failed_keys') or [])
                     stage_error = clustering_result.get(
