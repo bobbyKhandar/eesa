@@ -152,8 +152,7 @@ packages/frontend/
 │   │   └── upload/                  # JobStatusBadge, StageDetails, StatusMessage
 │   ├── permanent-sidebar.tsx
 │   ├── top-navigation.tsx
-│   ├── theme-provider.tsx
-│   └── notification-system.tsx
+│   └── theme-provider.tsx
 ├── hooks/                           # use-mobile, use-toast
 ├── lib/utils.ts                     # cn() utility (clsx + tailwind-merge)
 ├── middleware.ts                    # Clerk auth middleware

@@ -3,7 +3,6 @@
 import type React from "react"
 import { useState } from "react"
 import { Inter } from "next/font/google"
-import "./globals.css"
 import { PermanentSidebar } from "@/frontend/components/permanent-sidebar"
 import { TopNavigation } from "@/frontend/components/top-navigation"
 
