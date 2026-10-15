@@ -126,6 +126,89 @@ export function assessQuestionPaperUpload(input: {
 }
 
 /**
+ * Structured per-file outcome for a mass upload that partially failed.
+ *
+ * Flask reports rejected files as `errors: ["name.pdf: reason"]` alongside
+ * the accepted `jobs`. The proxy preserves that list in this shape so the
+ * admin UI can name each failed file and retry it without re-uploading the
+ * files that already started processing.
+ */
+export type MassUploadFailure = {
+  filename: string;
+  error: string;
+};
+
+/** Failure reasons are single-line operator text, capped so one row cannot bloat the response. */
+export const MASS_UPLOAD_FAILURE_REASON_MAX_CHARS = 500;
+
+function sanitizeMassUploadFilename(name: unknown): string | null {
+  if (typeof name !== "string") return null;
+  const trimmed = name.trim();
+  if (trimmed.length === 0) return null;
+  return trimmed.slice(0, 255);
+}
+
+function sanitizeMassUploadReason(reason: unknown): string {
+  if (typeof reason !== "string") return "Upload failed";
+  const collapsed = reason.replace(/\s+/g, " ").trim();
+  if (collapsed.length === 0) return "Upload failed";
+  return collapsed.slice(0, MASS_UPLOAD_FAILURE_REASON_MAX_CHARS);
+}
+
+/** Parse one Flask `errors` entry (`"name.pdf: reason"` or `{ filename, error }`). */
+export function parseMassUploadFailure(entry: unknown): MassUploadFailure | null {
+  if (typeof entry === "string") {
+    const separator = entry.indexOf(":");
+    if (separator < 0) {
+      const filename = sanitizeMassUploadFilename(entry);
+      if (!filename) return null;
+      return { filename, error: "Upload failed" };
+    }
+    const filename = sanitizeMassUploadFilename(entry.slice(0, separator));
+    if (!filename) return null;
+    return { filename, error: sanitizeMassUploadReason(entry.slice(separator + 1)) };
+  }
+  if (entry && typeof entry === "object") {
+    const record = entry as Record<string, unknown>;
+    const filename = sanitizeMassUploadFilename(
+      record.filename ?? record.file ?? record.name,
+    );
+    if (!filename) return null;
+    return {
+      filename,
+      error: sanitizeMassUploadReason(record.error ?? record.message ?? record.reason),
+    };
+  }
+  return null;
+}
+
+/** Parse a Flask `errors` array into structured rows, dropping blank entries. */
+export function parseMassUploadFailures(errors: unknown): MassUploadFailure[] {
+  if (!Array.isArray(errors)) return [];
+  const failures: MassUploadFailure[] = [];
+  for (const entry of errors) {
+    const parsed = parseMassUploadFailure(entry);
+    if (parsed) failures.push(parsed);
+  }
+  return failures;
+}
+
+/** Accepted filenames come from the pipeline jobs, never from the submitted list. */
+export function acceptedMassUploadFileNames(jobs: unknown): string[] {
+  if (!Array.isArray(jobs)) return [];
+  const names: string[] = [];
+  for (const job of jobs) {
+    if (job && typeof job === "object") {
+      const filename = sanitizeMassUploadFilename(
+        (job as Record<string, unknown>).filename,
+      );
+      if (filename) names.push(filename);
+    }
+  }
+  return names;
+}
+
+/**
  * The pipeline's own 400/413 body names the limit that failed. Other statuses
  * keep the generic proxy message.
  */

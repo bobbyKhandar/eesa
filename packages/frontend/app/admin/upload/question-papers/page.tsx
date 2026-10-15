@@ -17,6 +17,11 @@ type JobStatus = {
   uploadedToSubjects?: boolean
 }
 
+type FailedUpload = {
+  filename: string
+  error: string
+}
+
 export default function Page() {
   const { user } = useUser()
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -34,6 +39,12 @@ export default function Page() {
   const [extractingZip, setExtractingZip] = useState(false)
   const [uploadToSubjects, setUploadToSubjects] = useState(false)
   const [isRestoredSession, setIsRestoredSession] = useState(false)
+  const [failedUploads, setFailedUploads] = useState<FailedUpload[]>([])
+  const [retryingFailed, setRetryingFailed] = useState(false)
+  // File bytes for the most recent submission, keyed by filename. A partial
+  // upload keeps the rejected inputs here so they can be retried without
+  // re-uploading the files that already started processing.
+  const retryFilesRef = useRef<Map<string, File>>(new Map())
 
   // Restore active session on mount
   useEffect(() => {
@@ -269,7 +280,9 @@ export default function Page() {
       
       // Clear previous session state when starting new upload
       setJobs([])
+      setFailedUploads([])
       setIsRestoredSession(false)
+      retryFilesRef.current = new Map(allPdfFiles.map((file) => [file.name, file]))
       
       // Upload all extracted/selected PDFs
       const formData = new FormData()
@@ -285,7 +298,13 @@ export default function Page() {
       const data = await res.json()
 
       if (res.ok && data.success) {
-        setMessage(`✓ ${data.message}`)
+        const failed: FailedUpload[] = Array.isArray(data.failed) ? data.failed : []
+        setFailedUploads(failed)
+        if (failed.length > 0 || data.partial) {
+          setMessage(`📋 Partial upload: ${data.message}`)
+        } else {
+          setMessage(`✓ ${data.message}`)
+        }
         setJobs(data.jobs || [])
         
         // Create NEW upload session in MongoDB (always create fresh session for new uploads)
@@ -319,13 +338,72 @@ export default function Page() {
           fileInputRef.current.value = ""
         }
       } else {
-        setMessage(`✗ Upload failed: ${data.error || "Unknown error"}`)
+        const failed: FailedUpload[] = Array.isArray(data.failed) ? data.failed : []
+        setFailedUploads(failed)
+        if (failed.length > 0) {
+          setMessage(
+            `✗ Upload failed: ${data.error || "Unknown error"} (${failed.length} file(s) rejected)`,
+          )
+        } else {
+          setMessage(`✗ Upload failed: ${data.error || "Unknown error"}`)
+        }
       }
     } catch (error: any) {
       setMessage(`✗ Upload error: ${error.message}`)
     } finally {
       setUploading(false)
       setExtractingZip(false)
+    }
+  }
+
+  const handleRetryFailedUploads = async () => {
+    if (failedUploads.length === 0) {
+      setMessage("No failed uploads to retry")
+      return
+    }
+    const filesToRetry = failedUploads
+      .map((entry) => retryFilesRef.current.get(entry.filename))
+      .filter((file): file is File => file instanceof File)
+    if (filesToRetry.length === 0) {
+      setMessage("✗ Original files are no longer available - please re-select them to retry")
+      return
+    }
+    setRetryingFailed(true)
+    try {
+      setMessage(`Uploading ${filesToRetry.length} previously failed file(s)...`)
+      const formData = new FormData()
+      filesToRetry.forEach((file) => {
+        formData.append("files", file)
+      })
+      const res = await fetch("/api/upload/questionpaper/massupload", {
+        method: "POST",
+        body: formData,
+      })
+      const data = await res.json()
+      if (res.ok && data.success) {
+        const failed: FailedUpload[] = Array.isArray(data.failed) ? data.failed : []
+        const retriedNames = new Set(filesToRetry.map((file) => file.name))
+        const remaining = failedUploads.filter((entry) => !retriedNames.has(entry.filename))
+        setFailedUploads([...remaining, ...failed])
+        setJobs((prev) => [...prev, ...(data.jobs || [])])
+        const stillFailed = remaining.length + failed.length
+        if (stillFailed > 0 || data.partial) {
+          setMessage(`📋 Partial upload: ${data.message}`)
+        } else {
+          setMessage(`✓ ${data.message}`)
+        }
+        if (fileInputRef.current) {
+          fileInputRef.current.value = ""
+        }
+      } else {
+        const failed: FailedUpload[] = Array.isArray(data.failed) ? data.failed : []
+        if (failed.length > 0) setFailedUploads(failed)
+        setMessage(`✗ Retry failed: ${data.error || "Unknown error"}`)
+      }
+    } catch (error: any) {
+      setMessage(`✗ Retry error: ${error.message}`)
+    } finally {
+      setRetryingFailed(false)
     }
   }
 
@@ -510,6 +588,45 @@ export default function Page() {
 
         {message && !loadingSession && <StatusMessage message={message} />}
 
+        {/* Rejected uploads: per-file reasons with retry that skips successes */}
+        {failedUploads.length > 0 && (
+          <div className="mt-6 p-4 border border-amber-200 dark:border-amber-800 rounded bg-amber-50 dark:bg-amber-900/20">
+            <div className="flex justify-between items-center mb-3">
+              <h3 className="text-lg font-semibold text-amber-800 dark:text-amber-200">
+                Failed uploads ({failedUploads.length})
+              </h3>
+              <button
+                onClick={handleRetryFailedUploads}
+                disabled={retryingFailed || uploading || extractingZip}
+                className="flex items-center gap-2 text-sm bg-amber-600 text-white px-3 py-1.5 rounded hover:bg-amber-700 disabled:bg-gray-400 disabled:cursor-not-allowed"
+              >
+                <RefreshCw className={`h-4 w-4 ${retryingFailed ? "animate-spin" : ""}`} />
+                {retryingFailed ? "Retrying..." : "Retry failed only"}
+              </button>
+            </div>
+            <div className="space-y-2">
+              {failedUploads.map((entry) => (
+                <div
+                  key={entry.filename}
+                  className="p-3 border rounded bg-white dark:bg-gray-800 dark:border-gray-700"
+                >
+                  <div className="flex items-center gap-2">
+                    <FileText className="h-4 w-4" />
+                    <p className="font-medium">{entry.filename}</p>
+                  </div>
+                  <p className="text-sm text-red-700 dark:text-red-300 mt-1">
+                    <AlertCircle className="h-4 w-4 inline mr-1" />
+                    {entry.error}
+                  </p>
+                </div>
+              ))}
+            </div>
+            <p className="text-xs text-amber-700 dark:text-amber-300 mt-3">
+              Retrying sends only these files again; successful uploads are not re-uploaded.
+            </p>
+          </div>
+        )}
+
         {/* Job Status */}
         {jobs.length > 0 && (
           <div className="mt-6">
@@ -523,6 +640,8 @@ export default function Page() {
                 <button
                   onClick={() => {
                     setJobs([])
+                    setFailedUploads([])
+                    retryFilesRef.current = new Map()
                     setSessionId(null)
                     setIsRestoredSession(false)
                     setMessage('')
