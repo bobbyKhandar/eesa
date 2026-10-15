@@ -3,7 +3,8 @@ import { useRef, useState, useEffect } from "react"
 import { useUser } from "@clerk/nextjs"
 import { AlertCircle, RefreshCw, FileText, X, Eye, History } from "lucide-react"
 import { StatusMessage, StageDetails, getStatusColor, getStageStatusSummary } from "@/frontend/components/features/upload"
-import { shouldPollJobStatus } from "@/frontend/lib/jobStatus"
+import { shouldPollJobStatus, shouldShowJobQuestions, getIncompleteJobStages } from "@/frontend/lib/jobStatus"
+import { isRetryableJobStatus } from "@/frontend/lib/jobRetry"
 
 type JobStatus = {
   job_id: string
@@ -481,9 +482,10 @@ export default function Page() {
       if (res.ok) {
         const data = await res.json()
         setSelectedJobDetails(data)
-        
-        // If job is successful, fetch the questions
-        if (data.status === 'success') {
+
+        // Successful and partial-success jobs may both have extracted
+        // questions worth reviewing (a later stage can fail after parsing).
+        if (shouldShowJobQuestions(data.status)) {
           fetchQuestions(jobId)
         }
       } else {
@@ -818,6 +820,15 @@ export default function Page() {
                   </span>
                 </div>
 
+                {selectedJobDetails.status === 'partial_success' && (
+                  <div className="mt-3 p-3 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded">
+                    <p className="text-sm text-yellow-800 dark:text-yellow-200">
+                      Partial success — incomplete stages: {getIncompleteJobStages(selectedJobDetails.stages).join(', ') || 'unknown'}.
+                      Review the available questions below; retry to complete the remaining stages.
+                    </p>
+                  </div>
+                )}
+
                 {selectedJobDetails.error && (
                   <div className="mt-3 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded">
                     <p className="text-sm text-red-700 dark:text-red-300">
@@ -850,10 +861,40 @@ export default function Page() {
               )}
 
               {/* Questions Results */}
-              {selectedJobDetails.status === 'success' && (
+              {shouldShowJobQuestions(selectedJobDetails.status) && (
                 <div className="mt-6">
                   <h4 className="font-semibold mb-4 text-lg">Processed Questions</h4>
-                  
+
+                  {selectedJobDetails.status === 'partial_success' && (
+                    <div className="mb-4 p-3 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg">
+                      <p className="text-sm font-medium text-yellow-800 dark:text-yellow-200">
+                        Partial results — some stages did not complete. Questions below come from the
+                        completed stages only.
+                      </p>
+                      <p className="text-sm text-yellow-700 dark:text-yellow-300 mt-1">
+                        Incomplete stages: {getIncompleteJobStages(selectedJobDetails.stages).join(', ') || 'unknown'}
+                      </p>
+                      {isRetryableJobStatus(selectedJobDetails.status) && (
+                        <button
+                          onClick={() => {
+                            const job = jobs.find((j) => j.job_id === selectedJobDetails.job_id)
+                            handleRetryJob(
+                              job ?? {
+                                job_id: selectedJobDetails.job_id,
+                                filename: selectedJobDetails.filename ?? 'job',
+                                status: selectedJobDetails.status,
+                              }
+                            )
+                          }}
+                          className="mt-2 text-sm text-orange-600 dark:text-orange-400 hover:underline flex items-center gap-1"
+                        >
+                          <RefreshCw className="h-3 w-3" />
+                          Retry incomplete stages
+                        </button>
+                      )}
+                    </div>
+                  )}
+
                   {loadingQuestions ? (
                     <div className="flex items-center justify-center p-8">
                       <RefreshCw className="h-6 w-6 animate-spin text-blue-500 mr-2" />
@@ -1037,12 +1078,32 @@ export default function Page() {
               >
                 View Raw JSON →
               </a>
-              <button
-                onClick={() => setSelectedJobDetails(null)}
-                className="px-4 py-2 bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 rounded font-medium transition-colors"
-              >
-                Close
-              </button>
+              <div className="flex items-center gap-2">
+                {isRetryableJobStatus(selectedJobDetails.status) && (
+                  <button
+                    onClick={() => {
+                      const job = jobs.find((j) => j.job_id === selectedJobDetails.job_id)
+                      handleRetryJob(
+                        job ?? {
+                          job_id: selectedJobDetails.job_id,
+                          filename: selectedJobDetails.filename ?? 'job',
+                          status: selectedJobDetails.status,
+                        }
+                      )
+                    }}
+                    className="px-4 py-2 bg-yellow-600 text-white hover:bg-yellow-700 rounded font-medium transition-colors flex items-center gap-1"
+                  >
+                    <RefreshCw className="h-4 w-4" />
+                    Retry
+                  </button>
+                )}
+                <button
+                  onClick={() => setSelectedJobDetails(null)}
+                  className="px-4 py-2 bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 rounded font-medium transition-colors"
+                >
+                  Close
+                </button>
+              </div>
             </div>
           </div>
         </div>
