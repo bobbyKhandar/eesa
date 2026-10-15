@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "next dev",
     "predev": "node ../../scripts/ensure-backend-build.mjs",
-    "prebuild": "npm run build --prefix ../backend",
+    "prebuild": "node ../../scripts/ensure-backend-build.mjs",
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
