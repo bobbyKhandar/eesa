@@ -82,6 +82,147 @@ def _manifest_exam_keys(manifest: Optional[Dict]) -> List[str]:
     return keys
 
 
+def _parsed_filename_stem(metadata: Optional[Dict]) -> Optional[str]:
+    """Return the validated parsed-artifact stem from job metadata.
+
+    The parsing producer writes ``parsed_output/{stem}_parsed.json`` where
+    ``stem`` is ``os.path.splitext(filename)[0]``. Only the basename is used
+    so a metadata filename can never escape the job prefix.
+    """
+    if not isinstance(metadata, dict):
+        return None
+    filename = metadata.get("filename")
+    if not isinstance(filename, str):
+        return None
+    filename = filename.strip()
+    if not filename:
+        return None
+    basename = os.path.basename(filename)
+    if not basename or basename in (".", ".."):
+        return None
+    if "/" in basename or "\\" in basename or "\x00" in basename:
+        return None
+    stem, _ext = os.path.splitext(basename)
+    stem = stem.strip()
+    if not stem or stem in (".", ".."):
+        return None
+    if "/" in stem or "\\" in stem or "\x00" in stem:
+        return None
+    return stem
+
+
+def _load_exam_payload(s3_client: Any, s3_bucket: str, key: str) -> Optional[List[Dict]]:
+    """Load ``exams`` from one S3 JSON key, or None when unavailable."""
+    obj_response = s3_client.get_object(Bucket=s3_bucket, Key=key)
+    data = json.loads(obj_response["Body"].read().decode("utf-8"))
+    if isinstance(data, dict) and isinstance(data.get("exams"), list):
+        return data["exams"]
+    return None
+
+
+def _append_normalized_exams(exams: List[Dict], payload: Optional[List[Dict]]) -> None:
+    if not payload:
+        return
+    for exam in payload:
+        if isinstance(exam, dict):
+            _normalize_exam_questions(exam)
+            exams.append(exam)
+
+
+def _load_parsed_output_exams(s3_client: Any, s3_bucket: str, s3_jobs_prefix: str,
+                              job_id: str, metadata: Optional[Dict]) -> List[Dict]:
+    """Recover non-chunked parsed exams from the producer's actual key."""
+    exams: List[Dict] = []
+    parsed_prefix = f"{s3_jobs_prefix}{job_id}/parsed_output/"
+    attempted = set()
+
+    stem = _parsed_filename_stem(metadata)
+    if stem is not None:
+        key = f"{parsed_prefix}{stem}_parsed.json"
+        attempted.add(key)
+        try:
+            _append_normalized_exams(
+                exams, _load_exam_payload(s3_client, s3_bucket, key)
+            )
+            if exams:
+                return exams
+        except Exception as e:
+            print(f"Could not load parsed output {key}: {e}")
+
+    # Filename metadata may be absent (or stale) while parsed artifacts
+    # remain, so list the producer's filename-scoped keys as a fallback.
+    try:
+        response = s3_client.list_objects_v2(Bucket=s3_bucket, Prefix=parsed_prefix)
+        if "Contents" in response:
+            for obj in sorted(response["Contents"], key=lambda o: o.get("Key", "")):
+                key = obj.get("Key", "")
+                if not key.endswith("_parsed.json"):
+                    continue
+                if key in attempted:
+                    continue
+                try:
+                    _append_normalized_exams(
+                        exams, _load_exam_payload(s3_client, s3_bucket, key)
+                    )
+                except Exception as e:
+                    print(f"Could not load parsed output {key}: {e}")
+    except Exception as e:
+        print(f"Could not list parsed output: {e}")
+    return exams
+
+
+def _load_parsed_chunk_exams(s3_client: Any, s3_bucket: str, s3_jobs_prefix: str,
+                             job_id: str) -> List[Dict]:
+    """Recover chunked parsed exams, each chunk holding its own artifact."""
+    exams: List[Dict] = []
+    chunks_prefix = f"{s3_jobs_prefix}{job_id}/parsed_chunks/"
+    metadata_key = f"{chunks_prefix}_metadata.json"
+
+    try:
+        obj_response = s3_client.get_object(Bucket=s3_bucket, Key=metadata_key)
+        chunk_metadata = json.loads(obj_response["Body"].read().decode("utf-8"))
+    except Exception as e:
+        print(f"Could not load parsed chunk metadata: {e}")
+        chunk_metadata = None
+
+    chunk_keys: List[str] = []
+    if isinstance(chunk_metadata, dict):
+        raw_keys = chunk_metadata.get("chunk_keys")
+        if isinstance(raw_keys, list):
+            chunk_keys = [
+                k for k in raw_keys
+                if isinstance(k, str) and k.startswith(chunks_prefix)
+            ]
+    for key in chunk_keys:
+        try:
+            _append_normalized_exams(
+                exams, _load_exam_payload(s3_client, s3_bucket, key)
+            )
+        except Exception as e:
+            print(f"Could not load parsed chunk {key}: {e}")
+    if exams:
+        return exams
+
+    try:
+        response = s3_client.list_objects_v2(Bucket=s3_bucket, Prefix=chunks_prefix)
+        if "Contents" in response:
+            for obj in sorted(response["Contents"], key=lambda o: o.get("Key", "")):
+                key = obj.get("Key", "")
+                if key == metadata_key or not key.endswith(".json"):
+                    continue
+                if key in set(chunk_keys):
+                    continue
+                try:
+                    _append_normalized_exams(
+                        exams, _load_exam_payload(s3_client, s3_bucket, key)
+                    )
+                except Exception as e:
+                    print(f"Could not load parsed chunk {key}: {e}")
+    except Exception as e:
+        print(f"Could not list parsed chunks: {e}")
+    return exams
+
+
 def _exam_identity(exam: Dict) -> tuple:
     questions = exam.get("questions", [])
     first_text = ""
@@ -180,16 +321,20 @@ def get_job_questions(s3_client: Any, s3_bucket: str, s3_jobs_prefix: str, job_i
             except Exception as e:
                 print(f"Could not load enriched output: {e}")
 
-        # Level 3: Parsed output (minimal enrichment)
+        # Level 3: Parsed output (minimal enrichment). The parsing producer
+        # writes filename-scoped keys (parsed_output/{stem}_parsed.json);
+        # chunked jobs instead write one artifact per chunk under
+        # parsed_chunks/. Both are normalized through the same contract.
         if not exams:
-            try:
-                parsed_key = f"{s3_jobs_prefix}{job_id}/parsed_output.json"
-                obj_response = s3_client.get_object(Bucket=s3_bucket, Key=parsed_key)
-                data = json.loads(obj_response['Body'].read().decode('utf-8'))
-                if isinstance(data, dict) and 'exams' in data:
-                    exams = data['exams']
-            except Exception as e:
-                print(f"Could not load parsed output: {e}")
+            for parsed_exam in _load_parsed_output_exams(
+                s3_client, s3_bucket, s3_jobs_prefix, job_id, metadata
+            ):
+                exams.append(parsed_exam)
+        if not exams:
+            for parsed_exam in _load_parsed_chunk_exams(
+                s3_client, s3_bucket, s3_jobs_prefix, job_id
+            ):
+                exams.append(parsed_exam)
 
         if not exams:
             return None
