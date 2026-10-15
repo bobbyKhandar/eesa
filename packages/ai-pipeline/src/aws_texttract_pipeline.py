@@ -57,6 +57,7 @@ Usage Examples:
 """
 
 import boto3
+import hashlib
 import os
 import json
 import time
@@ -83,25 +84,94 @@ MAX_BATCH_RETRY_ROUNDS = 3  # How many times to re-loop through the entire faile
 COST_PER_PAGE_ASYNC = 0.0015 # AWS Textract pricing (us-east-1 standard)
 
 # Notification Config (Optional)
-SNS_TOPIC_ARN = os.getenv('SNS_TOPIC_ARN', '') 
-SNS_ROLE_ARN = os.getenv('SNS_ROLE_ARN', '')    
+SNS_TOPIC_ARN = os.getenv('SNS_TOPIC_ARN', '')
+SNS_ROLE_ARN = os.getenv('SNS_ROLE_ARN', '')
+
+# Textract ClientRequestToken may be at most 64 characters. The derived
+# per-document token below always fits (64 hex chars).
+TEXTRACT_IDEMPOTENCY_TOKEN_MAX_LENGTH = 64
 
 
-def start_textract_job(s3_bucket: str, s3_key: str, job_id: str) -> Optional[str]:
+def build_textract_client_token(
+    job_id: str,
+    s3_bucket: str,
+    s3_key: str,
+    source_version: Optional[str] = None,
+) -> str:
+    """Derive a stable per-document Textract idempotency token.
+
+    A batch (``/submit-aws`` or ``process_batch_with_retry``) may share one
+    ``job_id`` across several S3 keys. Reusing ``job_id`` verbatim as
+    ``ClientRequestToken`` makes Textract reject the second document with
+    ``IdempotentParameterMismatchException`` because ``DocumentLocation``
+    changed while the token stayed the same. Deriving the token from the
+    job ID plus the document location (and the S3 version when the caller
+    knows it) keeps every document on its own token while retries of the
+    same document reuse the same token.
+    """
+    material = "\n".join([
+        str(job_id or ""),
+        str(s3_bucket or ""),
+        str(s3_key or ""),
+        str(source_version or ""),
+    ])
+    return hashlib.sha256(material.encode("utf-8")).hexdigest()[
+        :TEXTRACT_IDEMPOTENCY_TOKEN_MAX_LENGTH
+    ]
+
+
+def is_idempotent_parameter_mismatch(error: Exception) -> bool:
+    """Return True when ``error`` is Textract's token-reuse rejection."""
+    code = None
+    response = getattr(error, "response", None)
+    if isinstance(response, dict):
+        inner = response.get("Error")
+        if isinstance(inner, dict):
+            code = inner.get("Code")
+    if code == "IdempotentParameterMismatchException":
+        return True
+    message = str(error or "")
+    return (
+        "IdempotentParameterMismatchException" in message
+        or "IdempotentParameterMismatch" in message
+    )
+
+
+def start_textract_job(
+    s3_bucket: str,
+    s3_key: str,
+    job_id: str,
+    source_version: Optional[str] = None,
+    client_request_token: Optional[str] = None,
+) -> Optional[str]:
     """
     Start asynchronous Textract job for a document in S3.
-    
+
     Args:
         s3_bucket: S3 bucket name where the PDF is stored
         s3_key: S3 key (path) to the PDF file
         job_id: Unique job identifier for tracking
-        
+        source_version: Optional S3 VersionId/ETag of the source object so an
+            overwritten key gets a different token.
+        client_request_token: Optional explicit idempotency token. When
+            omitted, a stable per-document token is derived from
+            ``(job_id, s3_bucket, s3_key, source_version)``.
+
     Returns:
         str: Textract JobId if successful, None otherwise
+
+    Raises:
+        Exception: Re-raises ``IdempotentParameterMismatchException`` instead
+            of returning None. That rejection means the token was reused with
+            different parameters, so retrying with the same token cannot
+            succeed.
     """
     try:
         print(f"🚀 Starting Textract job for: s3://{s3_bucket}/{s3_key}")
-        
+
+        token = client_request_token or build_textract_client_token(
+            job_id, s3_bucket, s3_key, source_version
+        )
         request_params = {
             'DocumentLocation': {
                 'S3Object': {
@@ -109,23 +179,26 @@ def start_textract_job(s3_bucket: str, s3_key: str, job_id: str) -> Optional[str
                     'Name': s3_key
                 }
             },
-            'ClientRequestToken': job_id  # Use our job_id as idempotency token
+            'ClientRequestToken': token
         }
-        
+
         # Add SNS notification if configured
         if SNS_TOPIC_ARN and SNS_ROLE_ARN:
             request_params['NotificationChannel'] = {
                 'SNSTopicArn': SNS_TOPIC_ARN,
                 'RoleArn': SNS_ROLE_ARN
             }
-        
+
         response = textract.start_document_text_detection(**request_params)
         textract_job_id = response['JobId']
-        
+
         print(f"✓ Textract job started: {textract_job_id}")
         return textract_job_id
-        
+
     except Exception as e:
+        if is_idempotent_parameter_mismatch(e):
+            print(f"✗ Textract idempotency token conflict (non-retryable): {e}")
+            raise
         print(f"✗ Error starting Textract job: {e}")
         return None
 
@@ -266,20 +339,33 @@ def _save_ocr_output(output_data: Dict, job_id: str, filename: str) -> bool:
         print(f"✗ Error saving OCR output: {e}")
         return False
 
-def process_document_async(s3_bucket: str, s3_key: str, job_id: str, retry_count: int = 0) -> bool:
+def process_document_async(
+    s3_bucket: str,
+    s3_key: str,
+    job_id: str,
+    retry_count: int = 0,
+    source_version: Optional[str] = None,
+    client_request_token: Optional[str] = None,
+) -> bool:
     """
     Main function to process a document asynchronously using Textract.
     Automatically retries failed OCR processing up to MAX_RETRIES.
-    
+
     Args:
         s3_bucket: S3 bucket name containing the document
         s3_key: S3 key (path) to the document (e.g., "jobs/{job_id}/original/file.pdf")
         job_id: Unique job identifier for tracking
         retry_count: Current retry attempt (0 = first attempt)
-        
+        source_version: Optional S3 VersionId/ETag forwarded to the token
+            derivation so an overwritten key gets a different token.
+        client_request_token: Optional explicit idempotency token. When
+            omitted, a stable per-document token is derived from
+            ``(job_id, s3_bucket, s3_key, source_version)`` and reused across
+            retries of this document.
+
     Returns:
         bool: True if processing succeeded, False otherwise
-        
+
     Example:
         process_document_async(
             s3_bucket="eesa-pipeline-storage",
@@ -290,34 +376,62 @@ def process_document_async(s3_bucket: str, s3_key: str, job_id: str, retry_count
     # Extract filename from S3 key
     filename = os.path.basename(s3_key)
     attempt_label = f" (Retry {retry_count}/{MAX_RETRIES})" if retry_count > 0 else ""
-    
+    # Derive once per document so retries reuse the same token while different
+    # documents (different bucket/key/version) use different tokens even when
+    # they share a batch job_id.
+    token = client_request_token or build_textract_client_token(
+        job_id, s3_bucket, s3_key, source_version
+    )
+
     print(f"\n{'='*60}")
     print(f"Processing: {filename}{attempt_label}")
     print(f"Job ID: {job_id}")
     print(f"S3 Location: s3://{s3_bucket}/{s3_key}")
     print(f"{'='*60}\n")
-    
+
     # Step 1: Start Textract job
-    textract_job_id = start_textract_job(s3_bucket, s3_key, job_id)
+    try:
+        textract_job_id = start_textract_job(
+            s3_bucket,
+            s3_key,
+            job_id,
+            source_version=source_version,
+            client_request_token=token,
+        )
+    except Exception as e:
+        if is_idempotent_parameter_mismatch(e):
+            # Non-retryable: the token was reused with different parameters.
+            # Retrying with the same token cannot succeed.
+            return False
+        print(f"✗ Error starting Textract job: {e}")
+        textract_job_id = None
     if not textract_job_id:
         if retry_count < MAX_RETRIES:
             print(f"\n🔄 Retrying Textract job... (Attempt {retry_count + 2}/{MAX_RETRIES + 1})")
             time.sleep(2)
-            return process_document_async(s3_bucket, s3_key, job_id, retry_count + 1)
+            return process_document_async(
+                s3_bucket, s3_key, job_id, retry_count + 1,
+                source_version=source_version,
+                client_request_token=token,
+            )
         return False
-    
+
     # Step 2: Wait for results
     results = get_textract_results(textract_job_id)
     if not results:
         if retry_count < MAX_RETRIES:
             print(f"\n🔄 Retrying to get results... (Attempt {retry_count + 2}/{MAX_RETRIES + 1})")
             time.sleep(5)
-            return process_document_async(s3_bucket, s3_key, job_id, retry_count + 1)
+            return process_document_async(
+                s3_bucket, s3_key, job_id, retry_count + 1,
+                source_version=source_version,
+                client_request_token=token,
+            )
         return False
-    
+
     # Step 3: Save output to S3
     success = _save_ocr_output(results, job_id, filename)
-    
+
     if success:
         print(f"\n✓ Processing complete!")
         print(f"   Pages: {results['page_count']}")
@@ -330,21 +444,38 @@ def process_document_async(s3_bucket: str, s3_key: str, job_id: str, retry_count
         if retry_count < MAX_RETRIES:
             print(f"\n🔄 S3 save failed, retrying... (Attempt {retry_count + 2}/{MAX_RETRIES + 1})")
             time.sleep(2)
-            return process_document_async(s3_bucket, s3_key, job_id, retry_count + 1)
-    
+            return process_document_async(
+                s3_bucket, s3_key, job_id, retry_count + 1,
+                source_version=source_version,
+                client_request_token=token,
+            )
+
     return success
 
-def process_batch_with_retry(file_locations: List[Tuple[str, str, str]]) -> Dict:
+def _split_batch_entry(entry: Tuple) -> Tuple[str, str, str, Optional[str]]:
+    """Split a batch entry of (bucket, key, job_id[, source_version])."""
+    if len(entry) == 4:
+        s3_bucket, s3_key, job_id, source_version = entry
+        return s3_bucket, s3_key, job_id, source_version
+    s3_bucket, s3_key, job_id = entry
+    return s3_bucket, s3_key, job_id, None
+
+
+def process_batch_with_retry(file_locations: List[Tuple]) -> Dict:
     """
     Process a batch of documents with automatic retry for failed files.
     Tracks failed files and reprocesses them up to MAX_BATCH_RETRY_ROUNDS times.
-    
+
     Args:
-        file_locations: List of tuples (s3_bucket, s3_key, job_id)
-        
+        file_locations: List of tuples (s3_bucket, s3_key, job_id) or
+            (s3_bucket, s3_key, job_id, source_version). Entries that share
+            one ``job_id`` still start Textract with distinct per-document
+            idempotency tokens derived from their S3 location (plus the
+            source version when given).
+
     Returns:
         dict: Processing summary with success/failure counts and final failed files
-        
+
     Example:
         files = [
             ('eesa-pipeline-storage', 'jobs/abc-123/original/file1.pdf', 'abc-123'),
@@ -377,17 +508,26 @@ def process_batch_with_retry(file_locations: List[Tuple[str, str, str]]) -> Dict
         successful_in_round = 0
         
         # Process each file in current batch
-        for idx, (s3_bucket, s3_key, job_id) in enumerate(current_batch, 1):
+        for idx, entry in enumerate(current_batch, 1):
+            s3_bucket, s3_key, job_id, source_version = _split_batch_entry(entry)
             filename = os.path.basename(s3_key)
             print(f"[{idx}/{batch_size}] Processing: {filename}")
-            
-            success = process_document_async(s3_bucket, s3_key, job_id)
-            
+
+            if source_version is None:
+                success = process_document_async(s3_bucket, s3_key, job_id)
+            else:
+                success = process_document_async(
+                    s3_bucket, s3_key, job_id, source_version=source_version
+                )
+
             if success:
                 successful_in_round += 1
             else:
-                # Track failed file location for retry
-                failed_in_round.append((s3_bucket, s3_key, job_id))
+                # Track failed file location for retry (preserve entry shape)
+                if source_version is None:
+                    failed_in_round.append((s3_bucket, s3_key, job_id))
+                else:
+                    failed_in_round.append((s3_bucket, s3_key, job_id, source_version))
                 print(f"⚠️  Failed: {filename} - will retry in next round")
         
         # Round summary
@@ -432,12 +572,14 @@ def process_batch_with_retry(file_locations: List[Tuple[str, str, str]]) -> Dict
     
     if failed_files:
         print(f"\n⚠️  Failed files after {retry_round} retry rounds:")
-        for s3_bucket, s3_key, job_id in failed_files:
+        for entry in failed_files:
+            s3_bucket, s3_key, job_id, _source_version = _split_batch_entry(entry)
             filename = os.path.basename(s3_key)
             print(f"   - {filename} (s3://{s3_bucket}/{s3_key})")
-    
+
     print(f"{'='*80}\n")
-    
+
+    normalized_failed = [_split_batch_entry(entry) for entry in failed_files]
     return {
         'total_files': total_files,
         'successful': total_successful,
@@ -451,6 +593,6 @@ def process_batch_with_retry(file_locations: List[Tuple[str, str, str]]) -> Dict
                 'job_id': jid,
                 'filename': os.path.basename(key)
             }
-            for bucket, key, jid in failed_files
+            for bucket, key, jid, _source_version in normalized_failed
         ]
     }
