@@ -1,11 +1,11 @@
 import type { z } from "zod";
-import { getExamAnalysisModel } from "../newFeatureModels";
+import { getExamAnalysisModel } from "../newFeatureModels.js";
 import {
   examAnalysisDocumentZodSchema,
   type ExamAnalysis,
   type ExamAnalysisDocument,
-} from "../schemas/examAnalysisZod";
-import { nullIfAbsentId, rethrowReadFailure } from "./readErrors";
+} from "../schemas/examAnalysisZod.js";
+import { nullIfAbsentId, rethrowReadFailure } from "./readErrors.js";
 
 export class ExamAnalysisRepository {
   private model = getExamAnalysisModel();

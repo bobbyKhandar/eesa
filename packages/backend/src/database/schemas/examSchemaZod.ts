@@ -1,4 +1,4 @@
-import { z } from "../zodGlobal";
+import { z } from "../zodGlobal.js";
 /*
   * Exam Zod Schema definition 
   * Transformed to mongoose schema using zod-to-mongoose in mongooseSchemas.ts

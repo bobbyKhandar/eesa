@@ -5,18 +5,18 @@
 
 import { Types } from "mongoose";
 import type { ClientSession, Model } from "mongoose";
-import { connect } from "../connect";
-import { getPromptModel } from "../mongooseSchemas";
-import { promptZodSchema } from "../schemas/promptSchemaZod";
-import type { Prompt } from "../schemas/promptSchemaZod";
-import { publicPromptSubjectQuery } from "../../services/publicQuestionBank";
+import { connect } from "../connect.js";
+import { getPromptModel } from "../mongooseSchemas.js";
+import { promptZodSchema } from "../schemas/promptSchemaZod.js";
+import type { Prompt } from "../schemas/promptSchemaZod.js";
+import { publicPromptSubjectQuery } from "../../services/publicQuestionBank.js";
 import {
   deleteInsertedIds,
   ExamCreationAborted,
   insertedIdsFromBulkError,
   isTransactionsUnsupportedError,
 } from "../examWriteRollback.js";
-import { nullIfAbsentId, objectIdsFrom, rethrowReadFailure } from "./readErrors";
+import { nullIfAbsentId, objectIdsFrom, rethrowReadFailure } from "./readErrors.js";
 
 export class PromptRepository {
   private model: Model<Prompt>;

@@ -1,6 +1,6 @@
-import { getUniqueQuestionModel } from "../newFeatureModels";
-import type { UniqueQuestionInsert } from "../schemas/index";
-import { identityWriteAttempts, isDuplicateKeyError } from "../uniqueQuestionDedup";
+import { getUniqueQuestionModel } from "../newFeatureModels.js";
+import type { UniqueQuestionInsert } from "../schemas/index.js";
+import { identityWriteAttempts, isDuplicateKeyError } from "../uniqueQuestionDedup.js";
 import {
   UNIQUE_QUESTION_PAGE_PROJECTION,
   InvalidQuestionBankCursorError,
@@ -9,7 +9,7 @@ import {
   encodeQuestionBankCursor,
   questionBankPageFilter,
   type QuestionBankPage,
-} from "../../services/questionBankPage";
+} from "../../services/questionBankPage.js";
 
 interface SubjectListOptions {
   bloomsLevel?: string;

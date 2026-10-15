@@ -40,7 +40,6 @@ import dotenv from 'dotenv';
 dotenv.config();
 
 // Import models
-import { model, models } from 'mongoose';
 import { zodSchema } from '@zodyac/zod-mongoose';
 import { 
   promptZodSchema,
@@ -51,6 +50,10 @@ import { subjectZodSchema } from '../database/schemas/subjectSchemaZod.js';
 import { LEGACY_SUBJECT_COLLECTION } from '../database/subjectCollections.js';
 import { ensureSubjectCollectionsSeparated } from '../database/separateSubjectCollections.js';
 import { uniqueQuestionIdentityIndex } from '../database/uniqueQuestionDedup.js';
+
+// mongoose is CommonJS: `models` is not a statically detectable named export
+// under Node's native ESM loader, so bind it from the default export.
+const { model, models } = mongoose;
 
 // Create models
 const promptSchema = zodSchema(promptZodSchema, { timestamps: true });

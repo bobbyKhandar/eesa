@@ -5,11 +5,11 @@
 
 import { Types } from "mongoose";
 import type { Model } from "mongoose";
-import { connect } from "../connect";
-import { getJobMetadataModel } from "../mongooseSchemas";
-import { jobMetadataZodSchema } from "../schemas/jobMetadataZod";
-import type { JobMetadata } from "../schemas/jobMetadataZod";
-import { nullIfAbsentId, rethrowReadFailure } from "./readErrors";
+import { connect } from "../connect.js";
+import { getJobMetadataModel } from "../mongooseSchemas.js";
+import { jobMetadataZodSchema } from "../schemas/jobMetadataZod.js";
+import type { JobMetadata } from "../schemas/jobMetadataZod.js";
+import { nullIfAbsentId, rethrowReadFailure } from "./readErrors.js";
 
 export class JobMetadataRepository {
   private model: Model<JobMetadata>;

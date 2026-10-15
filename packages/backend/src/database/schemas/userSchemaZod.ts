@@ -1,4 +1,4 @@
-import { z } from "../zodGlobal";
+import { z } from "../zodGlobal.js";
 import {
   DEFAULT_PROFILE_PIC,
   DEFAULT_USER_BRANCH,

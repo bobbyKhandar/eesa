@@ -1,8 +1,8 @@
 import { Model, type PipelineStage } from "mongoose";
-import { getAnalysisReportModel } from "../newFeatureModels";
-import type { AnalysisReport, AnalysisReportInput, AnalysisReportWithId } from "../schemas/index";
-import { connect } from "../connect";
-import { normalizeSubjectSummaries } from "./subjectSummary";
+import { getAnalysisReportModel } from "../newFeatureModels.js";
+import type { AnalysisReport, AnalysisReportInput, AnalysisReportWithId } from "../schemas/index.js";
+import { connect } from "../connect.js";
+import { normalizeSubjectSummaries } from "./subjectSummary.js";
 import {
   InvalidQuestionBankCursorError,
   clampPyqLimit,
@@ -13,7 +13,7 @@ import {
   readFallbackPyqSummary,
   type FallbackPromptPage,
   type FallbackPyqSummary,
-} from "../../services/questionBankPage";
+} from "../../services/questionBankPage.js";
 
 /**
  * Question-bank reads hide in-progress publications. A missing `publishStatus`

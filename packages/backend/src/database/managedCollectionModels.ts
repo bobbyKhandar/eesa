@@ -10,7 +10,7 @@ import {
   getSubjectModel as getLegacySubjectModel,
   getJobMetadataModel,
   getUploadSessionModel,
-} from "./mongooseSchemas";
+} from "./mongooseSchemas.js";
 import {
   getAnalysisReportModel,
   getExamAnalysisModel,
@@ -18,10 +18,10 @@ import {
   getSyllabusModel,
   getUniqueQuestionModel,
   getSubjectModel,
-} from "./newFeatureModels";
-import { findDuplicatePhysicalCollections, MANAGED_COLLECTION_NAMES } from "./managedCollections";
-import type { ManagedCollectionName } from "./managedCollections";
-import { getExamAttemptModel } from "./repositories/ExamAttemptRepository";
+} from "./newFeatureModels.js";
+import { findDuplicatePhysicalCollections, MANAGED_COLLECTION_NAMES } from "./managedCollections.js";
+import type { ManagedCollectionName } from "./managedCollections.js";
+import { getExamAttemptModel } from "./repositories/ExamAttemptRepository.js";
 
 export interface ManagedCollection {
   name: ManagedCollectionName;
