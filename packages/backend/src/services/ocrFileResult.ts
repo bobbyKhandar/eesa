@@ -19,6 +19,8 @@ export interface OCRResult {
   batchId?: string;
   status?: "success" | "partial" | "failed";
   failedPages?: OcrFailedPage[];
+  /** Set when the pipeline stalled, so a caller may retry the same file. */
+  retryable?: boolean;
 }
 
 interface PipelinePageResult {
