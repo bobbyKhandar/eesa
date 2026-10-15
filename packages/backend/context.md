@@ -92,7 +92,6 @@
 | `s3CleanupService.ts` | Validates S3 files, marks expired jobs in MongoDB. `markExpiredJobs` counts a job as expired only when `markS3Expired` reports success; a failed or unmatched write keeps `s3_expired` false, lands in `errors` with its job id, and stays in the next cleanup selection. `POST /api/jobs/cleanup` answers that run with 409 and `success: false` instead of a plain success. |
 | `databaseBackupService.ts` | S3 backup and restore of the managed collections. `listBackups` follows the `ListObjectsV2` continuation tokens (`IsTruncated` / `NextContinuationToken`) until every backup folder is returned and only sorts the full catalogue afterwards, since S3 caps one page at 1,000 common prefixes and the timestamp folder ids put the newest recovery points on later pages. Restore writes every collection into a side collection and renames it into place only after the full payload is staged, so a failed insert or publish leaves live data unchanged (or rolls a partial publish back). A backup whose metadata status is `failed` is refused before any write. `deleteBackup` folds every `DeleteObjectsCommand` response's `Errors` array into the outcome, counts only the keys S3 removed, and returns the remaining keys with their per-key errors (transient vs permanent) so the admin can retry a backup that is still stored. A delete request that throws reaches the caller untouched. |
 | `examOcrService.ts` | EC2 OCR + exam analysis workflow |
-| `generateBloomsAnatomy.ts` | Bloom's taxonomy classification (mostly commented out) |
 
 ## Scripts (`src/scripts/` and `src/database/scripts/`)
 
@@ -104,6 +103,7 @@
 | `importBedrockQuestions.ts` | Imports Bedrock-enriched JSON -> Prompts, UniqueQuestions, etc. |
 | `importOcrQuestions.ts` | Imports OCR-processed question papers |
 | `dryRunOcrImport.ts` | Preview OCR import without modifying DB |
+| `testEC2Deployment.ts` | EC2 OCR deployment diagnostic (`npm run test:ec2-deployment --prefix packages/backend`). ESM-guarded entrypoint; importing it has no side effects. |
 | `merge-duplicate-unique-questions.ts` | Dry run by default. `--apply` merges duplicate unique questions that share `normalizedText` and `subject` (union of source reports, appearances, and prompt ids; occurrence counts kept) and then replaces a non-unique identity index with the unique one. |
 
 ## Dependencies
