@@ -66,6 +66,14 @@ boto_config = Config(
     retries={'max_attempts': 3, 'mode': 'adaptive'}
 )
 
+try:
+    from aws_region import get_aws_region
+except ImportError:  # pragma: no cover - package-relative fallback
+    from .aws_region import get_aws_region  # type: ignore[no-redef]
+
+# AWS region: AWS_REGION > AWS_DEFAULT_REGION > aws_location > default.
+AWS_REGION = get_aws_region()
+
 # Phases that have a processor and can therefore be retried.
 RETRYABLE_PHASES = ('ocr', 'parse', 'enrich', 'organize')
 
@@ -624,7 +632,7 @@ class S3Manager:
     """S3 operations for the manual pipeline"""
     
     def __init__(self):
-        self.s3 = boto3.client('s3', config=boto_config)
+        self.s3 = boto3.client('s3', region_name=AWS_REGION, config=boto_config)
         self.bucket = S3_BUCKET
         self.prefix = S3_MANUAL_PREFIX
     
@@ -1040,7 +1048,7 @@ class OCRProcessor(PhaseProcessor):
     def __init__(self, db: DatabaseManager, s3: S3Manager):
         super().__init__(db, s3)
         self.phase = Phase.OCR
-        self.textract = boto3.client('textract', config=boto_config)
+        self.textract = boto3.client('textract', region_name=AWS_REGION, config=boto_config)
     
     def process_job(self, job: Job) -> Tuple[bool, str]:
         """Run OCR on a single job"""
@@ -1203,7 +1211,7 @@ class ParseProcessor(PhaseProcessor):
     def __init__(self, db: DatabaseManager, s3: S3Manager):
         super().__init__(db, s3)
         self.phase = Phase.PARSE
-        self.bedrock = boto3.client('bedrock-runtime', region_name='ap-south-1', config=boto_config)
+        self.bedrock = boto3.client('bedrock-runtime', region_name=AWS_REGION, config=boto_config)
         self.model_id = "google.gemma-3-27b-it"
         # Model input bound per call (~7500 tokens). A longer document is
         # split into bounded chunks that are all parsed and merged, so OCR
@@ -1472,7 +1480,7 @@ class EnrichProcessor(PhaseProcessor):
     def __init__(self, db: DatabaseManager, s3: S3Manager):
         super().__init__(db, s3)
         self.phase = Phase.ENRICH
-        self.bedrock = boto3.client('bedrock-runtime', region_name='ap-south-1', config=boto_config)
+        self.bedrock = boto3.client('bedrock-runtime', region_name=AWS_REGION, config=boto_config)
         self.model_id = "google.gemma-3-27b-it"
     
     def process_job(self, job: Job) -> Tuple[bool, str]:

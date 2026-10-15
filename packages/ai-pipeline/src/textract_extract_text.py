@@ -6,7 +6,8 @@ Usage:
 
 Environment variables:
     S3_BUCKET   - S3 bucket used as staging for PDF upload (default: eesa-pipeline-storage)
-    AWS_REGION  - Optional AWS region override
+    AWS region  - Resolved via src/aws_region.py (AWS_REGION > AWS_DEFAULT_REGION
+                  > aws_location in packages/ai-pipeline/.env > ap-south-1).
 """
 
 import argparse
@@ -18,6 +19,11 @@ import uuid
 from pathlib import Path
 
 import boto3
+
+try:
+    from aws_region import get_aws_region
+except ImportError:  # pragma: no cover - direct-file execution fallback
+    from .aws_region import get_aws_region  # type: ignore[no-redef]
 
 
 def parse_args() -> argparse.Namespace:
@@ -44,9 +50,9 @@ def main() -> None:
         json_out({"success": False, "error": "Input file must be a PDF"}, 2)
 
     bucket = os.getenv("S3_BUCKET", "eesa-pipeline-storage")
-    region = os.getenv("AWS_REGION")
+    region = get_aws_region()
 
-    session = boto3.session.Session(region_name=region) if region else boto3.session.Session()
+    session = boto3.session.Session(region_name=region)
     s3 = session.client("s3")
     textract = session.client("textract")
 

@@ -93,11 +93,11 @@
 
 ## AWS Integration
 - **Services:** `s3`, `textract`, `bedrock-runtime`.
-- **boto3 clients:** Created per-module with `boto3.client('service', region_name='ap-south-1')`. Standard credential chain (env vars, `~/.aws/credentials`, IAM role).
+- **boto3 clients:** Created per-module with `boto3.client('service', region_name=<resolved AWS region>, ...)`. Standard credential chain (env vars, `~/.aws/credentials`, IAM role).
 - **Bedrock models:** `google.gemma-3-27b-it` (parsing, enrichment), `amazon.titan-embed-text-v2:0` (embeddings for clustering).
 - **Config:** `read_timeout=300`, `connect_timeout=60`, retries `adaptive`.
 - **S3 bucket:** `eesa-pipeline-storage` (from env `S3_BUCKET` or default). `POST /process` and `POST /process/batch` read the source PDF from the request `s3_bucket` when one is given, after `/process` has verified that object with `head_object`. A missing or blank `s3_bucket` uses the configured bucket. `process_aws_job_pipeline` takes that bucket and passes it to Textract. Later stage output still lands in the configured bucket.
-- **Region:** `ap-south-1` from `.env` var `aws_location`.
+- **Region:** Resolved once in `src/aws_region.py` before any boto3 client is created. Precedence: `AWS_REGION` (canonical) > `AWS_DEFAULT_REGION` > `aws_location` (legacy alias for the documented `packages/ai-pipeline/.env` entry) > default `ap-south-1`. The `.env` file is loaded without overriding real environment variables, the resolved value is mirrored into `AWS_REGION`/`AWS_DEFAULT_REGION` so boto3's default chain agrees, and startup logs `AWS region '<region>' (from <source>)` — or, when nothing is configured, that the default is in effect and how to override it. Every Textract/Bedrock/S3 client passes that resolved `region_name` explicitly.
 
 ## Testing
 - **Framework:** Python `unittest`.

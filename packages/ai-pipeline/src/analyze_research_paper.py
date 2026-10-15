@@ -2,6 +2,11 @@ import boto3
 import json
 from pathlib import Path
 
+try:
+    from aws_region import get_aws_region
+except ImportError:  # pragma: no cover - package-relative fallback
+    from .aws_region import get_aws_region  # type: ignore[no-redef]
+
 def analyze_research_paper(pdf_file_path):
     """
     Analyze a PDF research paper using AWS Bedrock with Gemma model.
@@ -15,7 +20,7 @@ def analyze_research_paper(pdf_file_path):
     # Initialize Bedrock client
     bedrock_runtime = boto3.client(
         service_name='bedrock-runtime',
-        region_name='ap-south-1'  # Use the same region as in enrich_questions_job_based.py
+        region_name=get_aws_region()
     )
 
     # Read PDF file (as bytes)

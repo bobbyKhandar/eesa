@@ -13,6 +13,21 @@ from typing import Dict, List, Optional, Any
 import boto3
 
 try:
+    from aws_region import get_aws_region
+except ImportError:  # pragma: no cover - package-relative fallback
+    try:
+        from ..aws_region import get_aws_region  # type: ignore[no-redef]
+    except ImportError:
+        def get_aws_region():  # type: ignore[no-redef]
+            import os as _os
+            return (
+                _os.getenv("AWS_REGION")
+                or _os.getenv("AWS_DEFAULT_REGION")
+                or _os.getenv("aws_location")
+                or "ap-south-1"
+            ).strip() or "ap-south-1"
+
+try:
     from aws_texttract_pipeline import process_document_async
     from parsing_pipeline import parse_questions_for_job
     from enrich_questions_job_based import enrich_questions_for_job
@@ -20,7 +35,12 @@ try:
     from intelligent_chunking import chunk_ocr_text
     from question_clustering import cluster_questions_for_job
     AWS_MODULES_AVAILABLE = True
-except ImportError as e:
+except Exception as e:
+    # ImportError covers missing optional deps; other exceptions cover boto3
+    # client configuration failures (e.g. NoRegionError/NoCredentialsError)
+    # raised while pipeline modules build their module-level AWS clients.
+    # Either way the AWS pipeline is unavailable but Flask must still start
+    # so /health and the startup diagnostic keep working.
     print(f"Warning: AWS pipeline modules not fully available: {e}")
     process_document_async = None
     parse_questions_for_job = None
@@ -142,7 +162,7 @@ class AWSPipelineManager:
 
     def _init_s3_client(self):
         try:
-            return boto3.client('s3')
+            return boto3.client('s3', region_name=get_aws_region())
         except Exception as e:
             print(f"Warning: S3 client init failed: {e}")
             return None

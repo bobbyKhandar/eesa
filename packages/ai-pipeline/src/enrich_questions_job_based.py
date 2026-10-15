@@ -27,7 +27,8 @@ Environment Variables:
 ----------------------
 - S3_BUCKET: Target bucket (default: 'eesa-pipeline-storage')
 - BEDROCK_MODEL_ID: Model ID to use (e.g., 'anthropic.claude-3-sonnet...', currently set to custom endpoint)
-- AWS_REGION: Region for Bedrock client (default: 'ap-south-1')
+- AWS region: Resolved via src/aws_region.py (AWS_REGION > AWS_DEFAULT_REGION
+  > aws_location in packages/ai-pipeline/.env > default 'ap-south-1').
 
 Usage Examples:
 ---------------
@@ -65,13 +66,20 @@ from botocore.config import Config
 # ==========================================
 # AWS Client Initialization
 # ==========================================
+try:
+    from aws_region import get_aws_region
+except ImportError:  # pragma: no cover - package-relative fallback
+    from .aws_region import get_aws_region  # type: ignore[no-redef]
+
+# AWS region: AWS_REGION > AWS_DEFAULT_REGION > aws_location > default.
+AWS_REGION = get_aws_region()
 boto_config = Config(
     read_timeout=300,  # 5 minutes for large batches
     connect_timeout=60,
     retries={'max_attempts': 3, 'mode': 'adaptive'}
 )
-bedrock_client = boto3.client('bedrock-runtime', region_name="ap-south-1", config=boto_config)
-s3_client = boto3.client('s3', config=boto_config)
+bedrock_client = boto3.client('bedrock-runtime', region_name=AWS_REGION, config=boto_config)
+s3_client = boto3.client('s3', region_name=AWS_REGION, config=boto_config)
 
 # ==========================================
 # Configuration & Constants

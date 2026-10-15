@@ -25,6 +25,11 @@ try:
 except ImportError:
     fitz = None
 
+try:
+    from aws_region import get_aws_region
+except ImportError:  # pragma: no cover - direct-file execution fallback
+    from .aws_region import get_aws_region  # type: ignore[no-redef]
+
 def _load_env_file(path: Path) -> None:
     if not path.exists() or not path.is_file():
         return
@@ -61,7 +66,7 @@ _FORCE_NO_SESSION_TOKEN = False
 _FORCE_DEFAULT_CHAIN = False
 
 
-AWS_REGION = os.getenv("AWS_REGION", "ap-south-1")
+AWS_REGION = get_aws_region()
 BEDROCK_MODEL_ID = os.getenv("BEDROCK_MODEL_ID", "google.gemma-3-27b-it")
 
 

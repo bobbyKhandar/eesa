@@ -67,8 +67,14 @@ from typing import Dict, Optional, List, Tuple
 # ==========================================
 # AWS Client Initialization
 # ==========================================
-textract = boto3.client('textract')
-s3_client = boto3.client('s3')
+try:
+    from aws_region import get_aws_region
+except ImportError:  # pragma: no cover - package-relative fallback
+    from .aws_region import get_aws_region  # type: ignore[no-redef]
+
+AWS_REGION = get_aws_region()
+textract = boto3.client('textract', region_name=AWS_REGION)
+s3_client = boto3.client('s3', region_name=AWS_REGION)
 
 # ==========================================
 # Configuration & Constants

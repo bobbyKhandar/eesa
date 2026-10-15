@@ -288,7 +288,7 @@ NoCredentialsError: Unable to locate credentials
 aws configure
 # Enter AWS_ACCESS_KEY_ID
 # Enter AWS_SECRET_ACCESS_KEY
-# Enter region: us-east-1
+# Enter region, e.g. ap-south-1 (must match the pipeline's resolved AWS region)
 ```
 
 ### Rate Limiting
@@ -307,7 +307,7 @@ aws configure
 **Check**:
 1. AWS credentials valid
 2. Bedrock model access enabled in AWS console
-3. Region set to `us-east-1`
+3. Region matches the resolved region (`AWS_REGION` / `AWS_DEFAULT_REGION` / `aws_location` in `packages/ai-pipeline/.env`)
 4. Internet connectivity
 
 ## Advanced Usage
