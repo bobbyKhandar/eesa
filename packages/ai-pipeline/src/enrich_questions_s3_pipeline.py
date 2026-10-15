@@ -16,13 +16,21 @@ import threading
 # AWS Clients
 from botocore.config import Config
 
+try:
+    from aws_region import get_aws_region
+except ImportError:  # pragma: no cover - package-relative fallback
+    from .aws_region import get_aws_region  # type: ignore[no-redef]
+
+# AWS region: AWS_REGION > AWS_DEFAULT_REGION > aws_location > default.
+AWS_REGION = get_aws_region()
+
 boto_config = Config(
     read_timeout=300,  # 5 minutes for large batches
     connect_timeout=60,
     retries={'max_attempts': 3, 'mode': 'adaptive'}
 )
-bedrock_client = boto3.client('bedrock-runtime', region_name="ap-south-1", config=boto_config)
-s3_client = boto3.client('s3', config=boto_config)
+bedrock_client = boto3.client('bedrock-runtime', region_name=AWS_REGION, config=boto_config)
+s3_client = boto3.client('s3', region_name=AWS_REGION, config=boto_config)
 
 # S3 Configuration
 S3_BUCKET = os.getenv('S3_BUCKET', 'eesa-pipeline-storage')
@@ -242,7 +250,7 @@ def _ensure_s3_bucket_exists() -> bool:
             print(f"ℹ S3 bucket '{S3_BUCKET}' not found, creating...")
             try:
                 # Create bucket
-                region = s3_client.meta.region_name or 'ap-south-1'
+                region = s3_client.meta.region_name or AWS_REGION
                 if region == 'us-east-1':
                     # us-east-1 doesn't need LocationConstraint
                     s3_client.create_bucket(Bucket=S3_BUCKET)

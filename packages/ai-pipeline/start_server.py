@@ -13,6 +13,14 @@ current_dir = Path(__file__).parent
 src_dir = current_dir / 'src'
 sys.path.insert(0, str(src_dir))
 
+# Load packages/ai-pipeline/.env and resolve the AWS region before the Flask
+# app (and its boto3 clients) is imported. See src/aws_region.py.
+try:
+    from aws_region import ensure_aws_region_configured
+    ensure_aws_region_configured()
+except ImportError:  # pragma: no cover - unexpected path layout
+    pass
+
 def main():
     """Start the AI Pipeline server with proper imports"""
     

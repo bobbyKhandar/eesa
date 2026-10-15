@@ -34,7 +34,13 @@ from chunk_merger import merge_chunk_exams
 
 # AWS Bedrock Configuration
 BEDROCK_MODEL_ID = "google.gemma-3-27b-it"
-REGION = "us-east-1"
+try:
+    from aws_region import get_aws_region
+except ImportError:  # pragma: no cover - package-relative fallback
+    from .aws_region import get_aws_region  # type: ignore[no-redef]
+
+# AWS region: AWS_REGION > AWS_DEFAULT_REGION > aws_location > default.
+REGION = get_aws_region()
 
 # Recovery input bounds. A document or question set larger than these is
 # processed in bounded chunks/batches that merge only after full coverage,
@@ -59,12 +65,11 @@ REPROCESSED_DIR.mkdir(exist_ok=True)
 
 # Initialize Bedrock client
 config = Config(
-    region_name=REGION,
     read_timeout=300,  # 5 minutes for large documents
     connect_timeout=60,
     retries={'max_attempts': 3, 'mode': 'adaptive'}
 )
-bedrock_runtime = boto3.client('bedrock-runtime', config=config)
+bedrock_runtime = boto3.client('bedrock-runtime', region_name=REGION, config=config)
 
 
 def clean_json_response(response_text: str) -> str:

@@ -22,7 +22,14 @@ from typing import Dict, List, Optional, Set
 from collections import defaultdict
 
 # AWS Clients
-s3_client = boto3.client('s3')
+try:
+    from aws_region import get_aws_region
+except ImportError:  # pragma: no cover - package-relative fallback
+    from .aws_region import get_aws_region  # type: ignore[no-redef]
+
+# AWS region: AWS_REGION > AWS_DEFAULT_REGION > aws_location > default.
+AWS_REGION = get_aws_region()
+s3_client = boto3.client('s3', region_name=AWS_REGION)
 
 # S3 Configuration - Job-based structure (matching Textract/Bedrock)
 S3_BUCKET = os.getenv('S3_BUCKET', 'eesa-pipeline-storage')

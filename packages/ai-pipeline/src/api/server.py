@@ -34,14 +34,25 @@ if __package__ in (None, ""):
 from flask import Flask
 from flask_cors import CORS
 
-from .aws_manager import AWSPipelineManager
-from .routes import register_routes
-from .service_auth import assert_trusted_bind
-
 # Add parent directory to Python path for pipeline module imports
 current_dir = Path(__file__).parent.parent
 if str(current_dir) not in sys.path:
     sys.path.insert(0, str(current_dir))
+
+# Resolve the AWS region (AWS_REGION > AWS_DEFAULT_REGION > aws_location)
+# and load packages/ai-pipeline/.env BEFORE any boto3 client is created.
+# Pipeline modules read the resolved region at import time, so this must run
+# before aws_manager (which imports them) is loaded.
+try:
+    from aws_region import ensure_aws_region_configured
+except ImportError:  # pragma: no cover - package-relative fallback
+    from ..aws_region import ensure_aws_region_configured  # type: ignore[no-redef]
+
+ensure_aws_region_configured()
+
+from .aws_manager import AWSPipelineManager
+from .routes import register_routes
+from .service_auth import assert_trusted_bind
 
 
 class LazyLocalPipeline:

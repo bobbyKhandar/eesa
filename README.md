@@ -254,7 +254,7 @@ Each package has its own `.env` file:
 | `APPLICATION_EMAIL` | Sender email for notifications |
 | `APPLICATION_EMAIL_PASSWORD` | Email app password |
 | `APPLICATION_ADMIN` | Admin email address |
-| `aws_location` | AWS region (e.g. `ap-south-1`) |
+| `aws_location` | Legacy alias for the AWS region (e.g. `ap-south-1`). Prefer exporting standard `AWS_REGION` (canonical, takes precedence); `AWS_DEFAULT_REGION` also works. Precedence: `AWS_REGION` > `AWS_DEFAULT_REGION` > `aws_location` > default `ap-south-1`. `packages/ai-pipeline/.env` is loaded at startup without overriding real environment variables, and the resolved region is used for every Textract/Bedrock/S3 client. Startup logs the region and its source, or that the default is in effect. |
 | `AI_PIPELINE_TOKEN` | Shared secret required on every route except `GET /health`. Must match the frontend value. |
 | `AI_PIPELINE_BIND` | Gunicorn bind address (default `127.0.0.1:5000`). Public binds need `AI_PIPELINE_ALLOW_PUBLIC_BIND=1`. |
 | `AI_PIPELINE_TRUSTED_HOSTS` | Comma-separated client IPs allowed to call sensitive routes, in addition to loopback. |

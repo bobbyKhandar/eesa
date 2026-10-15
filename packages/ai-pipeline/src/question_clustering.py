@@ -14,14 +14,20 @@ import boto3
 from botocore.config import Config
 
 # AWS Configuration
+try:
+    from aws_region import get_aws_region
+except ImportError:  # pragma: no cover - package-relative fallback
+    from .aws_region import get_aws_region  # type: ignore[no-redef]
+
+# AWS region: AWS_REGION > AWS_DEFAULT_REGION > aws_location > default.
+AWS_REGION = get_aws_region()
 boto_config = Config(
-    region_name="ap-south-1",
     connect_timeout=60,
     read_timeout=60,
     retries={'max_attempts': 3, 'mode': 'adaptive'}
 )
-s3_client = boto3.client('s3', config=boto_config)
-bedrock_client = boto3.client('bedrock-runtime', region_name="ap-south-1", config=boto_config)
+s3_client = boto3.client('s3', region_name=AWS_REGION, config=boto_config)
+bedrock_client = boto3.client('bedrock-runtime', region_name=AWS_REGION, config=boto_config)
 
 # S3 Configuration
 S3_BUCKET = os.getenv('S3_BUCKET', 'eesa-pipeline-storage')
