@@ -93,10 +93,10 @@ describe("backend build ordering", () => {
       "string",
       "the frontend build needs a prebuild step",
     );
-    assert.match(
-      pkg.scripts.prebuild,
-      new RegExp(gateScript.replace(".", "\\.")),
-    );
+    // Production builds (Vercel included) always compile the backend with
+    // the same command that deployed before #209; the mtime-based gate
+    // script is for the dev server only.
+    assert.equal(pkg.scripts.prebuild, "npm run build --prefix ../backend");
   });
 
   it("gates the frontend dev server on the backend compile", () => {
