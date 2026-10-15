@@ -311,21 +311,75 @@ export function findInvalidQuestion(questions: unknown): string | null {
 }
 
 export function findInvalidSettings(settings: ExamCreationSettings): string | null {
+  const fieldErrors = findExamSettingsFieldErrors(settings);
+  return (
+    fieldErrors.passingPercentage ?? fieldErrors.duration ?? fieldErrors.negativeMarkingPercentage ?? null
+  );
+}
+
+export interface ExamCreationDetails {
+  examTitle: unknown;
+  examDescription: unknown;
+  subject: unknown;
+  examDegree: unknown;
+}
+
+export type ExamDetailField = keyof ExamCreationDetails;
+
+const EXAM_DETAIL_REQUIRED_MESSAGES: Record<ExamDetailField, string> = {
+  examTitle: "Exam title is required",
+  examDescription: "Description is required",
+  subject: "Subject is required",
+  examDegree: "Degree/Program is required",
+};
+
+/** Trimmed required-field checks shared by the create form before any request is sent. */
+export function findExamDetailsFieldErrors(details: ExamCreationDetails): Partial<Record<ExamDetailField, string>> {
+  const errors: Partial<Record<ExamDetailField, string>> = {};
+  (Object.keys(EXAM_DETAIL_REQUIRED_MESSAGES) as ExamDetailField[]).forEach((field) => {
+    const value = details[field];
+    if (typeof value !== "string" || value.trim().length === 0) {
+      errors[field] = EXAM_DETAIL_REQUIRED_MESSAGES[field];
+    }
+  });
+  return errors;
+}
+
+/** First missing required field, or null when every trimmed value is present. */
+export function findInvalidExamDetails(details: ExamCreationDetails): string | null {
+  const errors = findExamDetailsFieldErrors(details);
+  return (
+    errors.examTitle ?? errors.examDescription ?? errors.subject ?? errors.examDegree ?? null
+  );
+}
+
+export type ExamSettingsField = "passingPercentage" | "duration" | "negativeMarkingPercentage";
+
+/**
+ * Field-level version of {@link findInvalidSettings} so the create form can
+ * surface duration/pass/negative-marking problems next to their inputs
+ * instead of waiting for the API round-trip.
+ */
+export function findExamSettingsFieldErrors(
+  settings: ExamCreationSettings,
+): Partial<Record<ExamSettingsField, string>> {
+  const errors: Partial<Record<ExamSettingsField, string>> = {};
   if (!isFiniteNumberInRange(settings.passingPercentage, 0, MAX_PERCENTAGE)) {
-    return "passingPercentage must be a number between 0 and 100";
+    errors.passingPercentage = "passingPercentage must be a number between 0 and 100";
   }
 
   if (settings.duration !== undefined && settings.duration !== null && settings.duration !== "") {
     if (typeof settings.duration !== "number" || !Number.isFinite(settings.duration) || settings.duration <= 0) {
-      return "duration must be a positive number of minutes";
+      errors.duration = "duration must be a positive number of minutes";
     }
   }
 
   if (settings.negativeMarking === true && !isFiniteNumberInRange(settings.negativeMarkingPercentage, 0, MAX_PERCENTAGE)) {
-    return "negativeMarkingPercentage must be a number between 0 and 100 when negative marking is enabled";
+    errors.negativeMarkingPercentage =
+      "negativeMarkingPercentage must be a number between 0 and 100 when negative marking is enabled";
   }
 
-  return null;
+  return errors;
 }
 
 export function normalizeAssignedUsers(examUsers: unknown, creatorId: string): string[] {

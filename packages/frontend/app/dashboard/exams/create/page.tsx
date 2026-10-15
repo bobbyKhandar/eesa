@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, type FormEvent } from "react"
 import Link from "next/link"
 import { Button } from "@/frontend/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/frontend/components/ui/card"
@@ -10,7 +10,7 @@ import { Textarea } from "@/frontend/components/ui/textarea"
 import { ArrowLeft } from "lucide-react"
 import { ExamTypeSelector, SyllabusTypeSelector, SubjectSelector, QuestionEditor, StudentAssigneeSelector } from "@/frontend/components/features/exams"
 import type { Question } from "@/frontend/components/features/exams"
-import { authoringKind, createQuestionDraft, examUsersForCreation, findInvalidQuestion, findMissingStudentAssignees, mergeQuestionUpdate, nextQuestionId, toCreateExamQuestions } from "@/frontend/lib/examCreation"
+import { authoringKind, createQuestionDraft, examUsersForCreation, findExamDetailsFieldErrors, findExamSettingsFieldErrors, findInvalidQuestion, findMissingStudentAssignees, mergeQuestionUpdate, nextQuestionId, toCreateExamQuestions } from "@/frontend/lib/examCreation"
 
 export default function CreateExamPage() {
   const [examType, setExamType] = useState<"personal" | "teacher" | null>(null)
@@ -39,6 +39,16 @@ export default function CreateExamPage() {
   const [processingRequest,setProcessingRequest]=useState<boolean>(false)
   const [error,setError]=useState<string>("")
   const [success,setSuccess]=useState<string>("")
+  const [fieldErrors,setFieldErrors]=useState<Record<string,string>>({})
+
+  const clearFieldError = (field: string) => {
+    setFieldErrors((prev) => {
+      if (!prev[field]) return prev
+      const next = { ...prev }
+      delete next[field]
+      return next
+    })
+  }
 
   const removeQuestion = (id: number) => {
     setQuestions(questions.filter((q) => q.id !== id))
@@ -57,11 +67,30 @@ export default function CreateExamPage() {
 
 async function uploadExamSet(): Promise<ApiResponse> {
   try {
-    // Validate required fields
-    if (!examTitle || !examDescription || !subject || !examDegree) {
-      setError("Please fill in all required fields")
-      return { success: false, error: "Missing required fields" }
+    // Trimmed required-field checks so whitespace-only values cannot submit.
+    const detailErrors = findExamDetailsFieldErrors({ examTitle, examDescription, subject, examDegree })
+    const settingsErrors = findExamSettingsFieldErrors({
+      passingPercentage,
+      duration: examDuration,
+      negativeMarking,
+      negativeMarkingPercentage,
+    })
+    const nextFieldErrors: Record<string, string> = { ...detailErrors, ...settingsErrors }
+    if (Object.keys(nextFieldErrors).length > 0) {
+      setFieldErrors(nextFieldErrors)
+      const firstError =
+        nextFieldErrors.examTitle ??
+        nextFieldErrors.examDescription ??
+        nextFieldErrors.subject ??
+        nextFieldErrors.examDegree ??
+        nextFieldErrors.passingPercentage ??
+        nextFieldErrors.duration ??
+        nextFieldErrors.negativeMarkingPercentage ??
+        "Please fix the highlighted fields"
+      setError(firstError)
+      return { success: false, error: firstError }
     }
+    setFieldErrors({})
 
     if (questions.length === 0) {
       setError("Please add at least one question")
@@ -130,6 +159,16 @@ async function uploadExamSet(): Promise<ApiResponse> {
     setProcessingRequest(false)
   }
 }
+
+  async function handleSubmit(event: FormEvent<HTMLFormElement>): Promise<void> {
+    event.preventDefault()
+    const response = await uploadExamSet()
+    if (response.success) {
+      setTimeout(() => {
+        window.location.href = '/dashboard/exams'
+      }, 2000)
+    }
+  }
   // Step 1: Select exam type (Personal Use or Teacher Assignment)
   if (!examType) {
     return (
@@ -213,6 +252,7 @@ async function uploadExamSet(): Promise<ApiResponse> {
     <div className="space-y-6">
       <div className="flex items-center gap-4">
         <Button
+          type="button"
           variant="outline"
           size="icon"
           onClick={() => {
@@ -250,6 +290,7 @@ async function uploadExamSet(): Promise<ApiResponse> {
         </div>
       )}
 
+      <form onSubmit={handleSubmit} className="space-y-6">
       <Card>
         <CardHeader>
           <CardTitle>Exam Details</CardTitle>
@@ -258,15 +299,24 @@ async function uploadExamSet(): Promise<ApiResponse> {
         <CardContent className="space-y-4">
           <div className="grid gap-2">
             <Label htmlFor="title">Exam Title *</Label>
-            <Input id="title" required readOnly={processingRequest} value={examTitle} onChange={e=>{setExamTitle(e.target.value)}} placeholder="Enter exam title" />
+            <Input id="title" required readOnly={processingRequest} value={examTitle} aria-invalid={Boolean(fieldErrors.examTitle)} onChange={e=>{setExamTitle(e.target.value); clearFieldError("examTitle")}} placeholder="Enter exam title" />
+            {fieldErrors.examTitle && (
+              <p role="alert" className="text-sm text-red-600 dark:text-red-400">{fieldErrors.examTitle}</p>
+            )}
           </div>
           <div className="grid gap-2">
             <Label htmlFor="description">Description *</Label>
-            <Textarea id="description" required readOnly={processingRequest} value={examDescription} onChange={e=>{setExamDescription(e.target.value)}} placeholder="Enter exam description" />
+            <Textarea id="description" required readOnly={processingRequest} value={examDescription} aria-invalid={Boolean(fieldErrors.examDescription)} onChange={e=>{setExamDescription(e.target.value); clearFieldError("examDescription")}} placeholder="Enter exam description" />
+            {fieldErrors.examDescription && (
+              <p role="alert" className="text-sm text-red-600 dark:text-red-400">{fieldErrors.examDescription}</p>
+            )}
           </div>
           <div className="grid gap-2">
             <Label htmlFor="subject">Subject *</Label>
-            <Input id="subject" required readOnly={processingRequest} value={subject} onChange={e=>{setSubject(e.target.value)}} placeholder="e.g., Computer Science, Mathematics" />
+            <Input id="subject" required readOnly={processingRequest} value={subject} aria-invalid={Boolean(fieldErrors.subject)} onChange={e=>{setSubject(e.target.value); clearFieldError("subject")}} placeholder="e.g., Computer Science, Mathematics" />
+            {fieldErrors.subject && (
+              <p role="alert" className="text-sm text-red-600 dark:text-red-400">{fieldErrors.subject}</p>
+            )}
           </div>
           <div className="grid gap-2">
             <Label htmlFor="instructions">Instructions (Optional)</Label>
@@ -274,16 +324,25 @@ async function uploadExamSet(): Promise<ApiResponse> {
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="grid gap-2">
-              <Label htmlFor="duration">Duration (minutes)</Label>
-              <Input id="duration" type="number" required value={examDuration} readOnly={processingRequest} onChange={e=>{setExamDuration(Number(e.target.value))}} placeholder="60" />
+              <Label htmlFor="duration">Duration (minutes) *</Label>
+              <Input id="duration" type="number" required min="1" value={examDuration} readOnly={processingRequest} aria-invalid={Boolean(fieldErrors.duration)} onChange={e=>{setExamDuration(Number(e.target.value)); clearFieldError("duration")}} placeholder="60" />
+              {fieldErrors.duration && (
+                <p role="alert" className="text-sm text-red-600 dark:text-red-400">{fieldErrors.duration}</p>
+              )}
             </div>
             <div className="grid gap-2">
               <Label htmlFor="passing-score">Passing Score (%) *</Label>
-              <Input id="passing-score" type="number" required value={passingPercentage} readOnly={processingRequest} onChange={e=>{setPassingPercentage(Number(e.target.value))}} placeholder="60" min="0" max="100" />
+              <Input id="passing-score" type="number" required value={passingPercentage} readOnly={processingRequest} aria-invalid={Boolean(fieldErrors.passingPercentage)} onChange={e=>{setPassingPercentage(Number(e.target.value)); clearFieldError("passingPercentage")}} placeholder="60" min="0" max="100" />
+              {fieldErrors.passingPercentage && (
+                <p role="alert" className="text-sm text-red-600 dark:text-red-400">{fieldErrors.passingPercentage}</p>
+              )}
             </div>
             <div className="grid gap-2">
               <Label htmlFor="exam-degree">Degree/Program *</Label>
-              <Input id="exam-degree" value={examDegree} required readOnly={processingRequest} onChange={e=>{setExamDegree(e.target.value)}} placeholder="e.g., B.Tech, M.Sc, PhD" />
+              <Input id="exam-degree" value={examDegree} required readOnly={processingRequest} aria-invalid={Boolean(fieldErrors.examDegree)} onChange={e=>{setExamDegree(e.target.value); clearFieldError("examDegree")}} placeholder="e.g., B.Tech, M.Sc, PhD" />
+              {fieldErrors.examDegree && (
+                <p role="alert" className="text-sm text-red-600 dark:text-red-400">{fieldErrors.examDegree}</p>
+              )}
             </div>
           </div>
 
@@ -293,7 +352,7 @@ async function uploadExamSet(): Promise<ApiResponse> {
                 type="checkbox" 
                 id="negative-marking" 
                 checked={negativeMarking}
-                onChange={e => setNegativeMarking(e.target.checked)}
+                onChange={e => { setNegativeMarking(e.target.checked); clearFieldError("negativeMarkingPercentage") }}
                 disabled={processingRequest}
                 className="h-4 w-4 rounded border-gray-300"
               />
@@ -309,11 +368,16 @@ async function uploadExamSet(): Promise<ApiResponse> {
                   type="number" 
                   value={negativeMarkingPercentage} 
                   readOnly={processingRequest} 
-                  onChange={e=>{setNegativeMarkingPercentage(Number(e.target.value))}} 
+                  required={negativeMarking}
+                  aria-invalid={Boolean(fieldErrors.negativeMarkingPercentage)}
+                  onChange={e=>{setNegativeMarkingPercentage(Number(e.target.value)); clearFieldError("negativeMarkingPercentage")}} 
                   placeholder="25" 
                   min="0" 
                   max="100"
                 />
+                {fieldErrors.negativeMarkingPercentage && (
+                  <p role="alert" className="text-sm text-red-600 dark:text-red-400">{fieldErrors.negativeMarkingPercentage}</p>
+                )}
                 <p className="text-xs text-gray-500 dark:text-gray-400">
                   Percentage of question marks to deduct for wrong answers
                 </p>
@@ -449,21 +513,15 @@ async function uploadExamSet(): Promise<ApiResponse> {
         onUpdate={updateQuestion}
       />
       <div className="flex justify-between">
-        <Button variant="outline" disabled={processingRequest}>Save as Draft</Button>
-        <Button 
-          onClick={async () => {
-            const response = await uploadExamSet()
-            if (response.success) {
-              setTimeout(() => {
-                window.location.href = '/dashboard/exams'
-              }, 2000)
-            }
-          }}
+        <Button type="button" variant="outline" disabled={processingRequest}>Save as Draft</Button>
+        <Button
+          type="submit"
           disabled={processingRequest}
         >
           {processingRequest ? "Creating..." : "Create Exam"}
         </Button>
       </div>
+      </form>
     </div>
   )
 }
