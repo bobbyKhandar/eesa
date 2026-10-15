@@ -475,6 +475,8 @@ LOG_FILE=/var/log/ai_pipeline.log
 
 `POST /upload/question-papers` also reads `QUESTION_PAPER_MAX_FILE_BYTES` (default 26214400), `QUESTION_PAPER_MAX_FILE_COUNT` (default 20), and `QUESTION_PAPER_MAX_REQUEST_BYTES` (default 209715200). The request cap is Flask `MAX_CONTENT_LENGTH` for the whole app. The frontend proxy uses the same names.
 
+The AWS server reads `JOB_METADATA_CACHE_TTL` (default 5.0 seconds, a float). `AWSPipelineManager.load_job_metadata` refreshes nonterminal (`in_progress`/`processing`/`queued`) job metadata from S3 on every poll, and only reuses a cached record while it is terminal (`success`/`partial_success`/`failed`/`completed`/`completed_with_errors`) and within this TTL. This keeps a poll served by one WSGI worker seeing the completed/failed state another worker saved; the TTL also bounds how long a terminal record (for example after a retry) is reused before revalidation.
+
 Local OCR reads `DEFAULT_DPI`, `MAX_PAGES_PER_PDF`, and `MAX_PDF_PAGE_PIXELS`. The batch path validates the PDF, renders one page at a time through `iter_pages`, and drops that image after OCR. A PDF over the page-count or per-page pixel cap fails before the first pixmap is built. `extract_pages` still returns the full list for existing callers. A file larger than 100MB still only produces a validation warning.
 
 ### Redis Keys

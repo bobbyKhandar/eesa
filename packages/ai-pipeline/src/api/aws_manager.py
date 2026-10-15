@@ -4,6 +4,7 @@ import os
 import uuid
 import json
 import threading
+import time
 import atexit
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor
@@ -37,6 +38,35 @@ def resolve_s3_bucket(requested: Optional[str], configured: str) -> str:
         if requested:
             return requested
     return configured
+
+
+# Job statuses that do not advance again on their own. A retry resets one of
+# these back to ``in_progress`` explicitly (see api.job_retry), after which the
+# job moves again. These mirror api.job_retry: RETRYABLE plus the batch
+# ``completed`` / ``completed_with_errors`` outcomes.
+TERMINAL_JOB_STATUSES = frozenset({
+    "success",
+    "partial_success",
+    "failed",
+    "completed",
+    "completed_with_errors",
+})
+
+# How long a terminal metadata record may be served from the in-memory cache
+# without re-reading S3. This bounds cross-worker staleness of a terminal row
+# (for example after a retry rewrites it) and keeps memory from growing without
+# bound. Nonterminal metadata ignores this and is refreshed on every poll.
+DEFAULT_METADATA_CACHE_TTL_SECONDS = 5.0
+
+
+def is_terminal_job_metadata(metadata: Optional[Dict]) -> bool:
+    """Return True when a job's stored status is final.
+
+    Terminal metadata does not change until an explicit retry rewrites it, so a
+    worker can reuse a cached copy within the freshness window. Any other or
+    missing status is treated as still in motion and must be refreshed from S3.
+    """
+    return isinstance(metadata, dict) and metadata.get("status") in TERMINAL_JOB_STATUSES
 
 
 def clustering_update_outcome(clustering_result: Optional[Dict]) -> Optional[str]:
@@ -84,6 +114,11 @@ class AWSPipelineManager:
 
     Provides S3-backed job metadata persistence with in-memory LRU cache,
     bounded thread pool for concurrent processing, and graceful cleanup.
+
+    The metadata cache is process-local. With multiple WSGI worker processes a
+    poll must not be served a snapshot another worker has since advanced: see
+    load_job_metadata, which refreshes nonterminal records from S3 and only
+    reuses a cached record while a terminal one is within its TTL.
     """
     def __init__(self):
         self.s3_client = self._init_s3_client()
@@ -93,6 +128,12 @@ class AWSPipelineManager:
 
         self.jobs: Dict[str, Dict] = {}
         self.jobs_lock = threading.Lock()
+        # monotonic() timestamp of when each cached record was last written to
+        # S3 (by any worker) or read back from it, used for the terminal TTL.
+        self.jobs_cached_at: Dict[str, float] = {}
+        self.metadata_cache_ttl = float(
+            os.getenv('JOB_METADATA_CACHE_TTL', str(DEFAULT_METADATA_CACHE_TTL_SECONDS))
+        )
 
         self._executor: Optional[ThreadPoolExecutor] = None
         self._executor_lock = threading.Lock()
@@ -139,10 +180,8 @@ class AWSPipelineManager:
             )
             with self.jobs_lock:
                 self.jobs[job_id] = metadata
-                if len(self.jobs) > 100:
-                    oldest = sorted(self.jobs.keys())[:20]
-                    for k in oldest:
-                        self.jobs.pop(k, None)
+                self.jobs_cached_at[job_id] = time.monotonic()
+                self._evict_job_cache_locked()
             return True
         except Exception as e:
             print(f"Failed to save metadata: {e}")
@@ -150,19 +189,45 @@ class AWSPipelineManager:
 
     def load_job_metadata(self, job_id: str) -> Optional[Dict]:
         with self.jobs_lock:
-            if job_id in self.jobs:
-                return self.jobs[job_id]
+            cached = self.jobs.get(job_id)
+            cached_at = self.jobs_cached_at.get(job_id)
+        # Only a terminal record may be served from cache, and only while it is
+        # within its freshness window. Terminal metadata does not change until
+        # an explicit retry, so the cache is safe here; the TTL bounds how long
+        # that holds. A nonterminal record always falls through to S3 so a poll
+        # on this worker sees a state another processing worker has saved, which
+        # is the cross-worker staleness this cache previously caused.
+        if (
+            cached is not None
+            and is_terminal_job_metadata(cached)
+            and cached_at is not None
+            and (time.monotonic() - cached_at) < self.metadata_cache_ttl
+        ):
+            return cached
         if not self.s3_client:
-            return None
+            with self.jobs_lock:
+                return self.jobs.get(job_id)
         try:
             s3_key = f"{self.s3_jobs_prefix}{job_id}/metadata.json"
             response = self.s3_client.get_object(Bucket=self.s3_bucket, Key=s3_key)
             metadata = json.loads(response['Body'].read().decode('utf-8'))
             with self.jobs_lock:
                 self.jobs[job_id] = metadata
+                self.jobs_cached_at[job_id] = time.monotonic()
             return metadata
         except Exception:
-            return None
+            # S3 unavailable or no such key yet: keep serving the last value we
+            # have rather than dropping a job a caller is polling.
+            with self.jobs_lock:
+                return self.jobs.get(job_id)
+
+    def _evict_job_cache_locked(self) -> None:
+        """Bound the in-memory metadata cache. Must be called under jobs_lock."""
+        if len(self.jobs) > 100:
+            oldest = sorted(self.jobs.keys())[:20]
+            for k in oldest:
+                self.jobs.pop(k, None)
+                self.jobs_cached_at.pop(k, None)
 
     # ------------------------------------------------------------------
     # Chunking Analysis
