@@ -119,13 +119,20 @@ register_routes(app, aws_manager, pipeline_manager)
 def cleanup_resources():
     """Cleanup resources on shutdown."""
     print("Cleaning up server resources...")
-    aws_manager.cleanup()
-    if pipeline_manager:
-        try:
-            if hasattr(pipeline_manager, 'stop_server'):
-                pipeline_manager.stop_server()
-        except Exception as e:
-            print(f"Warning: Error stopping local pipeline: {e}")
+    try:
+        current = globals().get("_server")
+        if current is not None and getattr(current, "is_running", False):
+            # stop() shuts down the HTTP listener, joins its thread, and
+            # stops background batch processing.
+            current.stop()
+        elif pipeline_manager:
+            try:
+                if hasattr(pipeline_manager, 'stop_server'):
+                    pipeline_manager.stop_server()
+            except Exception as e:
+                print(f"Warning: Error stopping local pipeline: {e}")
+    finally:
+        aws_manager.cleanup()
     print("Server cleanup complete")
 
 
@@ -134,34 +141,122 @@ atexit.register(cleanup_resources)
 
 # --- AIServer class (for start_server.py / non-blocking use) ---
 class AIServer:
+    """Non-blocking wrapper around the module-level Flask ``app``.
+
+    The development interface runs a controllable Werkzeug WSGI server in a
+    daemon thread so :meth:`stop` can actually release the listening socket.
+    Production keeps using process-managed WSGI (``wsgi:app`` under Gunicorn);
+    this class is never on that path.
+    """
+
     def __init__(self, host="127.0.0.1", port=5000):
         self.host = host
         self.port = port
         self.server_thread = None
         self.is_running = False
+        self._httpd = None
+        self._lock = threading.Lock()
 
     def start(self):
-        if self.is_running:
+        with self._lock:
+            if self.is_running:
+                return
+            if self.server_thread is not None and self.server_thread.is_alive():
+                self.is_running = True
+                return
+            host = assert_trusted_bind(self.host)
+            # Local import so importing this module (wsgi/gunicorn path and
+            # the stubbed package-export test) never requires the server.
+            from werkzeug.serving import make_server
+            try:
+                httpd = make_server(host, self.port, app, threaded=True)
+            except Exception:
+                self._httpd = None
+                self.server_thread = None
+                self.is_running = False
+                raise
+            self._httpd = httpd
+            self.server_thread = threading.Thread(target=self._serve, daemon=True)
+            self.server_thread.start()
+            # Only mark running after the socket is bound and the listener
+            # thread has started.
+            self.is_running = True
+        print(f"AI Pipeline Server starting on http://{host}:{self.port}")
+
+    def _serve(self):
+        httpd = self._httpd
+        if httpd is None:
             return
-        assert_trusted_bind(self.host)
-        self.is_running = True
-        self.server_thread = threading.Thread(target=self._run_server, daemon=True)
-        self.server_thread.start()
-        print(f"AI Pipeline Server starting on http://{self.host}:{self.port}")
+        try:
+            httpd.serve_forever()
+        except Exception as e:
+            print(f"Server error: {e}")
+            with self._lock:
+                self.is_running = False
+                try:
+                    httpd.server_close()
+                except Exception:
+                    pass
 
     def _run_server(self):
-        host = assert_trusted_bind(self.host)
+        """Blocking legacy entry point (kept for backwards compatibility).
+
+        New code should use :meth:`start`/:meth:`stop`. This runs the same
+        controllable server in the calling thread so the trusted-bind check
+        still applies to direct callers.
+        """
+        with self._lock:
+            if self.is_running:
+                return
+            host = assert_trusted_bind(self.host)
+            from werkzeug.serving import make_server
+            httpd = make_server(host, self.port, app, threaded=True)
+            self._httpd = httpd
+            self.is_running = True
         try:
-            app.run(host=host, port=self.port, debug=False, use_reloader=False, threaded=True)
+            httpd.serve_forever()
         except Exception as e:
             print(f"Server error: {e}")
         finally:
-            self.is_running = False
+            try:
+                httpd.server_close()
+            except Exception:
+                pass
+            with self._lock:
+                self._httpd = None
+                self.is_running = False
 
-    def stop(self):
-        self.is_running = False
+    def stop_background_processing(self):
+        """Stop only the local batch pipeline; leaves the HTTP listener alone."""
         if pipeline_manager:
-            pipeline_manager.stop_server()
+            try:
+                pipeline_manager.stop_server()
+            except Exception as e:
+                print(f"Warning: Error stopping local pipeline: {e}")
+
+    def stop(self, timeout=5):
+        with self._lock:
+            httpd = self._httpd
+            thread = self.server_thread
+        if httpd is not None:
+            try:
+                httpd.shutdown()
+            except Exception as e:
+                print(f"Warning: Error shutting down HTTP server: {e}")
+        if thread is not None and thread.is_alive():
+            thread.join(timeout=timeout)
+        if httpd is not None:
+            try:
+                httpd.server_close()
+            except Exception as e:
+                print(f"Warning: Error closing HTTP server: {e}")
+        self.stop_background_processing()
+        with self._lock:
+            self._httpd = None
+            self.server_thread = None
+            # Only mark stopped after the listener is shut down, joined,
+            # and its socket is closed.
+            self.is_running = False
         print("AI Pipeline Server stopped")
 
 
@@ -175,6 +270,9 @@ _server = None
 def start_server(host="127.0.0.1", port=5000):
     global _server
     if _server is None or _server.host != host or _server.port != port:
+        if _server is not None and getattr(_server, "is_running", False):
+            # Do not orphan the previous listener when the bind changes.
+            _server.stop()
         _server = AIServer(host, port)
     _server.start()
     return _server

@@ -193,17 +193,29 @@ class TestProductionBind(unittest.TestCase):
         from api.server import AIServer
 
         server = AIServer(host="0.0.0.0", port=5999)
-        with patch("api.server.app.run") as run:
+        with patch("werkzeug.serving.make_server") as make:
             with patch.dict(os.environ, {"AI_PIPELINE_ALLOW_PUBLIC_BIND": ""}, clear=False):
                 with self.assertRaises(RuntimeError):
-                    server._run_server()
-            run.assert_not_called()
+                    server.start()
+            make.assert_not_called()
+            self.assertFalse(server.is_running)
 
         loopback = AIServer(host="127.0.0.1", port=5999)
-        with patch("api.server.app.run") as run:
-            loopback._run_server()
-            run.assert_called_once()
-            self.assertEqual(run.call_args.kwargs["host"], "127.0.0.1")
+        with patch("werkzeug.serving.make_server") as make:
+            fake_httpd = Mock()
+            make.return_value = fake_httpd
+            with patch("threading.Thread") as mock_thread:
+                thread_instance = Mock()
+                thread_instance.is_alive.return_value = True
+                mock_thread.return_value = thread_instance
+                loopback.start()
+                make.assert_called_once()
+                self.assertEqual(make.call_args[0][0], "127.0.0.1")
+                self.assertTrue(loopback.is_running)
+                loopback.stop()
+                fake_httpd.shutdown.assert_called_once()
+                fake_httpd.server_close.assert_called_once()
+                self.assertFalse(loopback.is_running)
 
     def test_gunicorn_config_defaults_to_loopback(self):
         import importlib.util
