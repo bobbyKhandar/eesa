@@ -2,7 +2,7 @@
 *TODO: Add Definitions to this file after V1.0 is done
 */
 
-import { z } from "../zodGlobal";
+import { z } from "../zodGlobal.js";
 
 export const subjectZodSchema = z.object({
   subjectName: z.string(),

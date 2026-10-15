@@ -14,9 +14,9 @@ import {
   analysisReportZodSchema,
   analysisReportSchemaOptions,
   uniqueQuestionZod,
-} from "./schemas/index";
-import { FEATURE_SUBJECT_COLLECTION } from "./subjectCollections";
-import { uniqueQuestionIdentityIndex } from "./uniqueQuestionDedup";
+} from "./schemas/index.js";
+import { FEATURE_SUBJECT_COLLECTION } from "./subjectCollections.js";
+import { uniqueQuestionIdentityIndex } from "./uniqueQuestionDedup.js";
 
 // Subject Schema
 const subjectSchema = zodSchema(subjectDocumentZodSchema, subjectSchemaOptions);

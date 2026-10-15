@@ -15,16 +15,16 @@ import type { Model } from "mongoose";
 
 
 //schemas and types------------------------------------------------------------------------------------------
-import {examZodSchema,Exam} from "./schemas/examSchemaZod"
-import {questionsZodSchema,Question} from "./schemas/questionSchemaZod"
-import {subjectZodSchema,Subject} from "./schemas/subjectSchemaZod"
-import {userZodSchema,User} from "./schemas/userSchemaZod"
-import {examSubmissionDocumentZodSchema,ExamSubmissionDocument,examSubmissionSchemaOptions} from "./schemas/examSubmissionZod"
-import {promptZodSchema, Prompt} from "./schemas/promptSchemaZod"
-import {examQuestionZodSchema, ExamQuestion} from "./schemas/examQuestionSchemaZod"
-import {jobMetadataZodSchema, JobMetadata} from "./schemas/jobMetadataZod"
-import {uploadSessionZodSchema, UploadSession} from "./schemas/uploadSessionZod"
-import { LEGACY_SUBJECT_COLLECTION } from "./subjectCollections";
+import {examZodSchema,Exam} from "./schemas/examSchemaZod.js"
+import {questionsZodSchema,Question} from "./schemas/questionSchemaZod.js"
+import {subjectZodSchema,Subject} from "./schemas/subjectSchemaZod.js"
+import {userZodSchema,User} from "./schemas/userSchemaZod.js"
+import {examSubmissionDocumentZodSchema,ExamSubmissionDocument,examSubmissionSchemaOptions} from "./schemas/examSubmissionZod.js"
+import {promptZodSchema, Prompt} from "./schemas/promptSchemaZod.js"
+import {examQuestionZodSchema, ExamQuestion} from "./schemas/examQuestionSchemaZod.js"
+import {jobMetadataZodSchema, JobMetadata} from "./schemas/jobMetadataZod.js"
+import {uploadSessionZodSchema, UploadSession} from "./schemas/uploadSessionZod.js"
+import { LEGACY_SUBJECT_COLLECTION } from "./subjectCollections.js";
 
 
 //schema conversion(zod->mongoose) -----------------------------------------------------------------------------------------------

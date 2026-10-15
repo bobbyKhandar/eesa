@@ -1,9 +1,12 @@
 //barrel exporting all the types 
 
-export type { Exam } from "./examSchemaZod";
-export type { User } from "./userSchemaZod";
-export type { Subject as OldSubject } from "./subjectSchemaZod"; // Legacy subject type
-export type { Question } from "./questionSchemaZod";
+export type { Exam } from "./examSchemaZod.js";
+export type { User } from "./userSchemaZod.js";
+export type { Subject as OldSubject } from "./subjectSchemaZod.js"; // Legacy subject type
+export type { Question } from "./questionSchemaZod.js";
+export type { Prompt } from "./promptSchemaZod.js";
+
+export { promptZodSchema } from "./promptSchemaZod.js";
 
 // Export exam submission related types
 export type {
@@ -15,7 +18,7 @@ export type {
   SubmitExamRequest,
   SubmitExamResponse,
   GetUserExamsResponse
-} from "./examSubmissionZod";
+} from "./examSubmissionZod.js";
 
 // Export schemas for validation
 export {
@@ -27,7 +30,7 @@ export {
   submitExamRequestZodSchema,
   submitExamResponseZodSchema,
   getUserExamsResponseZodSchema
-} from "./examSubmissionZod";
+} from "./examSubmissionZod.js";
 
 // ========== NEW FEATURE SCHEMAS ==========
 
@@ -39,7 +42,7 @@ export type {
   Textbook,
   SubjectDocument,
   Subject,
-} from "./subjectZod";
+} from "./subjectZod.js";
 
 export {
   subjectTopicZodSchema,
@@ -49,7 +52,7 @@ export {
   subjectDocumentZodSchema,
   subjectZodSchema,
   subjectSchemaOptions,
-} from "./subjectZod";
+} from "./subjectZod.js";
 
 // Syllabus Management
 export type {
@@ -58,7 +61,7 @@ export type {
   FileAttachment,
   SyllabusDocument,
   Syllabus,
-} from "./syllabusZod";
+} from "./syllabusZod.js";
 
 export {
   syllabusTopicZodSchema,
@@ -67,21 +70,21 @@ export {
   syllabusDocumentZodSchema,
   syllabusZodSchema,
   syllabusSchemaOptions,
-} from "./syllabusZod";
+} from "./syllabusZod.js";
 
 // Past Papers
 export type {
   PastPaperQuestion,
   PastPaperDocument,
   PastPaper,
-} from "./pastPaperZod";
+} from "./pastPaperZod.js";
 
 export {
   pastPaperQuestionZodSchema,
   pastPaperDocumentZodSchema,
   pastPaperZodSchema,
   pastPaperSchemaOptions,
-} from "./pastPaperZod";
+} from "./pastPaperZod.js";
 
 // Exam Analysis (AI-powered)
 export type {
@@ -93,7 +96,7 @@ export type {
   ExamAnalysis,
   CreateExamAnalysisRequest,
   UpdateExamAnalysisRequest,
-} from "./examAnalysisZod";
+} from "./examAnalysisZod.js";
 
 export {
   analyzedQuestionZodSchema,
@@ -105,28 +108,28 @@ export {
   examAnalysisSchemaOptions,
   createExamAnalysisRequestZodSchema,
   updateExamAnalysisRequestZodSchema,
-} from "./examAnalysisZod";
+} from "./examAnalysisZod.js";
 
 // Analysis Reports (Published Question Banks)
 export type {
   AnalysisReport,
   AnalysisReportInput,
   AnalysisReportWithId,
-} from "./analysisReportZod";
+} from "./analysisReportZod.js";
 
 export {
   analysisReportZodSchema,
   analysisReportWithIdZodSchema,
   analysisReportSchemaOptions,
-} from "./analysisReportZod";
+} from "./analysisReportZod.js";
 
 // Unique Questions (Deduplicated Question Bank)
 export type {
   UniqueQuestion,
   UniqueQuestionInsert,
-} from "./uniqueQuestionZod";
+} from "./uniqueQuestionZod.js";
 
 export {
   uniqueQuestionZod,
   uniqueQuestionInsertZod,
-} from "./uniqueQuestionZod";
+} from "./uniqueQuestionZod.js";

@@ -5,11 +5,11 @@
 
 import { Types } from "mongoose";
 import type { Model } from "mongoose";
-import { connect } from "../connect";
-import { getUploadSessionModel } from "../mongooseSchemas";
-import { uploadSessionZodSchema } from "../schemas/uploadSessionZod";
-import type { UploadSession } from "../schemas/uploadSessionZod";
-import { rethrowReadFailure } from "./readErrors";
+import { connect } from "../connect.js";
+import { getUploadSessionModel } from "../mongooseSchemas.js";
+import { uploadSessionZodSchema } from "../schemas/uploadSessionZod.js";
+import type { UploadSession } from "../schemas/uploadSessionZod.js";
+import { rethrowReadFailure } from "./readErrors.js";
 
 export class UploadSessionRepository {
   private model: Model<UploadSession>;

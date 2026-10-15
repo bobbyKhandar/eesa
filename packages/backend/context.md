@@ -2,10 +2,10 @@
 
 ## Build & Module System
 - **Module type:** ESM (`"type": "module"` in package.json). Use ES import/export syntax.
-- **Build:** TypeScript compiled to `dist/` via `npm run build` (runs `tsc`). Target ES2020, lib ES2021, module ESNext, moduleResolution Bundler. `src/scripts`, `src/database/scripts`, and the example `src/services/examOcrService.ts` are excluded: the scripts run through `tsx`, and the example imports a Gemini module that is not in the tree. `dist/` is not tracked in git, so the frontend `prebuild` and `predev` steps run `scripts/ensure-backend-build.mjs` — it compiles this package whenever `dist/` is missing, incomplete, or older than `src/`.
+- **Build:** TypeScript compiled to `dist/` via `npm run build` (runs `tsc`). Target ES2020, lib ES2021, module ESNext, moduleResolution Bundler. `src/database/scripts` and the example `src/services/examOcrService.ts` are excluded (the maintenance scripts run through `tsx`; the example imports a Gemini module that is not in the tree). `src/scripts` is compiled so the operational importers have an emitted plain-node entry point (`node dist/scripts/importBedrockQuestions.js`). Because the package is ESM and `dist/` is loaded by plain Node, every relative import in emitted code carries an explicit `.js` extension: Bundler resolution accepts extensionless specifiers and preserves them in the output, where Node throws `ERR_MODULE_NOT_FOUND`. `dist/` is not tracked in git, so the frontend `prebuild` and `predev` steps run `scripts/ensure-backend-build.mjs` — it compiles this package whenever `dist/` is missing, incomplete, or older than `src/`.
 - **Output:** `dist/` mirrors `src/` structure. Frontend API routes import from `@/backend/dist/...`.
 - **Build order:** the repository-root `npm run build` (this package, then the frontend), the frontend `prebuild`, and the frontend `predev` all compile this package before Next.js starts, because API routes cannot resolve `@/backend/dist/...` without that output.
-- **Scripts:** `npm run build` (tsc), `npm run generate-data` (seed script), `npm run build:scripts` (compile scripts separately).
+- **Scripts:** `npm run build` (tsc, emits `dist/` including `dist/scripts/`), `npm run generate-data` (seed script via `tsx`).
 
 ## Zod Schemas (`src/database/schemas/`)
 - **All 17 schema files** must import `z` from `../zodGlobal.ts`, NOT from `"zod"` directly. `zodGlobal.ts` calls `extendZod(z)` once for `@zodyac/zod-mongoose` compatibility.

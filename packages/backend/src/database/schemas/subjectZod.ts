@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { FEATURE_SUBJECT_COLLECTION } from "../subjectCollections";
+import { FEATURE_SUBJECT_COLLECTION } from "../subjectCollections.js";
 
 // Subject topic schema for syllabus breakdown
 export const subjectTopicZodSchema = z.object({

@@ -4,7 +4,7 @@ import {
   separateMixedSubjectDocuments,
   type SubjectDocumentStore,
   type SubjectSeparationResult,
-} from "./subjectCollections";
+} from "./subjectCollections.js";
 
 interface SubjectCollectionHandle {
   find(filter: Record<string, unknown>): { toArray(): Promise<Record<string, unknown>[]> };
