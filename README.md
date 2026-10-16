@@ -2,6 +2,25 @@
 
 A modular monolith for end-to-end exam processing: upload scanned question papers, run OCR + AI enrichment, create and manage exams, collect student submissions, and generate analysis reports.
 
+## Quick Start
+
+Install **Node 22** (bundled **npm >=10**), **Python >=3.10** with pip/venv, and **Docker Compose**. With nvm, run `nvm install && nvm use` in this checkout. Debian's npm 9 cannot resolve the Tailwind dependency graph (`Invalid comparator: insiders`).
+
+```bash
+npm run setup                  # npm install, Python .venv + dev deps, missing .env files
+# Configure packages/frontend/.env and packages/ai-pipeline/.env as described below.
+docker compose up -d           # local MongoDB :27017 and Redis :6379
+npm run dev                    # Next.js :3000 + Flask :5000; builds the backend first
+```
+
+Setup preserves existing `.env` files. Set your Clerk development keys in `packages/frontend/.env` for login, and replace `AI_PIPELINE_TOKEN` with the same random value in the frontend and AI pipeline files. Templates include local MongoDB defaults; AWS/S3 and Gemini features require your own credentials and bucket. No credentials are included. Existing frontend `.env.local` values take precedence over `.env`.
+
+On Debian/Ubuntu, install `python3-venv` if venv creation fails. On Windows, use **WSL** (recommended) or **Git Bash** with Node/Python on PATH and Docker Desktop running. Run all setup commands in the same environment. The launcher supports both Unix and Windows venv paths.
+
+`npm run dev:frontend` and `npm run dev:ai` start either component separately. The backend is a shared library with no separate dev server. Stop apps with Ctrl+C; stop containers with `docker compose down` (data volumes persist).
+
+Optional local EasyOCR and clustering engines are larger installs: `packages/ai-pipeline/.venv/bin/python -m pip install -e "./packages/ai-pipeline[local,clustering]"`. The default setup starts Flask and installs the image/PDF/Redis helpers and tests; local OCR needs the `local` extra, and clustering needs the `clustering` extra.
+
 ---
 
 ## Features
@@ -25,11 +44,11 @@ A modular monolith for end-to-end exam processing: upload scanned question paper
 | Frontend | Next.js 15 (App Router), TypeScript |
 | UI | shadcn/ui, Radix UI, Tailwind CSS v3, Lucide icons, Recharts |
 | Auth | Clerk (Next.js SDK) |
-| Database | MongoDB Atlas |
+| Database | Local MongoDB (Docker Compose) or MongoDB Atlas |
 | AI/OCR | AWS Textract, AWS Bedrock (Gemma 3 27B), Google Gemini, EasyOCR |
 | Vector Storage | LanceDB (FAISS + HDBSCAN clustering) |
 | Pipeline | Python 3.10+, Flask, flask-cors, EasyOCR, OpenCV, PyMuPDF, Pillow, Redis, boto3 |
-| DevOps | Monorepo (npm workspaces), Embedded Conda env, VSCode launch configs |
+| DevOps | npm workspaces, Python venv, Docker Compose, VSCode launch configs |
 
 ---
 
@@ -45,10 +64,10 @@ eesa/
 │   └── ai-pipeline/                # Python Flask :5000
 ├── data/                           # Runtime outputs, uploads, cache
 ├── tests/
-│   ├── node/                       # Node.js test suites (placeholder)
+│   ├── node/                       # Node.js regression tests
 │   └── python/                     # Python test suites
 ├── .vscode/                        # Debug configs (2 launch profiles)
-├── .conda/                         # Embedded Conda Python 3.11 environment
+├── docker-compose.yml              # Local MongoDB + Redis
 └── SCHEMAS_SUMMARY.md              # Database schema documentation
 ```
 
@@ -206,8 +225,8 @@ packages/ai-pipeline/
 
 ### Prerequisites
 
-- **Node.js** >= 18 + npm
-- **Python** >= 3.10 + pip (or use embedded `.conda/`)
+- **Node.js** 22 (see `.nvmrc` / `.node-version`) + **npm >=10**
+- **Python** >= 3.10 + pip and venv
 - **MongoDB Atlas** account (or local MongoDB)
 - **AWS** account (for Textract + Bedrock features)
 - **Clerk** account (for authentication)
@@ -218,68 +237,30 @@ packages/ai-pipeline/
 git clone https://github.com/bobbyKhandar/eesa.git
 cd eesa
 
-# Install all Node.js workspace packages (backend + frontend)
-npm install
-
-# AI Pipeline production WSGI dependencies (Flask, boto3, gunicorn).
-# Local OCR and clustering: pip install -e ".[local,clustering]"
-cd packages/ai-pipeline && pip install -r requirements.txt && cd ../..
+# Install Node workspaces and Python dev dependencies, create missing .env files
+npm run setup
 ```
 
 ### 2. Configure Environment Variables
 
-Each package has its own `.env` file:
+The tracked `.env.example` files list runtime settings and optional CLI settings, including limits and legacy aliases. Setup copies them to `.env` only when missing:
 
-**`packages/backend/.env`**
-| Variable | Description |
-|----------|-------------|
-| `mongodb_url` | MongoDB Atlas connection string |
-| `gemini_api_key` | Google Gemini API key |
-| `TEST_EMAIL` | Test user email for development |
+- Root `.env`: backend tools run from the root directory.
+- `packages/backend/.env`: backend tools run from that package directory.
+- `packages/frontend/.env`: Clerk, shared AI pipeline token/URL, MongoDB, AWS and Gemini settings for Next.js and the backend services it imports. An existing `.env.local` takes precedence.
+- `packages/ai-pipeline/.env`: Flask token/access controls, AWS, processing limits and optional clustering storage.
 
-**`packages/frontend/.env.local`**
-| Variable | Description |
-|----------|-------------|
-| `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` | Clerk publishable key |
-| `CLERK_SECRET_KEY` | Clerk secret key |
-| `AI_PIPELINE_URL` | AI Pipeline server URL (`http://127.0.0.1:5000`) |
-| `AI_PIPELINE_TOKEN` | Shared secret sent as `Authorization: Bearer` to every AI pipeline route except `/health`. Set the same value in `packages/ai-pipeline/.env`. |
-| `QUESTION_PAPER_MAX_FILE_BYTES` | Max bytes for one question-paper upload (default `26214400`, 25 MB). A non-positive or non-integer value keeps the default. |
-| `QUESTION_PAPER_MAX_FILE_COUNT` | Max files in one question-paper batch (default `20`). |
-| `QUESTION_PAPER_MAX_REQUEST_BYTES` | Max bytes for the whole question-paper request (default `209715200`, 200 MB). |
+Use `mongodb://127.0.0.1:27017/eesa` with Docker Compose, or your own Atlas URI. Keep `mongodb_url` consistent in the environments that run database code. Exported variables take precedence over dotenv files.
 
-**`packages/ai-pipeline/.env`**
-| Variable | Description |
-|----------|-------------|
-| `APPLICATION_EMAIL` | Sender email for notifications |
-| `APPLICATION_EMAIL_PASSWORD` | Email app password |
-| `APPLICATION_ADMIN` | Admin email address |
-| `aws_location` | Legacy alias for the AWS region (e.g. `ap-south-1`). Prefer exporting standard `AWS_REGION` (canonical, takes precedence); `AWS_DEFAULT_REGION` also works. Precedence: `AWS_REGION` > `AWS_DEFAULT_REGION` > `aws_location` > default `ap-south-1`. `packages/ai-pipeline/.env` is loaded at startup without overriding real environment variables, and the resolved region is used for every Textract/Bedrock/S3 client. Startup logs the region and its source, or that the default is in effect. |
-| `AI_PIPELINE_TOKEN` | Shared secret required on every route except `GET /health`. Must match the frontend value. |
-| `AI_PIPELINE_BIND` | Gunicorn bind address (default `127.0.0.1:5000`). Public binds need `AI_PIPELINE_ALLOW_PUBLIC_BIND=1`. |
-| `AI_PIPELINE_TRUSTED_HOSTS` | Comma-separated client IPs allowed to call sensitive routes, in addition to loopback. |
-| `AI_PIPELINE_ALLOW_REMOTE` | Set to `1` to skip the client-address check. The token is still required. |
-| `QUESTION_PAPER_MAX_FILE_BYTES` | Max bytes for one file on `POST /upload/question-papers` (default `26214400`, 25 MB). Same names as the frontend. |
-| `QUESTION_PAPER_MAX_FILE_COUNT` | Max files in that upload (default `20`). |
-| `QUESTION_PAPER_MAX_REQUEST_BYTES` | Max request bytes. Also Flask `MAX_CONTENT_LENGTH` for every route (default `209715200`, 200 MB). |
-| `DEFAULT_DPI` | Local OCR render resolution (default `400`). The pixel cap below is measured at this DPI. A blank or non-positive value keeps the default. |
-| `MAX_PAGES_PER_PDF` | Local OCR refuses a PDF with more pages than this before rendering (default `1000`). |
-| `MAX_PDF_PAGE_PIXELS` | Local OCR refuses a PDF whose rendered page would exceed this many pixels (width × height, default `50000000`). |
-
-The Eesa database is `test`. Set the server-side `mongodb_url` to `mongodb+srv://bobby:<URL_ENCODED_PASSWORD>@cluster0.yuld0s6.mongodb.net/test?appName=Cluster0`; URL-encode the database-user password and keep credentials in ignored environment files. Use the same URI in the root `.env` (for root-run scripts) and `packages/backend/.env` (for the shared connection helper). An inherited `mongodb_url` takes precedence over dotenv files, so update any deployment environment that supplies it and restart the app. A local database migration does not verify a production switch; verify the deployed environment and running app separately.
+AWS region precedence is `AWS_REGION` > `AWS_DEFAULT_REGION` > legacy `aws_location` > `ap-south-1`. Flask loads its package `.env` before creating clients. Set the same `AI_PIPELINE_TOKEN` in frontend and Flask. AWS credentials may come from environment variables, your AWS profile or an IAM role. `AWS_EC2_METADATA_DISABLED=true` avoids instance metadata probes on local PCs; unset it when using an EC2 role.
 
 ### 3. Run in Development
 
-Open **two terminals**:
+From the repository root:
 
 ```bash
-# Terminal 1 — Frontend (port 3000)
-cd packages/frontend
+docker compose up -d
 npm run dev
-
-# Terminal 2 — AI Pipeline (port 5000)
-cd packages/ai-pipeline
-python src/server.py
 ```
 
 The frontend `dev` (and `build`) script runs `scripts/ensure-backend-build.mjs` first. API routes import `@/backend/dist/...` and git does not track that output, so a clean checkout has no backend modules: the script compiles `packages/backend` whenever `dist/` is missing, incomplete, or older than `src/`, and skips the compile when the output is already current. Restart `npm run dev` (or run `npm run build` in `packages/backend`) after changing backend sources that a running dev server already compiled.
@@ -357,7 +338,9 @@ All routes registered on the canonical server at `src/api/server.py`. See `packa
 
 | Script | Description |
 |--------|-------------|
-| `npm run dev` | Start the Next.js dev server (compiles the backend first) |
+| `npm run setup` | Check tools, install Node/Python dependencies, create missing .env files |
+| `npm run dev` | Start Next.js and Flask concurrently (compiles backend first) |
+| `npm run dev:frontend` / `npm run dev:ai` | Start just Next.js / Flask |
 
 ### Backend (`packages/backend/package.json`)
 
@@ -384,7 +367,20 @@ All routes registered on the canonical server at `src/api/server.py`. See `packa
 |----------|-----------|----------|
 | `packages/ai-pipeline/tests/` | Python unittest | server, OCR, pipeline, AWS, integration, and orchestrator import tests |
 | `tests/python/` | Python unittest | 2 test files (experiment, image preprocessing) |
-| `tests/node/` | — | Empty (placeholder for future Node.js tests) |
+| `tests/node/` | Node test runner (Node 22) | Backend, frontend and setup regressions |
+
+Node test import resolution follows the checkout location (including paths outside `/workspace`). After setup, run the Node suites and Python tests:
+
+```bash
+npm test
+npm run test:node
+npm run test:ai
+packages/ai-pipeline/.venv/bin/python -m pytest tests/python
+cd packages/ai-pipeline
+.venv/bin/python -m unittest discover -s tests
+```
+
+Windows Git Bash uses `.venv/Scripts/python.exe`. Legacy tests for removed `src.image_processor` / `src.ocr_engine` APIs skip explicitly; current local helpers have separate regression suites. Live integration tests need a running server and AWS credentials and may skip without them.
 
 ---
 

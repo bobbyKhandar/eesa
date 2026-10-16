@@ -59,8 +59,12 @@ describe("backend build ordering", () => {
   });
 
   it("starts the frontend dev server from the root", () => {
-    const dev = read("package.json").scripts.dev;
-    assert.equal(dev, "npm run dev --prefix packages/frontend");
+    const scripts = read("package.json").scripts;
+    assert.equal(scripts.dev, "node scripts/dev.mjs");
+    const launcher = fs.readFileSync(path.join(root, "scripts/dev.mjs"), "utf8");
+    assert.match(launcher, /dev:frontend/);
+    assert.match(launcher, /scripts\/dev-ai\.mjs/);
+    assert.equal(scripts["dev:frontend"], "npm run dev --prefix packages/frontend");
   });
 
   it("gates the frontend production build on the backend compile", () => {

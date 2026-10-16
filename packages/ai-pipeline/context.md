@@ -2,7 +2,7 @@
 
 ## Framework & Setup
 - **Framework:** Flask (Python 3.10+). No blueprints — routes are registered directly on the `app` object.
-- **Dependencies:** Declared in `pyproject.toml` (`requires-python >=3.10`) and mirrored in `requirements.txt`. Runtime: `flask`, `flask-cors`, `werkzeug`, `boto3`, `botocore`, `gunicorn`, `numpy`. Optional `local`: `opencv-python`, `easyocr`, `torch`, `PyMuPDF`, `Pillow`, `redis`. Optional `clustering`: `lancedb`, `hdbscan`, `pyarrow`, `scikit-learn`. Optional `dev`: `pytest`, `pytest-cov`, `requests`.
+- **Dependencies:** Declared in `pyproject.toml` (`requires-python >=3.10`) and mirrored in `requirements.txt`. Runtime: `flask`, `flask-cors`, `werkzeug`, `boto3`, `botocore`, `gunicorn`, `numpy`, `redis`, `Pillow`, `opencv-python-headless`, `PyMuPDF`, `openpyxl`. Optional `local`: `easyocr`, `torch`. Optional `clustering`: `lancedb`, `hdbscan`, `pyarrow`, `scikit-learn`. Optional `dev`: `pytest`, `pytest-cov`, `requests`; `requirements-dev.txt` includes the runtime requirements plus these test tools. Root `npm run setup` installs it into `.venv`; `npm run dev:ai` uses that interpreter.
 - **CORS:** `flask-cors` — all servers enable `CORS(app)`. CORS does not authenticate callers.
 - **Service auth:** Every route except `GET /health` requires `Authorization: Bearer $AI_PIPELINE_TOKEN` and a loopback (or `AI_PIPELINE_TRUSTED_HOSTS`) address. User and role checks stay in the Next.js helpers (`jobContentAccessDecision`, upload-session ownership, `requireAdminCaller`). The production listener binds to `127.0.0.1` unless `AI_PIPELINE_ALLOW_PUBLIC_BIND=1`.
 - **Question-paper upload limits:** `POST /upload/question-papers` reads `QUESTION_PAPER_MAX_FILE_BYTES` (default 25 MB), `QUESTION_PAPER_MAX_FILE_COUNT` (default 20), and `QUESTION_PAPER_MAX_REQUEST_BYTES` (default 200 MB). `register_routes` sets Flask `MAX_CONTENT_LENGTH` to that request cap, so every route rejects a larger body with 413. The upload route returns 413 for an oversized file or body and 400 for too many files before it stores anything. Accepted PDFs are streamed to S3 with `upload_fileobj`. A non-PDF in an otherwise valid batch is still reported as an error and is not stored.
@@ -104,6 +104,7 @@
 - **Locations:**
   - `tests/` — unittest modules (server, OCR engine, PDF handler, pipeline manager, Redis, integration, orchestrator helper imports)
   - `src/test_*.py` — 4 inline test files (Textract, parsing, enrichment, organization)
+- Legacy tests for removed `src.image_processor` / `src.ocr_engine` APIs skip at module import; current local helper regressions remain active. Region tests use temporary dotenv files.
 - **Run tests:** `python -m unittest discover -s tests` or `python tests/run_tests.py`.
 - **Test pattern:** `sys.path.insert(0, ..)` then `from src.<module> import <Class>`.
 - **Real AWS tests:** `test_real_integration.py` / `test_real_integration_clean.py` — require AWS credentials.

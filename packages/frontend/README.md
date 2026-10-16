@@ -14,46 +14,47 @@ An intelligent exam creation and evaluation platform powered by AI.
 
 ### Prerequisites
 
-- Node.js 18+ 
-- npm or yarn
+- Node.js 22+
+- npm >=10
 
 ### Installation
 
 1. Clone the repository or extract the ZIP file
 2. Install dependencies:
 
-\`\`\`bash
-npm install
-\`\`\`
+```bash
+npm run setup  # from the repository root
+```
 
 3. Copy the environment file and configure your API keys:
 
-\`\`\`bash
-cp .env.example .env.local
-\`\`\`
+```bash
+cp .env.example .env  # setup already copies this when missing
+```
 
-4. Add your API keys to `.env.local`:
-   - `OPENAI_API_KEY` - Required for AI evaluation features
-   - Other API keys are optional based on your needs
+4. Add your API keys to `.env`:
+   - Clerk publishable/secret keys for login
+   - `AI_PIPELINE_TOKEN` matching the pipeline `.env` and `mongodb_url`
+   - Gemini/AWS credentials for the features you use
 
 5. Run the development server:
 
-\`\`\`bash
+```bash
 npm run dev
-\`\`\`
+```
 
 6. Open [http://localhost:3000](http://localhost:3000) in your browser
 
 ### Build for Production
 
-\`\`\`bash
+```bash
 npm run build
 npm start
-\`\`\`
+```
 
 ## Project Structure
 
-\`\`\`
+```
 ├── app/                    # Next.js App Router pages
 │   ├── dashboard/         # Dashboard pages
 │   ├── exams/            # Exam management
@@ -65,7 +66,7 @@ npm start
 │   └── ui/              # UI components
 ├── lib/                 # Utility functions
 └── public/              # Static assets
-\`\`\`
+```
 
 ## Technologies Used
 
@@ -78,7 +79,7 @@ npm start
 
 ## Environment Variables
 
-See `.env.example` for all available environment variables. Only `OPENAI_API_KEY` is required for basic functionality.
+See `.env.example` for all available environment variables. Clerk handles authentication; Gemini handles AI evaluation. Backend services run inside Next.js, so configure their variables here too. Existing `.env.local` values override `.env`. Root `npm run dev` starts both Next.js and Flask; `npm run dev:frontend` starts only Next.js.
 
 ## License
 

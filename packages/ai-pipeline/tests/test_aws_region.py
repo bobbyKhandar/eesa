@@ -11,6 +11,7 @@ import io
 import os
 import sys
 import unittest
+import tempfile
 from contextlib import redirect_stdout
 from pathlib import Path
 from unittest.mock import patch
@@ -34,8 +35,23 @@ def _clear_region_env():
         os.environ.pop(key, None)
 
 
-class TestResolveAwsRegion(unittest.TestCase):
+class IsolatedRegionTest(unittest.TestCase):
     def setUp(self):
+        # Never read or write the developer's real .env, even when it sets AWS_REGION.
+        self._environment = patch.dict(os.environ)
+        self._environment.start()
+        self.addCleanup(self._environment.stop)
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        self.dotenv = Path(directory.name) / ".env"
+        self._dotenv_path = patch.object(aws_region, "_pipeline_env_path", return_value=self.dotenv)
+        self._dotenv_path.start()
+        self.addCleanup(self._dotenv_path.stop)
+
+
+class TestResolveAwsRegion(IsolatedRegionTest):
+    def setUp(self):
+        super().setUp()
         self._saved = {k: os.environ.get(k) for k in REGION_KEYS}
         _clear_region_env()
         aws_region._loaded_dotenv_paths.clear()
@@ -76,31 +92,13 @@ class TestResolveAwsRegion(unittest.TestCase):
         self.assertEqual(get_aws_region(), DEFAULT_AWS_REGION)
 
     def test_dotenv_is_loaded_without_overriding_environment(self):
-        dotenv = Path(__file__).resolve().parents[1] / ".env"
-        created = False
-        if not dotenv.is_file():
-            dotenv.write_text("aws_location=eu-west-1\n", encoding="utf-8")
-            created = True
-            self.addCleanup(lambda: dotenv.unlink(missing_ok=True))
-        else:
-            self.skipTest("packages/ai-pipeline/.env already exists; manual check only")
-        try:
-            with patch.dict(os.environ, {"aws_location": "us-west-2"}, clear=False):
-                os.environ.pop("AWS_REGION", None)
-                os.environ.pop("AWS_DEFAULT_REGION", None)
-                region, source = resolve_aws_region()
-                # Real environment wins over the dotenv file.
-                self.assertEqual((region, source), ("us-west-2", "aws_location"))
-            _clear_region_env()
-            aws_region._loaded_dotenv_paths.clear()
+        self.dotenv.write_text("aws_location=eu-west-1\n", encoding="utf-8")
+        with patch.dict(os.environ, {"aws_location": "us-west-2"}):
             region, source = resolve_aws_region()
-            self.assertEqual((region, source), ("eu-west-1", "aws_location"))
-        finally:
-            _clear_region_env()
-            aws_region._loaded_dotenv_paths.clear()
-            if created:
-                # Re-clear so a stale dotenv value cannot leak into other tests.
-                pass
+            self.assertEqual((region, source), ("us-west-2", "aws_location"))
+        _clear_region_env()
+        aws_region._loaded_dotenv_paths.clear()
+        self.assertEqual(resolve_aws_region(), ("eu-west-1", "aws_location"))
 
     def test_load_pipeline_dotenv_never_overrides(self):
         import tempfile
@@ -118,8 +116,9 @@ class TestResolveAwsRegion(unittest.TestCase):
         os.environ.pop("NEW_TEST_KEY_166", None)
 
 
-class TestEnsureAwsRegionConfigured(unittest.TestCase):
+class TestEnsureAwsRegionConfigured(IsolatedRegionTest):
     def setUp(self):
+        super().setUp()
         self._saved = {k: os.environ.get(k) for k in REGION_KEYS}
         _clear_region_env()
         aws_region._loaded_dotenv_paths.clear()
@@ -165,8 +164,9 @@ class TestEnsureAwsRegionConfigured(unittest.TestCase):
             self.assertEqual(os.environ["AWS_REGION"], "us-east-1")
 
 
-class TestPipelineClientsUseResolvedRegion(unittest.TestCase):
+class TestPipelineClientsUseResolvedRegion(IsolatedRegionTest):
     def setUp(self):
+        super().setUp()
         self._saved = {k: os.environ.get(k) for k in REGION_KEYS}
         _clear_region_env()
         for module in (
@@ -242,7 +242,7 @@ class TestPipelineClientsUseResolvedRegion(unittest.TestCase):
             pass
 
 
-class TestUtilityScriptsUseSharedResolver(unittest.TestCase):
+class TestUtilityScriptsUseSharedResolver(IsolatedRegionTest):
     """The standalone extraction utilities must adopt the shared resolver.
 
     They build Textract/Bedrock clients too, so they must honour the same
@@ -257,7 +257,9 @@ class TestUtilityScriptsUseSharedResolver(unittest.TestCase):
 
     def test_compare_script_uses_shared_resolver(self):
         try:
-            import compare_pdf_textract_vs_bedrock_tokens as compare
+            # This CLI also has a legacy dotenv bootstrap. Do not read real files.
+            with patch.object(Path, "is_file", return_value=False):
+                import compare_pdf_textract_vs_bedrock_tokens as compare
         except ImportError as exc:  # pragma: no cover - optional deps
             self.skipTest("compare script dependencies unavailable: %s" % exc)
         self.assertIs(compare.get_aws_region, aws_region.get_aws_region)

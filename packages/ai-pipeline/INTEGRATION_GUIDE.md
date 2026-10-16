@@ -321,10 +321,10 @@ cd ai_pipeline/tests
 python run_tests.py
 
 # Run specific module
-python run_tests.py test_ocr_engine
+python -m unittest discover -s tests -p "test_local_*.py"
 
 # Run with verbose output
-python -m unittest test_ocr_engine -v
+python -m unittest discover -s tests -p "test_local_*.py" -v
 ```
 
 ### Test Coverage

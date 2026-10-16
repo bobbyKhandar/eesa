@@ -98,3 +98,7 @@ __pycache__/
 !packages/backend/package.json
 !packages/frontend/package.json
 !packages/ai-pipeline/requirements.txt
+!**/.env.example
+!packages/ai-pipeline/requirements-dev.txt
+**/.venv/
+.pytest_cache/

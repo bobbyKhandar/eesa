@@ -20,11 +20,16 @@ CORE = {
     "botocore",
     "gunicorn",
     "numpy",
+    "redis",
+    "pillow",
+    "opencv-python-headless",
+    "pymupdf",
+    "openpyxl",
 }
 
 # Heavy or test-only imports. They must not be required to import wsgi.
 OPTIONAL = {
-    "local": {"opencv-python", "easyocr", "torch", "pymupdf", "pillow", "redis"},
+    "local": {"easyocr", "torch"},
     "clustering": {"lancedb", "pyarrow", "hdbscan", "scikit-learn"},
     "dev": {"pytest", "pytest-cov", "requests"},
 }
@@ -94,6 +99,13 @@ class TestPackageMetadata(unittest.TestCase):
         for group, expected in OPTIONAL.items():
             got = {_norm(dep) for dep in extras[group]}
             self.assertTrue(expected <= got, (group, sorted(expected - got)))
+
+    def test_dev_requirements_include_runtime_and_test_dependencies(self):
+        lines = (ROOT / "requirements-dev.txt").read_text(encoding="utf-8").splitlines()
+        self.assertIn("-r requirements.txt", lines)
+        names = {_norm(line) for line in lines if line and not line.startswith(("#", "-r"))}
+        self.assertTrue(OPTIONAL["dev"] <= names)
+        self.assertTrue(names.isdisjoint(CORE))
 
     def test_requirements_txt_matches_runtime_dependencies(self):
         project = _load_toml(PYPROJECT)["project"]

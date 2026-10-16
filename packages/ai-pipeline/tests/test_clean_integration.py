@@ -4,6 +4,11 @@ Tests the interaction between all clean components: PipelineManager, OCREngine, 
 """
 
 import unittest
+
+raise unittest.SkipTest(
+    "Legacy tests target removed src.image_processor/src.ocr_engine APIs; "
+    "current local pipeline coverage is in test_local_* and test_pdf_incremental_ocr."
+)
 import json
 import time
 import threading

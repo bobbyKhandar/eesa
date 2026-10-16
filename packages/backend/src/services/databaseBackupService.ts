@@ -1,4 +1,4 @@
-import { S3Client, PutObjectCommand, GetObjectCommand, ListObjectsV2Command, DeleteObjectsCommand, _Object, type ListObjectsV2CommandOutput } from "@aws-sdk/client-s3";
+import { S3Client, PutObjectCommand, GetObjectCommand, ListObjectsV2Command, DeleteObjectsCommand, type _Object, type ListObjectsV2CommandOutput } from "@aws-sdk/client-s3";
 import mongoose from "mongoose";
 import type { Model } from "mongoose";
 import { connect } from "../database/connect";
