@@ -3,6 +3,9 @@
 ## Project Setup
 - This is **EESA (Enterprise Exam Scoring Architecture)** — a **modular monolith** with 3 packages under `packages/`: `backend/`, `frontend/`, `ai-pipeline/`. All code lives in a single deployable unit.
 
+## Local Development
+- Node 22 (npm >=10), Python >=3.10. Run `npm run setup`, configure the package `.env` files, `docker compose up -d`, then `npm run dev`. Root dev starts Next.js and Flask using the pipeline venv; the backend has no standalone server. Never add a root `build` script (Vercel uses the frontend build).
+
 ## Stack
 - **Frontend:** Next.js 15 (App Router), TypeScript, Tailwind CSS v3, shadcn/ui, Clerk auth
 - **Backend:** Node.js, TypeScript (ESM), Mongoose 8, Zod 3, `@zodyac/zod-mongoose`

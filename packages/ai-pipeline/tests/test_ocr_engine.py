@@ -4,6 +4,11 @@ Tests initialization, text processing, confidence scoring, and error handling
 """
 
 import unittest
+
+raise unittest.SkipTest(
+    "Legacy tests target removed src.image_processor/src.ocr_engine APIs; "
+    "current local pipeline coverage is in test_local_* and test_pdf_incremental_ocr."
+)
 import numpy as np
 from unittest.mock import Mock, patch, MagicMock
 import sys

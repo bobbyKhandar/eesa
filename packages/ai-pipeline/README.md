@@ -160,7 +160,9 @@ brew install python redis
 
 ### Python Dependencies
 
-Runtime dependencies and the Python floor live in `pyproject.toml`. `requirements.txt` is the same production set: Flask, flask-cors, Werkzeug, boto3, botocore, Gunicorn, and numpy. That set is what `wsgi:app` needs. OpenCV, EasyOCR, PyTorch, PyMuPDF, Pillow, and Redis are the `local` extra. LanceDB, PyArrow, HDBSCAN, and scikit-learn are the `clustering` extra. Installing the `redis` package does not make `wsgi:app` connect to Redis. Local routes return 503 when Redis is unreachable or the OCR stack cannot start; `/health` and the AWS routes still load.
+For full repo setup, run `npm run setup` at the root, configure the copied `.env` files, then `docker compose up -d` and `npm run dev`. `npm run dev:ai` starts only Flask using the package venv.
+
+Runtime dependencies and the Python floor live in `pyproject.toml`. `requirements.txt` mirrors the runtime dependencies: Flask, flask-cors, Werkzeug, boto3, botocore, Gunicorn, numpy, Redis, Pillow, headless OpenCV, PyMuPDF and openpyxl. EasyOCR and PyTorch are the optional `local` extra. LanceDB, PyArrow, HDBSCAN and scikit-learn are the `clustering` extra. `requirements-dev.txt` includes runtime dependencies plus pytest, pytest-cov and requests for tests. Installing the `redis` package does not make `wsgi:app` connect to Redis. Local routes return 503 when Redis is unreachable or the OCR stack cannot start; `/health` and the AWS routes still load.
 
 ```bash
 cd packages/ai-pipeline
@@ -506,7 +508,7 @@ python run_tests.py
 ### Run Specific Test Module
 
 ```bash
-python run_tests.py test_ocr_engine
+python -m unittest discover -s tests -p "test_local_*.py"
 python run_tests.py test_image_processor
 python run_tests.py test_pdf_handler
 ```
@@ -514,7 +516,7 @@ python run_tests.py test_pdf_handler
 ### Run Single Test
 
 ```bash
-python -m unittest test_ocr_engine.TestOCREngineInitialization.test_init_default_parameters -v
+python -m unittest discover -s tests -p "test_local_*.py" -v
 ```
 
 ### Test Coverage
@@ -650,7 +652,7 @@ Contributions are welcome! Please:
 
 ```bash
 # Install development dependencies
-pip install pytest pytest-cov black flake8
+pip install -r requirements-dev.txt
 
 # Run tests with coverage
 pytest --cov=src tests/

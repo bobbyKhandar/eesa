@@ -1,14 +1,17 @@
 {
   "name": "eesa",
   "private": true,
-  "workspaces": ["packages/backend", "packages/frontend"],
+  "workspaces": [
+    "packages/backend",
+    "packages/frontend"
+  ],
   "overrides": {
     "tailwindcss": "^3.4.17",
     "react": "19.1.0",
     "react-dom": "19.1.0"
   },
   "scripts": {
-    "dev": "npm run dev --prefix packages/frontend",
+    "dev": "node scripts/dev.mjs",
     "test": "node --experimental-strip-types --import ./tests/node/register-hook.mjs --test tests/node/exam-evaluator-security.test.ts",
     "test:auth-dashboard": "node --experimental-strip-types --test tests/node/dashboard-auth.test.ts",
     "test:exams-crud": "node --experimental-strip-types --test tests/node/exams-crud.test.ts tests/node/admin-exams.test.ts",
@@ -21,7 +24,10 @@
     "test:ai": "node --experimental-strip-types --import ./tests/node/register-hook.mjs --test tests/node/backend/*.test.ts tests/node/frontend/*.test.ts",
     "test:python": "python3 -m pytest tests/python",
     "import-ocr": "npm run import-ocr --prefix packages/backend",
-    "import-ocr:dry-run": "npm run import-ocr:dry-run --prefix packages/backend"
+    "import-ocr:dry-run": "npm run import-ocr:dry-run --prefix packages/backend",
+    "setup": "bash scripts/setup.sh",
+    "dev:frontend": "npm run dev --prefix packages/frontend",
+    "dev:ai": "node scripts/dev-ai.mjs"
   },
   "devDependencies": {
     "@eslint/js": "^9.30.1",
@@ -34,5 +40,9 @@
     "globals": "^16.3.0",
     "typescript": "^5.8.3",
     "typescript-eslint": "^8.35.1"
+  },
+  "engines": {
+    "node": ">=22",
+    "npm": ">=10"
   }
 }

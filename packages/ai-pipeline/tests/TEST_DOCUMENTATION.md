@@ -1,5 +1,8 @@
 # AI Pipeline Test Suite - Clean Architecture
 
+Legacy `test_ocr_engine.py`, `test_image_processor.py`, `test_clean_integration.py` and `test_pipeline_manager.py` target removed module APIs and now skip explicitly. The descriptions below are historical. Current coverage includes `test_local_ocr_sanitize.py`, `test_local_image_brightness.py`, `test_pdf_incremental_ocr.py` and `test_processing_options.py`. Install `requirements-dev.txt` in the package venv; run `python -m unittest discover -s tests`. AWS region tests use temporary dotenv files and never modify the developer's `.env`.
+
+
 ## Overview
 Comprehensive unit and integration test suite for the cleaned AI Pipeline architecture. Tests cover all major components with high coverage and reliability.
 
